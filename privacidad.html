@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voces · Política de privacidad</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; background: #14041a; color: #f1eaf5; font: 16px/1.6 system-ui, 'Segoe UI', Roboto, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+      h1 { font-size: 28px; margin-bottom: 4px; }
+      h2 { font-size: 19px; margin-top: 32px; color: #ff8fd8; }
+      a { color: #1fd6f2; }
+      small, .muted { color: #b7a3c2; }
+      li { margin: 4px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Política de privacidad de Voces</h1>
+      <p class="muted">Última actualización: 12 de noviembre de 2026</p>
+
+      <p>Voces es una aplicación para que grupos de música compongan, visualicen y ensayen sus voces. Esta política explica qué datos trata la app y para qué. Resumen: <b>no hay publicidad, no hay rastreo y no vendemos datos</b>.</p>
+
+      <h2>1. Sin cuenta</h2>
+      <p>Puedes usar Voces sin registrarte. En ese caso todas tus canciones se guardan solo en tu dispositivo y no se envía nada a ningún servidor.</p>
+
+      <h2>2. Micrófono</h2>
+      <p>La función «Tararear» usa el micrófono para detectar la altura de las notas que cantas. <b>El audio se analiza en tiempo real en tu propio dispositivo y nunca se graba en ningún archivo ni se envía a ningún servidor.</b> Solo se guardan las notas resultantes, dentro de tu canción.</p>
+
+      <h2>3. Con cuenta (opcional)</h2>
+      <p>Si creas una cuenta para compartir canciones con tu grupo o usar la IA, guardamos:</p>
+      <ul>
+        <li><b>Tu email</b>, para iniciar sesión (te enviamos un código).</li>
+        <li><b>Tu nombre visible</b>, que ven los miembros de tus grupos.</li>
+        <li><b>Los grupos</b> a los que perteneces y su código de invitación.</li>
+        <li><b>Las canciones que decides compartir</b> con un grupo (notas, acordes, título), visibles para los miembros de ese grupo.</li>
+        <li>Un registro con la fecha de cada petición a la IA, solo para aplicar el límite diario.</li>
+      </ul>
+      <p>Estos datos se alojan en Supabase (infraestructura en la nube) y se usan únicamente para que la app funcione.</p>
+
+      <h2>4. Asistente de IA</h2>
+      <p>Cuando pides algo a la IA, se envían tu petición y una descripción en texto de la canción abierta (notas, acordes y nombres de las voces) a Anthropic, que proporciona el modelo Claude, para generar la respuesta. No se envían tu email ni tu audio. Las funciones «Revisar», «Acordes» y «Crear voces» del asistente funcionan en tu dispositivo, sin enviar nada.</p>
+
+      <h2>5. Lo que no hacemos</h2>
+      <ul>
+        <li>No usamos publicidad ni rastreadores de terceros.</li>
+        <li>No vendemos ni cedemos datos a terceros, salvo los proveedores técnicos mencionados para prestar el servicio.</li>
+        <li>No accedemos a tus contactos, fotos ni ubicación.</li>
+      </ul>
+
+      <h2>6. Tus derechos y borrar la cuenta</h2>
+      <p>Puedes borrar tu cuenta en cualquier momento desde la app: <i>Menú → Grupo y cuenta → Eliminar mi cuenta</i>. Se eliminan tu email, tu nombre y tu pertenencia a los grupos. Las canciones guardadas en tu dispositivo no se tocan. También puedes salir de un grupo o dejar de compartir una canción cuando quieras.</p>
+
+      <h2>7. Menores</h2>
+      <p>Voces no está dirigida a menores de 13 años y no recogemos conscientemente sus datos.</p>
+
+      <h2>8. Contacto</h2>
+      <p>Para cualquier duda sobre privacidad, escríbenos abriendo una incidencia en <a href="https://github.com/alonsodelomask/voces/issues">github.com/alonsodelomask/voces/issues</a>.</p>
+
+      <p><small>Si cambiamos esta política, actualizaremos la fecha de arriba.</small></p>
+    </main>
+  </body>
+</html>
