@@ -7,13 +7,13 @@
     <meta name="description" content="Compón y visualiza las voces de tu grupo como líneas de sintetizador." />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>Voces</title>
   </head>
   <body>
     <div id="app">
       <header class="topbar">
-        <div class="brand"><img src="./icon.svg" alt="" /> <span>Voces</span></div>
+        <div class="brand"><img src="./icon.svg" alt="" /> <span>Voces</span> <i id="sync" class="sync" hidden></i></div>
         <div class="tabs" role="tablist">
           <button class="tab active" data-view="viz" role="tab">Visualizar</button>
           <button class="tab" data-view="edit" role="tab">Editar</button>
@@ -34,6 +34,8 @@
           <button data-act="new">Nueva canción</button>
           <button data-act="library">Mis canciones</button>
           <button data-act="save">Guardar</button>
+          <button data-act="group">Grupo y cuenta</button>
+          <button data-act="assistant">Asistente e IA</button>
           <hr />
           <button data-act="export-midi">Exportar MIDI</button>
           <button data-act="export-project">Exportar proyecto (.json)</button>
@@ -53,6 +55,13 @@
         </section>
         <section id="view-edit" class="view">
           <div class="edit-toolbar">
+            <div class="seg">
+              <button id="ed-undo" title="Deshacer (Ctrl+Z)">↶</button>
+              <button id="ed-redo" title="Rehacer (Ctrl+Y)">↷</button>
+            </div>
+            <button id="ed-hum" class="btn hum" title="Canta o tararea y se convierte en notas">🎤 Tararear</button>
+            <button id="ed-assist" class="btn" title="Sugerencias, armonización automática e IA">✨ Asistente</button>
+            <button id="ed-transpose" class="btn" title="Subir o bajar notas">⇅ Transponer</button>
             <label class="field">Voz
               <select id="ed-voice"></select>
             </label>
@@ -92,7 +101,7 @@
             </div>
           </div>
           <canvas id="roll"></canvas>
-          <p class="hint">Clic para poner una nota · arrastra para alargarla o moverla · doble clic o clic derecho para borrar · clic en la regla para mover el cabezal · Ctrl+rueda para zoom</p>
+          <p class="hint">Fila «Acorde»: clic para añadir o cambiar un acorde · Clic para poner una nota · arrastra para alargarla o moverla · doble clic o clic derecho para borrar · clic en la regla para mover el cabezal · Ctrl+rueda para zoom</p>
         </section>
 
         <aside id="panel" class="panel">

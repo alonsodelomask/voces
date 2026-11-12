@@ -39,6 +39,42 @@ export class AudioEngine {
   private startSong = 0;
   private pausedAt = 0;
   onEnded: (() => void) | null = null;
+  /** No detener al llegar al final (para grabar más allá de la última nota). */
+  holdOpen = false;
+
+  /** Contexto de audio compartido (crea uno si hace falta). */
+  context(): AudioContext {
+    return this.ensure();
+  }
+
+  /** Convierte un instante del reloj de audio en tiempo de canción. */
+  ctxToSong(ctxTime: number): number {
+    return this.startSong + (ctxTime - this.startCtx) * this.rate;
+  }
+  songToCtx(songTime: number): number {
+    return this.startCtx + (songTime - this.startSong) / this.rate;
+  }
+
+  /** Silencia/reactiva la mezcla general (el metrónomo no pasa por aquí). */
+  setMasterMuted(m: boolean) {
+    const ctx = this.ensure();
+    this.master.gain.setTargetAtTime(m ? 0 : 0.9, ctx.currentTime, 0.01);
+  }
+
+  /** Clic de metrónomo directamente a la salida. */
+  click(when: number, accent = false) {
+    const ctx = this.ensure();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = accent ? 1760 : 1175;
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(accent ? 0.35 : 0.22, when + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start(when);
+    o.stop(when + 0.08);
+  }
 
   private ensure(): AudioContext {
     if (this.ctx) return this.ctx;
@@ -127,14 +163,14 @@ export class AudioEngine {
     }
   }
 
-  async play(from?: number) {
+  async play(from?: number, delay = 0.06) {
     if (!this.song) return;
     const ctx = this.ensure();
     if (ctx.state !== 'running') await ctx.resume();
     this.stopAll();
     const start = from ?? this.pausedAt;
-    this.startSong = start >= this.duration - 0.01 ? 0 : start;
-    this.startCtx = ctx.currentTime + 0.06;
+    this.startSong = !this.holdOpen && start >= this.duration - 0.01 ? 0 : start;
+    this.startCtx = ctx.currentTime + delay;
     this.playing = true;
     this.updateMix();
     for (const v of this.song.voices) {
@@ -158,7 +194,7 @@ export class AudioEngine {
     const was = this.playing;
     this.stopAll();
     this.playing = false;
-    this.pausedAt = Math.max(0, Math.min(t, this.duration));
+    this.pausedAt = Math.max(0, this.holdOpen ? t : Math.min(t, this.duration));
     if (was) this.play(this.pausedAt);
   }
 
@@ -200,7 +236,7 @@ export class AudioEngine {
       this.nextIdx.set(v.id, i);
     }
     this.active = this.active.filter((p) => p.end > ctx.currentTime);
-    if (this.time >= this.duration + 0.4) {
+    if (!this.holdOpen && this.time >= this.duration + 0.4) {
       if (this.loop) {
         this.play(0);
       } else {

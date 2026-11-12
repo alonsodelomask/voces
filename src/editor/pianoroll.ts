@@ -4,7 +4,9 @@ import { insertMonophonic, midiToName, prettyAccidentals } from '../music';
 export type Tool = 'draw' | 'erase' | 'pan';
 
 const KEYS_W = 46;
-const RULER_H = 24;
+const BAR_H = 20;
+const CHORD_H = 22;
+const TOP = BAR_H + CHORD_H;
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
 interface Drag {
@@ -47,6 +49,10 @@ export class PianoRoll {
   onChange: (() => void) | null = null;
   onPreview: ((midi: number, v: Voice) => void) | null = null;
   onSeek: ((t: number) => void) | null = null;
+  /** Se llama justo antes de modificar notas (para deshacer). */
+  onBeforeEdit: (() => void) | null = null;
+  /** Clic en la fila de acordes: tiempo (s) ajustado a la rejilla y el acorde pulsado, si lo hay. */
+  onChordClick: ((time: number, index: number) => void) | null = null;
 
   constructor(public canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -57,11 +63,17 @@ export class PianoRoll {
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const n = this.hit(this.pos(e));
-      if (n) this.remove(n);
+      if (n) {
+        this.onBeforeEdit?.();
+        this.remove(n);
+      }
     });
     canvas.addEventListener('dblclick', (e) => {
       const n = this.hit(this.pos(e));
-      if (n) this.remove(n);
+      if (n) {
+        this.onBeforeEdit?.();
+        this.remove(n);
+      }
     });
     canvas.addEventListener(
       'wheel',
@@ -101,12 +113,12 @@ export class PianoRoll {
     const notes = this.song?.voices.flatMap((v) => v.notes) ?? [];
     const mid = notes.length ? notes.reduce((s, n) => s + n.midi, 0) / notes.length : 60;
     const rect = this.canvas.getBoundingClientRect();
-    this.scrollY = this.clampY((127 - mid) * this.rowH - (rect.height - RULER_H) / 2);
+    this.scrollY = this.clampY((127 - mid) * this.rowH - (rect.height - TOP) / 2);
   }
 
   private clampY(y: number) {
     const rect = this.canvas.getBoundingClientRect();
-    return Math.max(0, Math.min(128 * this.rowH - (rect.height - RULER_H), y));
+    return Math.max(0, Math.min(128 * this.rowH - (rect.height - TOP), y));
   }
 
   // ---- Coordenadas (en px CSS) ----
@@ -121,10 +133,10 @@ export class PianoRoll {
     return (x - KEYS_W + this.scrollX) / this.pxPerBeat;
   }
   private midiToY(m: number) {
-    return RULER_H + (127 - m) * this.rowH - this.scrollY;
+    return TOP + (127 - m) * this.rowH - this.scrollY;
   }
   private yToMidi(y: number) {
-    return 127 - Math.floor((y - RULER_H + this.scrollY) / this.rowH);
+    return 127 - Math.floor((y - TOP + this.scrollY) / this.rowH);
   }
   private snapBeat(b: number) {
     return Math.round(b / this.snap) * this.snap;
@@ -152,7 +164,13 @@ export class PianoRoll {
     this.canvas.setPointerCapture(e.pointerId);
     const p = this.pos(e);
     const base = { startX: p.x, startY: p.y, origStart: 0, origDur: 0, origMidi: 0, scrollX: this.scrollX, scrollY: this.scrollY, moved: false };
-    if (p.y < RULER_H) {
+    if (p.y >= BAR_H && p.y < TOP && p.x >= KEYS_W) {
+      // Fila de acordes.
+      const t = this.chordTimeAt(p.x);
+      this.onChordClick?.(t.time, t.index);
+      return;
+    }
+    if (p.y < TOP) {
       this.drag = { ...base, kind: 'seek' };
       this.onSeek?.(Math.max(0, this.xToBeat(p.x)) * this.spb);
       return;
@@ -169,11 +187,15 @@ export class PianoRoll {
     if (!v) return;
     const hitN = this.hit(p);
     if (this.tool === 'erase') {
-      if (hitN) this.remove(hitN);
+      if (hitN) {
+        this.onBeforeEdit?.();
+        this.remove(hitN);
+      }
       this.drag = null;
       return;
     }
     if (hitN) {
+      this.onBeforeEdit?.();
       const xEnd = this.beatToX((hitN.start + hitN.dur) / this.spb);
       const kind = xEnd - p.x < 8 ? 'resize' : 'move';
       this.drag = { ...base, kind, note: hitN, origStart: hitN.start, origDur: hitN.dur, origMidi: hitN.midi };
@@ -181,6 +203,7 @@ export class PianoRoll {
       return;
     }
     // Nota nueva.
+    this.onBeforeEdit?.();
     const beat = Math.max(0, Math.floor(this.xToBeat(p.x) / this.snap) * this.snap);
     const midi = this.yToMidi(p.y);
     const n: Note = { midi, start: beat * this.spb, dur: this.noteLen * this.spb };
@@ -197,7 +220,7 @@ export class PianoRoll {
         const n = this.hit(p);
         this.hover = n;
         const nearEnd = n && this.beatToX((n.start + n.dur) / this.spb) - p.x < 8;
-        this.canvas.style.cursor = nearEnd ? 'ew-resize' : n ? 'grab' : p.y < RULER_H ? 'pointer' : 'crosshair';
+        this.canvas.style.cursor = nearEnd ? 'ew-resize' : n ? 'grab' : p.y < TOP ? 'pointer' : 'crosshair';
       } else {
         this.canvas.style.cursor = this.tool === 'pan' ? 'grab' : 'not-allowed';
       }
@@ -266,6 +289,19 @@ export class PianoRoll {
     }
   }
 
+  /** Acorde bajo la posición x (o tiempo ajustado a la rejilla para uno nuevo). */
+  private chordTimeAt(x: number): { time: number; index: number } {
+    const chords = this.song?.chords ?? [];
+    for (let i = 0; i < chords.length; i++) {
+      const cx = this.beatToX(chords[i].time / this.spb);
+      const nx = i + 1 < chords.length ? this.beatToX(chords[i + 1].time / this.spb) : Infinity;
+      const label = Math.max(36, chords[i].name.length * 8 + 8);
+      if (x >= cx - 2 && x <= Math.min(nx, cx + label)) return { time: chords[i].time, index: i };
+    }
+    const beat = Math.max(0, Math.floor(this.xToBeat(x) / Math.max(this.snap, 0.5)) * Math.max(this.snap, 0.5));
+    return { time: beat * this.spb, index: -1 };
+  }
+
   ensureVisible(t: number) {
     const x = this.beatToX(t / this.spb);
     const rect = this.canvas.getBoundingClientRect();
@@ -295,7 +331,7 @@ export class PianoRoll {
     const spb = this.spb;
 
     // Filas.
-    const mTop = this.yToMidi(RULER_H);
+    const mTop = this.yToMidi(TOP);
     const mBot = this.yToMidi(h);
     for (let m = mBot; m <= mTop; m++) {
       const y = this.midiToY(m);
@@ -317,7 +353,7 @@ export class PianoRoll {
       const isBeat = Math.abs(b - Math.round(b)) < 1e-6;
       ctx.strokeStyle = isBar ? 'rgba(255,255,255,0.28)' : isBeat ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)';
       ctx.beginPath();
-      ctx.moveTo(x, RULER_H);
+      ctx.moveTo(x, TOP);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
@@ -328,7 +364,7 @@ export class PianoRoll {
       const x = this.beatToX(c.time / spb);
       if (x < KEYS_W - 20 || x > w) continue;
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(x, RULER_H, 1, h);
+      ctx.fillRect(x, TOP, 1, h);
     }
 
     // Notas: primero las voces inactivas, luego la activa.
@@ -342,7 +378,7 @@ export class PianoRoll {
         const x2 = this.beatToX((n.start + n.dur) / spb);
         if (x2 < KEYS_W || x > w) continue;
         const y = this.midiToY(n.midi);
-        if (y < RULER_H - this.rowH || y > h) continue;
+        if (y < TOP - this.rowH || y > h) continue;
         ctx.globalAlpha = isActive ? 1 : 0.28;
         ctx.fillStyle = v.color;
         roundRect(ctx, x + 0.5, y + 1, Math.max(3, x2 - x - 1), this.rowH - 2, 3);
@@ -380,22 +416,34 @@ export class PianoRoll {
 
     // Regla.
     ctx.fillStyle = '#12051a';
-    ctx.fillRect(0, 0, w, RULER_H);
+    ctx.fillRect(0, 0, w, TOP);
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.font = '11px system-ui, sans-serif';
     ctx.textBaseline = 'middle';
     for (let b = Math.ceil(b0 / bpb) * bpb; b <= b1; b += bpb) {
       const x = this.beatToX(b);
       if (x < KEYS_W) continue;
-      ctx.fillText(String(b / bpb + 1), x + 3, RULER_H / 2);
-      ctx.fillRect(x, RULER_H - 6, 1, 6);
+      ctx.fillText(String(b / bpb + 1), x + 3, BAR_H / 2);
+      ctx.fillRect(x, BAR_H - 6, 1, 6);
     }
+    // Fila de acordes (editable).
+    ctx.fillStyle = '#1c0a24';
+    ctx.fillRect(KEYS_W, BAR_H, w - KEYS_W, CHORD_H);
+    ctx.font = '600 12px system-ui, sans-serif';
     for (const c of song.chords) {
       const x = this.beatToX(c.time / spb);
-      if (x < KEYS_W || x > w) continue;
-      ctx.fillStyle = 'rgba(255,200,255,0.75)';
-      ctx.fillText(c.name, x + 3, RULER_H / 2 + 0.5);
+      if (x < KEYS_W - 60 || x > w) continue;
+      const tw = ctx.measureText(c.name).width + 10;
+      ctx.fillStyle = song.chordsAuto ? 'rgba(233,64,214,0.25)' : 'rgba(233,64,214,0.45)';
+      roundRect(ctx, x + 1, BAR_H + 3, tw, CHORD_H - 6, 4);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(c.name, x + 6, BAR_H + CHORD_H / 2 + 0.5);
     }
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillText('Acorde', 4, BAR_H + CHORD_H / 2);
+    ctx.fillText('Compás', 4, BAR_H / 2);
 
     // Cabezal.
     const px = this.beatToX(this.playTime / spb);

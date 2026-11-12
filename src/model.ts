@@ -37,6 +37,10 @@ export interface Song {
   chordsAuto: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Grupo de la nube con el que se comparte (si lo hay). */
+  groupId?: string;
+  /** Marca de tiempo de la última versión conocida en la nube. */
+  remoteUpdatedAt?: string;
 }
 
 // Colores neón, ordenados de la voz más aguda a la más grave.

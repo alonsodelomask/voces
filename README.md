@@ -1,33 +1,47 @@
 # Voces
 
-App web (instalable en móvil y escritorio como PWA) para que un grupo vocal vea y escuche sus voces
-como líneas de neón de sintetizador.
+App para que un grupo vocal vea, escuche, componga y ensaye sus voces como líneas de neón de sintetizador.
+Funciona en el navegador, se instala como app (PWA) y tiene versión nativa para iOS y Android (Capacitor).
 
-## Arrancar
+**Web:** <https://alonsodelomask.github.io/voces/>
+
+## Funciones
+
+- **Importar** MusicXML (`.musicxml`, `.xml`, `.mxl`) y MIDI. Respeta las repeticiones y las casillas de 1ª y 2ª vez, y usa el cifrado de la partitura si lo tiene.
+- **Visualizador** tipo sintetizador: transiciones suaves entre notas, nombre de cada nota, acorde actual y chispas.
+- **Audio** sintetizado (4 sonidos), velocidad de 0.5× a 1.25× y silencio/solo/volumen por voz para ensayar.
+- **Editor**: rejilla de notas, fila de acordes editable (con «ajustar las voces al acorde»), transposición y deshacer/rehacer.
+- **Tararear**: cantas y se convierte en notas (detección de tono YIN en el dispositivo), con metrónomo, cuenta atrás y la opción de oír las otras voces mientras grabas.
+- **Asistente**: revisión de voces (paralelas, cruces, saltos, registros), propuesta de acordes para una melodía y armonización automática.
+- **IA (Claude)**: pídele cambios en lenguaje natural; ves la propuesta antes de aplicarla.
+- **Grupos en la nube**: cuentas con código por email, grupos con código de invitación y canciones compartidas que se sincronizan en tiempo real.
+- **Exportar** MIDI, proyecto `.json` y vídeo vertical 1080×1920.
+
+## Desarrollo
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173 (también accesible desde el móvil en la misma wifi)
+npm run dev        # http://localhost:5173
 npm run build      # genera dist/
-npm run deploy     # compila y publica en https://alonsodelomask.github.io/voces/
+npm run deploy     # compila y publica en GitHub Pages
+npm run ios        # (en un Mac) compila y abre Xcode
+npm run android    # compila y abre Android Studio
 ```
 
-## Qué hace
-
-- **Importar** MusicXML (`.musicxml`, `.xml`, `.mxl`) y MIDI (`.mid`). Desde MuseScore o Flat: *Exportar → MusicXML*.
-  - Cada parte / pentagrama / voz interna es una línea; si hay acordes dentro de una voz, cada nota del acorde es una línea.
-  - Respeta repeticiones y casillas de 1ª/2ª vez (D.C./D.S./Coda aún no).
-  - Usa los cifrados de acorde de la partitura si los tiene; si no, los detecta.
-- **Visualizador**: líneas con transición suave entre notas, cabezal fijo, nombre de cada nota, acorde actual y chispas.
-- **Audio** sintetizado (Sintetizador, Coro, Órgano, Suave) con velocidad 0.5×–1.25×, silencio/solo/volumen por voz.
-- **Editor** tipo piano roll para componer a mano o retocar lo importado.
-- **Exportar** MIDI, proyecto `.json` y **vídeo vertical 1080×1920** para redes.
-- Las canciones se guardan en el propio navegador.
+- Nube (cuentas, grupos, IA): [docs/NUBE.md](docs/NUBE.md)
+- Publicar en App Store / Google Play: [docs/APP_STORE.md](docs/APP_STORE.md)
+- Política de privacidad: [public/privacidad.html](public/privacidad.html)
 
 ## Estructura
 
-- `src/import/` – lectores de MusicXML y MIDI
-- `src/viz/visualizer.ts` – dibujo del visualizador (canvas)
-- `src/audio/engine.ts` – síntesis y reproducción (Web Audio)
-- `src/editor/pianoroll.ts` – editor de notas
-- `src/main.ts` – interfaz
+| Ruta | Contenido |
+| --- | --- |
+| `src/import/` | Lectores de MusicXML y MIDI |
+| `src/viz/visualizer.ts` | Visualizador (canvas) |
+| `src/audio/engine.ts` | Síntesis, reproducción y metrónomo (Web Audio) |
+| `src/editor/pianoroll.ts` | Editor de notas y acordes |
+| `src/hum/` | Detección de tono y conversión del tarareo a notas |
+| `src/ai/` | Asistente por reglas y panel de IA |
+| `src/cloud/` | Cliente de Supabase: cuentas, grupos y sincronización |
+| `supabase/` | Esquema SQL (con RLS) y función de servidor de la IA |
+| `ios/`, `android/`, `assets/` | Apps nativas, iconos y pantallas de carga |

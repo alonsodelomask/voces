@@ -1,14 +1,9 @@
 import { Midi } from '@tonejs/midi';
 import type { Song } from './model';
+import { saveFile } from './native';
 
 function download(blob: Blob, filename: string) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  saveFile(blob, filename).catch((e) => console.error(e));
 }
 
 export function safeName(s: string) {

@@ -156,3 +156,95 @@ export function insertMonophonic(notes: Note[], added: Note): Note[] {
   out.sort((a, b) => a.start - b.start);
   return out;
 }
+
+// ---------------- Transposición y acordes ----------------
+
+/** Quita los símbolos tipográficos (♯ ♭) para que tonal entienda el nombre. */
+export function plainAccidentals(s: string): string {
+  return s.replace(/𝄪/g, '##').replace(/♯/g, '#').replace(/𝄫/g, 'bb').replace(/♭/g, 'b');
+}
+
+function pcName(pc: number, keyFifths: number) {
+  return (keyFifths < 0 ? FLAT_NAMES : SHARP_NAMES)[((pc % 12) + 12) % 12];
+}
+
+/** Transpone un cifrado ("F#m7/C#") un número de semitonos. */
+export function transposeChordName(name: string, semis: number, keyFifths: number): string {
+  const plain = plainAccidentals(name);
+  const m = plain.match(/^([A-G][#b]*)(.*?)(?:\/([A-G][#b]*))?$/);
+  if (!m) return name;
+  const tr = (n: string) => pcName((TNote.chroma(n) ?? 0) + semis, keyFifths);
+  return prettyAccidentals(tr(m[1]) + m[2] + (m[3] ? '/' + tr(m[3]) : ''));
+}
+
+/** Cambio de armadura (en quintas) al transponer n semitonos, en el rango -6..6. */
+export function fifthsAfterTranspose(fifths: number, semis: number): number {
+  let f = (fifths + semis * 7) % 12;
+  if (f > 6) f -= 12;
+  if (f < -6) f += 12;
+  return f;
+}
+
+/** Notas (clases de altura 0-11) de un cifrado, o null si no se reconoce. */
+export function chordPitchClasses(name: string): number[] | null {
+  const c = Chord.get(plainAccidentals(name).replace(/^([A-G][#b]*)(?=\/|$)/, '$1M'));
+  if (c.empty || !c.notes.length) return null;
+  const pcs = c.notes.map((n) => TNote.chroma(n)).filter((x): x is number => typeof x === 'number');
+  if (c.bass) {
+    const b = TNote.chroma(c.bass);
+    if (typeof b === 'number' && !pcs.includes(b)) pcs.push(b);
+  }
+  return pcs;
+}
+
+export function isValidChord(name: string): boolean {
+  return chordPitchClasses(name) !== null;
+}
+
+/** Mueve cada nota del tramo [t0, t1) a la nota del acorde más cercana. Devuelve cuántas cambió. */
+export function adaptNotesToChord(song: Song, t0: number, t1: number, chordName: string): number {
+  const pcs = chordPitchClasses(chordName);
+  if (!pcs) return 0;
+  let changed = 0;
+  for (const v of song.voices) {
+    for (const n of v.notes) {
+      if (n.start < t0 - 1e-6 || n.start >= t1 - 1e-6) continue;
+      const pc = ((n.midi % 12) + 12) % 12;
+      if (pcs.includes(pc)) continue;
+      let best = n.midi;
+      for (let d = 1; d <= 6; d++) {
+        // Prefiere bajar en las voces graves y subir en las agudas, con empate hacia abajo.
+        if (pcs.includes((pc - d + 12) % 12)) {
+          best = n.midi - d;
+          break;
+        }
+        if (pcs.includes((pc + d) % 12)) {
+          best = n.midi + d;
+          break;
+        }
+      }
+      if (best !== n.midi) {
+        n.midi = best;
+        n.name = undefined;
+        changed++;
+      }
+    }
+  }
+  return changed;
+}
+
+/** Transpone notas (de todas las voces o de las indicadas) y, si es toda la canción, los acordes y la armadura. */
+export function transposeSong(song: Song, semis: number, voiceIds?: string[]) {
+  const all = !voiceIds;
+  for (const v of song.voices) {
+    if (voiceIds && !voiceIds.includes(v.id)) continue;
+    for (const n of v.notes) {
+      n.midi = Math.max(0, Math.min(127, n.midi + semis));
+      n.name = undefined;
+    }
+  }
+  if (all && semis % 12 !== 0) {
+    song.keyFifths = fifthsAfterTranspose(song.keyFifths, semis);
+    if (!song.chordsAuto) song.chords = song.chords.map((c) => ({ ...c, name: transposeChordName(c.name, semis, song.keyFifths) }));
+  }
+}

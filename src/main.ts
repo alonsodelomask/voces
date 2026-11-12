@@ -5,7 +5,13 @@ import { PianoRoll, type Tool } from './editor/pianoroll';
 import { download, exportMidi, exportProject, safeName } from './export';
 import { ACCEPTED, importFile } from './import';
 import { makeSong, makeVoice, VOICE_COLORS, type Song, type Voice } from './model';
-import { computeChords } from './music';
+import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
+import { form } from './ui/dialog';
+import { openHumPanel } from './hum/humPanel';
+import { openAssistant } from './ai/assistantPanel';
+import { openGroupPanel } from './cloud/groupPanel';
+import * as cloud from './cloud/cloud';
+import { initNative, isNative } from './native';
 import { deleteSong, getLast, loadSongs, saveSong, setLast } from './storage';
 import { Visualizer } from './viz/visualizer';
 
@@ -24,6 +30,8 @@ let saveTimer: number | undefined;
 function setSong(s: Song, save = false) {
   engine.pause();
   song = s;
+  undoStack.length = 0;
+  redoStack.length = 0;
   engine.setSong(s);
   viz.setSong(s);
   roll.setSong(s);
@@ -33,11 +41,66 @@ function setSong(s: Song, save = false) {
   updateDuration();
   $('#empty').hidden = s.voices.some((v) => v.notes.length);
   if (save) persist();
+  watchCurrent();
 }
 
 function persist() {
   if (!saveSong(song)) toast('No se pudo guardar (almacenamiento lleno).', true);
   dirty = false;
+  if (song.groupId) scheduleSync();
+}
+
+// ---------------- Sincronización con el grupo ----------------
+
+let pushTimer: number | undefined;
+let unwatch: (() => void) | null = null;
+let watchedGroup: string | null = null;
+
+async function syncNow() {
+  if (!song.groupId || !cloud.user()) return;
+  try {
+    song.remoteUpdatedAt = await cloud.pushSong(song);
+    saveSong(song);
+    setSyncBadge('ok');
+  } catch (e) {
+    setSyncBadge('error');
+    toast('No se pudo sincronizar con el grupo: ' + (e as Error).message, true);
+  }
+}
+function scheduleSync() {
+  setSyncBadge('pending');
+  clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(syncNow, 1500);
+}
+function setSyncBadge(state: 'ok' | 'pending' | 'error' | 'none') {
+  const b = $('#sync');
+  b.hidden = state === 'none';
+  b.dataset.state = state;
+  b.title = state === 'ok' ? 'Sincronizada con el grupo' : state === 'pending' ? 'Guardando en el grupo…' : 'Sin sincronizar (inicia sesión)';
+}
+function watchCurrent() {
+  const g = song.groupId && cloud.user() ? song.groupId : null;
+  setSyncBadge(song.groupId ? (cloud.user() ? 'ok' : 'error') : 'none');
+  if (g === watchedGroup) return;
+  unwatch?.();
+  watchedGroup = g;
+  unwatch = g ? cloud.watchGroup(g, onRemoteChange) : null;
+}
+async function onRemoteChange(ev: { type: string; id: string; updated_by?: string | null; updated_at?: string }) {
+  if (ev.id !== song.id || ev.updated_by === cloud.user()?.id) return;
+  if (ev.type === 'DELETE') return toast('Alguien ha borrado esta canción del grupo (sigue guardada en tu dispositivo).');
+  if (ev.updated_at && ev.updated_at === song.remoteUpdatedAt) return;
+  if (dirty) return toast('Otra persona ha cambiado esta canción. Al guardar se quedará tu versión.');
+  try {
+    const t = engine.time;
+    const remote = await cloud.fetchSong(song.id);
+    setSong(remote);
+    saveSong(remote);
+    engine.seek(t);
+    toast('Canción actualizada por tu grupo.');
+  } catch {
+    /* sin conexión: se ignora */
+  }
 }
 
 /** Llamar tras cualquier edición de notas. */
@@ -48,6 +111,58 @@ function changed() {
   dirty = true;
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(persist, 800);
+}
+
+// ---------------- Deshacer / rehacer ----------------
+
+const undoStack: string[] = [];
+const redoStack: string[] = [];
+function snapshot(): string {
+  const { voices, chords, chordsAuto, bpm, keyFifths, beatsPerBar } = song;
+  return JSON.stringify({ voices, chords, chordsAuto, bpm, keyFifths, beatsPerBar });
+}
+/** Guarda el estado actual antes de un cambio. */
+function checkpoint() {
+  const snap = snapshot();
+  if (undoStack[undoStack.length - 1] === snap) return;
+  undoStack.push(snap);
+  if (undoStack.length > 150) undoStack.shift();
+  redoStack.length = 0;
+}
+function restore(snap: string) {
+  Object.assign(song, JSON.parse(snap));
+  engine.song = song;
+  engine.updateMix();
+  refreshAfterEdit();
+}
+function undo() {
+  const s = undoStack.pop();
+  if (!s) return toast('Nada que deshacer.');
+  redoStack.push(snapshot());
+  restore(s);
+}
+function redo() {
+  const s = redoStack.pop();
+  if (!s) return;
+  undoStack.push(snapshot());
+  restore(s);
+}
+/** Refresca todo tras un cambio que no es de notas sueltas (deshacer, transponer, IA…). */
+function refreshAfterEdit(recomputeChords = true) {
+  if (recomputeChords && song.chordsAuto) song.chords = computeChords(song);
+  viz.updateRange();
+  updateDuration();
+  renderPanel();
+  renderEditorControls();
+  dirty = true;
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(persist, 800);
+}
+/** Aplica un cambio con posibilidad de deshacerlo. */
+function edit(fn: () => void, recomputeChords = true) {
+  checkpoint();
+  fn();
+  refreshAfterEdit(recomputeChords);
 }
 
 function updateDuration() {
@@ -120,6 +235,7 @@ function voiceRow(v: Voice): HTMLElement {
     }
     if (k === 'x') {
       if (!confirm(`¿Eliminar la voz "${v.name}" y sus ${v.notes.length} notas?`)) return;
+      checkpoint();
       song.voices = song.voices.filter((x) => x !== v);
       engine.setSong(song);
       changed();
@@ -141,6 +257,7 @@ function voiceRow(v: Voice): HTMLElement {
 }
 
 $('#add-voice').onclick = () => {
+  checkpoint();
   const v = makeVoice(`Voz ${song.voices.length + 1}`, song.voices.length);
   // Evita repetir color si es posible.
   const used = new Set(song.voices.map((x) => x.color));
@@ -228,6 +345,127 @@ $('#ed-zoom-in').onclick = () => (roll.pxPerBeat = Math.min(220, roll.pxPerBeat 
 $('#ed-zoom-out').onclick = () => (roll.pxPerBeat = Math.max(12, roll.pxPerBeat / 1.25));
 
 roll.onChange = changed;
+roll.onBeforeEdit = checkpoint;
+roll.onChordClick = (time, index) => editChord(time, index);
+$('#ed-undo').onclick = undo;
+$('#ed-redo').onclick = redo;
+$('#ed-transpose').onclick = openTranspose;
+const assistDeps = {
+  song: () => song,
+  activeVoiceId: () => roll.activeVoice?.id ?? null,
+  edit,
+  toast,
+  goTo: (t: number) => {
+    engine.seek(Math.max(0, t - 0.5));
+    switchView('edit');
+    roll.ensureVisible(t);
+  },
+  openAccount: () => openGroups(),
+};
+$('#ed-assist').onclick = () => openAssistant(assistDeps);
+function openGroups() {
+  openGroupPanel({
+    song: () => song,
+    openSong: (s) => {
+      setSong(s);
+      saveSong(s);
+    },
+    saveAndSync: async () => {
+      saveSong(song);
+      await syncNow();
+      watchCurrent();
+    },
+    toast,
+  });
+}
+$('#ed-hum').onclick = () =>
+  openHumPanel({
+    engine,
+    song: () => song,
+    activeVoiceId: () => roll.activeVoice?.id ?? null,
+    setActiveVoice: (id) => {
+      roll.activeVoiceId = id;
+      renderEditorControls();
+      renderPanel();
+    },
+    apply: (fn) => edit(fn),
+    toast,
+    snapBeats: () => roll.snap,
+  });
+
+async function editChord(time: number, index: number) {
+  const existing = index >= 0 ? song.chords[index] : null;
+  const next = song.chords.find((c) => c.time > time + 1e-6);
+  const r = await form({
+    title: existing ? `Acorde «${existing.name}»` : 'Nuevo acorde',
+    intro: `En ${fmt(time)} (compás ${Math.floor(time / roll.spb / song.beatsPerBar) + 1}). Ejemplos: C, Am, F#m7, Bb/D, Gsus4, Edim.`,
+    fields: [
+      { name: 'name', label: 'Cifrado', value: existing ? plainAccidentals(existing.name) : '', placeholder: 'Am7' },
+      { name: 'adapt', label: 'Ajustar las voces a este acorde (mueve las notas que no encajan)', type: 'checkbox', value: false },
+    ],
+    extra: existing ? [{ action: 'delete', label: 'Eliminar', danger: true }] : [],
+    okLabel: 'Guardar',
+  });
+  if (!r) return;
+  if (r.action === 'delete' && existing) {
+    edit(() => {
+      song.chordsAuto = false;
+      song.chords = song.chords.filter((c) => c !== existing);
+    }, false);
+    return;
+  }
+  const name = r.values.name.trim();
+  if (!name) return;
+  if (!isValidChord(name)) return toast(`No reconozco el acorde «${name}».`, true);
+  const pretty = prettyAccidentals(name);
+  edit(() => {
+    song.chordsAuto = false;
+    if (existing) existing.name = pretty;
+    else {
+      song.chords.push({ time, name: pretty });
+      song.chords.sort((a, b) => a.time - b.time);
+    }
+    if (r.checks.adapt) {
+      const end = next ? next.time : engine.duration;
+      const n = adaptNotesToChord(song, time, end, name);
+      toast(n ? `${n} notas ajustadas a ${pretty}.` : `Todas las notas ya encajan en ${pretty}.`);
+    }
+  }, false);
+}
+
+async function openTranspose() {
+  const active = roll.activeVoice;
+  const r = await form({
+    title: 'Transponer',
+    fields: [
+      {
+        name: 'semis',
+        label: 'Semitonos',
+        type: 'select',
+        value: '2',
+        options: [12, 7, 5, 4, 3, 2, 1, -1, -2, -3, -4, -5, -7, -12].map((n) => ({
+          value: String(n),
+          label: `${n > 0 ? '+' : ''}${n}${Math.abs(n) === 12 ? ' (una octava)' : ''}`,
+        })),
+      },
+      {
+        name: 'scope',
+        label: 'A qué',
+        type: 'select',
+        value: 'all',
+        options: [
+          { value: 'all', label: 'Toda la canción (cambia de tono)' },
+          ...(active ? [{ value: 'voice', label: `Solo la voz «${active.name}»` }] : []),
+        ],
+      },
+    ],
+    okLabel: 'Transponer',
+  });
+  if (!r) return;
+  const semis = parseInt(r.values.semis);
+  edit(() => transposeSong(song, semis, r.values.scope === 'voice' && active ? [active.id] : undefined));
+  toast(`Transpuesto ${semis > 0 ? '+' : ''}${semis} semitonos.`);
+}
 roll.onPreview = (midi, v) => engine.preview(midi, v);
 roll.onSeek = (t) => engine.seek(t);
 
@@ -319,6 +557,18 @@ $<HTMLInputElement>('#vzoom').oninput = (e) => (viz.opts.zoom = parseFloat((e.ta
 window.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement).tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (document.querySelector('dialog[open]')) return;
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+    e.preventDefault();
+    if (e.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') {
+    e.preventDefault();
+    redo();
+    return;
+  }
   if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();
@@ -393,7 +643,13 @@ menu.addEventListener('click', (e) => {
       break;
     case 'save':
       persist();
-      toast('Guardado en este dispositivo.');
+      toast(song.groupId ? 'Guardado y sincronizado con el grupo.' : 'Guardado en este dispositivo.');
+      break;
+    case 'group':
+      openGroups();
+      break;
+    case 'assistant':
+      openAssistant(assistDeps);
       break;
     case 'export-midi':
       exportMidi(song);
@@ -438,7 +694,7 @@ function openLibrary() {
     const item = document.createElement('div');
     item.className = 'lib-item';
     const nNotes = s.voices.reduce((a, v) => a + v.notes.length, 0);
-    item.innerHTML = `<div class="meta"><b></b><small>${s.voices.length} voces · ${nNotes} notas · ${new Date(s.updatedAt).toLocaleDateString()}</small></div><button class="btn small" title="Eliminar">✕</button>`;
+    item.innerHTML = `<div class="meta"><b></b><small>${s.groupId ? '☁ ' : ''}${s.voices.length} voces · ${nNotes} notas · ${new Date(s.updatedAt).toLocaleDateString()}</small></div><button class="btn small" title="Eliminar">✕</button>`;
     item.querySelector('b')!.textContent = s.title;
     item.querySelector<HTMLElement>('.meta')!.onclick = () => {
       $<HTMLDialogElement>('#dlg-library').close();
@@ -548,12 +804,17 @@ window.addEventListener('beforeunload', () => {
 
 // ---------------- Inicio ----------------
 
+cloud.initAuth().then(() => {
+  watchCurrent();
+  cloud.onAuth(() => watchCurrent());
+});
 const saved = loadSongs();
 const last = getLast();
 setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
 requestAnimationFrame(loop);
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+initNative();
+if ('serviceWorker' in navigator && import.meta.env.PROD && !isNative) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 

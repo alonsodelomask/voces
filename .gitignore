@@ -3,3 +3,7 @@ dist
 # Partituras de prueba locales (no se publican)
 samples/
 .claude/
+
+# Configuración local
+.env.local
+.env
