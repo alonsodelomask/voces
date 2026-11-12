@@ -41,6 +41,8 @@ export interface Song {
   groupId?: string;
   /** Marca de tiempo de la última versión conocida en la nube. */
   remoteUpdatedAt?: string;
+  /** Si salió de una grabación: segundos que se recortaron al principio para cuadrar el primer pulso (para añadir otras pistas igual). */
+  audioPhase?: number;
 }
 
 // Colores neón, ordenados de la voz más aguda a la más grave.

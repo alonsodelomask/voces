@@ -3,14 +3,37 @@
 import type { Song } from '../model';
 import { esc, form } from '../ui/dialog';
 
-export async function importAudio(file: File): Promise<Song | null> {
+export interface AudioImport {
+  song: Song;
+  /** true: añadir sus voces a la canción abierta en lugar de abrirla como canción nueva. */
+  add: boolean;
+}
+
+/** `current`: la canción abierta, para ofrecer añadir el audio como voz nueva (pistas grabadas por separado). */
+export async function importAudio(file: File, current?: { title: string; bpm: number; voices: number; audioPhase?: number }): Promise<AudioImport | null> {
   const title = file.name.replace(/\.[^.]+$/, '');
+  const canAdd = !!current && current.voices > 0;
   const r = await form({
     title: 'Convertir audio en voces',
     intro:
       `<b>${esc(file.name)}</b><br>Funciona mejor con voces solas (a cappella o una sola voz), sin instrumentos ni mucho eco. ` +
       'El audio no sale de tu dispositivo. Después podrás corregir las notas en el editor.',
     fields: [
+      ...(canAdd
+        ? [
+            {
+              name: 'target',
+              label: 'Qué hacer',
+              type: 'select' as const,
+              value: 'new',
+              options: [
+                { value: 'new', label: 'Crear una canción nueva' },
+                { value: 'add', label: `Añadir a «${current!.title}» como voz nueva` },
+              ],
+              hint: 'Añadir sirve cuando cada cantante graba su voz por separado, empezando todos en el mismo punto. Usa el tempo de la canción abierta.',
+            },
+          ]
+        : []),
       {
         name: 'voices',
         label: 'Voces que se oyen',
@@ -53,10 +76,13 @@ export async function importAudio(file: File): Promise<Song | null> {
   });
   if (!r) return null;
   const num = (s: string) => (s.trim() === '' ? 0 : Math.max(0, Number(s.replace(',', '.')) || 0));
+  const add = canAdd && r.values.target === 'add';
   const opts = {
-    voices: Number(r.values.voices) || 0,
+    voices: Number(r.values.voices) || (add ? 1 : 0),
     grid: Number(r.values.grid) || 0,
-    bpm: num(r.values.bpm),
+    bpm: add ? current!.bpm : num(r.values.bpm),
+    keepTime: add,
+    phase: add ? (current!.audioPhase ?? 0) : 0,
     start: num(r.values.start),
     end: num(r.values.end),
     sensitivity: Number(r.values.sens) || 0.5,
@@ -88,7 +114,7 @@ export async function importAudio(file: File): Promise<Song | null> {
         bar.value = p;
       },
     });
-    return cancelled ? null : song;
+    return cancelled ? null : { song, add };
   } finally {
     if (dlg.open) dlg.close();
     dlg.remove();

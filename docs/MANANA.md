@@ -6,7 +6,7 @@
 - **Importar audio → voces** (WAV, MP3, M4A, AAC, OGG, OPUS, FLAC, WEBM, AIFF, CAF). Botón *Importar* de siempre: si es audio, pregunta cuántas voces se oyen, el ritmo, el tempo, el tramo y la sensibilidad, y lo convierte **en el dispositivo** (el audio no sale de él). También funciona dentro de la app del iPhone y al abrir un audio desde WhatsApp o Archivos.
   - Con voces sintetizadas acierta casi todo (grave 100 %, aguda 83 %, tempo exacto).
   - Con vuestra grabación de «La vida es una copa de licor» (primeros 72 s, comparada con la partitura): **el 88 % de las notas que saca son correctas** y acierta la melodía principal en 2 de cada 3 momentos, pero **solo encuentra 1 de cada 4 notas de la partitura** (las voces interiores se mezclan). Además, la grabación está **un tono más baja** que la partitura. Sirve como punto de partida para corregir en el editor; ninguna herramienta separa bien cinco voces a la vez en una sola pista.
-  - Truco: si tenéis **una pista por voz** (cada uno grabando la suya), importa cada una con «1 (solo la melodía)»: ahí la precisión es mucho mayor.
+  - **Una pista por voz:** si cada uno graba la suya (empezando todos en el mismo punto, p. ej. con el mismo clic), importa la primera y después las demás con «Añadir a «…» como voz nueva»: quedan juntas y alineadas en la misma canción, y con una sola voz por pista la precisión es mucho mayor.
 - **Quitar una canción del grupo**: en *Mis canciones*, botón ⊘ (antes no se podía). Si alguien la quita, en los demás móviles se queda como canción propia y no vuelve a subirse sola.
 - **Web pública** en `public/`, generada desde `scripts/sitio/`:
   - `/conoce/` (presentación con capturas), `/privacidad/`, `/condiciones/`, `/soporte/`, `/borrar-cuenta/`;

@@ -23,6 +23,10 @@ export interface AudioOptions {
   end: number;
   /** Sensibilidad 0..1: más alto, más notas (y más ruido). */
   sensitivity: number;
+  /** Respetar el tiempo del archivo (sin desplazar al primer pulso): para añadir pistas grabadas por separado. */
+  keepTime?: boolean;
+  /** Con keepTime: el recorte inicial de la canción a la que se añade (su `audioPhase`). */
+  phase?: number;
   onProgress?: (fase: string, fraccion: number) => void;
 }
 
@@ -307,7 +311,7 @@ export async function audioToSong(data: ArrayBuffer, title: string, opts: AudioO
   const clean = cleanNotes(raw);
   if (!clean.length) throw new Error('No he encontrado notas en ese audio. ¿Tiene voces cantando?');
   const nVoices = opts.voices || estimateVoices(clean);
-  const tempo = opts.bpm ? { bpm: opts.bpm, phase: estimateTempo(clean).phase } : estimateTempo(clean);
+  const tempo = opts.bpm ? { bpm: opts.bpm, phase: opts.keepTime ? (opts.phase ?? 0) : estimateTempo(clean).phase } : estimateTempo(clean);
   const spb = 60 / tempo.bpm;
   const lanes = assignVoices(clean, nVoices)
     .map((l) => (opts.grid ? quantizeLane(l, spb, opts.grid, tempo.phase) : l.map((x) => ({ ...x, start: Math.max(0, x.start - tempo.phase) }))))
@@ -320,6 +324,7 @@ export async function audioToSong(data: ArrayBuffer, title: string, opts: AudioO
   });
   const song = makeSong({ title, bpm: tempo.bpm, beatsPerBar: 4, voices });
   song.chords = computeChords(song);
+  song.audioPhase = tempo.phase;
   opts.onProgress?.('Listo', 1);
   void duration;
   return song;

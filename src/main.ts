@@ -761,8 +761,27 @@ fileInput.onchange = async () => {
 
 async function openFile(f: File) {
   try {
-    const s = isAudioFile(f.name) || (f.type.startsWith('audio/') && !/\.(mid|midi)$/i.test(f.name)) ? await importAudio(f) : await importFile(f);
-    if (!s) return;
+    let s: Song;
+    if (isAudioFile(f.name) || (f.type.startsWith('audio/') && !/\.(mid|midi)$/i.test(f.name))) {
+      const res = await importAudio(f, { title: song.title, bpm: song.bpm, voices: song.voices.length, audioPhase: song.audioPhase });
+      if (!res) return;
+      if (res.add) {
+        // Pista grabada por separado: sus voces se suman a la canción abierta.
+        const base = f.name.replace(/\.[^.]+$/, '');
+        const nuevas = res.song.voices;
+        edit(() => {
+          nuevas.forEach((v, i) => {
+            v.name = nuevas.length === 1 ? base : `${base} ${i + 1}`;
+            v.color = VOICE_COLORS[song.voices.length % VOICE_COLORS.length];
+            song.voices.push(v);
+          });
+        });
+        engine.updateMix();
+        const n = nuevas.reduce((a, v) => a + v.notes.length, 0);
+        return toast(`Añadida «${base}»: ${nuevas.length === 1 ? '1 voz' : nuevas.length + ' voces'}, ${n} notas.`);
+      }
+      s = res.song;
+    } else s = await importFile(f);
     setSong(s, true);
     const n = s.voices.reduce((a, v) => a + v.notes.length, 0);
     toast(`"${s.title}": ${s.voices.length} voces, ${n} notas.`);
