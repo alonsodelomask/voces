@@ -81,6 +81,7 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 1. En [supabase.com](https://supabase.com) › **New project** › nombre **Voces**, región de la UE (la misma que Baulify, *Stockholm `eu-north-1`*, o *Frankfurt*). Guarda la contraseña de la base en tu gestor de contraseñas.
 2. **SQL Editor** › **New query** › pega todo `supabase/migrations/001_init.sql` › **Run**. Debe decir «Success».
 3. Nueva consulta con `supabase/migrations/002_servidor.sql` › **Run**. Es **aditiva** e idempotente.
+3 bis. Nueva consulta con `supabase/migrations/003_nombre_registro.sql` › **Run** (13/11/2026: el perfil toma el nombre que se escribe al registrarse). Idempotente; solo cambia una función.
 4. **Table Editor**: deben aparecer `profiles`, `groups`, `group_members`, `songs`, `ai_usage`, `apple_tokens` y `apple_revocations`, todas con «RLS enabled».
 5. **Authentication › Sign In / Providers › Email**: activado. Para que llegue un **código** en vez de un enlace, en **Authentication › Emails › Templates** cambia *Magic Link* y *Confirm signup* para que incluyan `{{ .Token }}`, por ejemplo:
 
