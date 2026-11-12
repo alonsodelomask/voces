@@ -3,10 +3,15 @@
 import { createClient, type RealtimeChannel, type SupabaseClient, type User } from '@supabase/supabase-js';
 import type { Song } from '../model';
 
+import { nativeAppleSignIn } from '../native';
+
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+/** Servidor de Voces en Render (IA, borrar la cuenta y revocación de Apple). */
+const API = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '');
 
 export const cloudEnabled = !!(URL && KEY);
+export const apiEnabled = cloudEnabled && !!API;
 export const sb: SupabaseClient | null = cloudEnabled
   ? createClient(URL!, KEY!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   : null;
@@ -88,9 +93,74 @@ export async function signOut() {
   await need().auth.signOut();
 }
 export async function deleteAccount() {
-  const { error } = await need().rpc('delete_my_account');
-  if (error) fail(error);
+  if (API) {
+    // El servidor revoca antes el acceso de Apple (norma 5.1.1(v)) y borra la cuenta.
+    await api('DELETE', '/v1/account');
+  } else {
+    const { error } = await need().rpc('delete_my_account');
+    if (error) fail(error);
+  }
   await need().auth.signOut();
+}
+
+/** Llamada al servidor de Render con la sesión actual. Los errores traen un mensaje en español listo para enseñar. */
+async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = 150_000): Promise<T> {
+  if (!API) throw new Error('El servidor de Voces no está configurado en esta versión.');
+  const { data } = await need().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Inicia sesión primero.');
+  let res: Response;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    // Render en el plan gratuito se duerme: la primera petición puede tardar ~1 minuto.
+    throw new Error('No se ha podido conectar con el servidor. Comprueba la conexión y prueba otra vez.');
+  }
+  const json = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (!res.ok) throw new Error(json?.error?.message ?? `Error del servidor (${res.status}).`);
+  return json as T;
+}
+
+// ---------- Iniciar sesión con Apple (solo en la app de iPhone) ----------
+
+function hex(bytes: ArrayBuffer | Uint8Array) {
+  return Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Igual que en Baulify: el resumen SHA-256 del nonce va a Apple y el crudo a Supabase (`signInWithIdToken`). El nombre,
+ * que Apple solo da la primera vez, se guarda en el perfil. El código de autorización va al servidor para poder revocar
+ * el acceso al borrar la cuenta; si falla, se entra igual.
+ */
+export async function signInWithApple(): Promise<'signed-in' | 'cancelled'> {
+  const db = need();
+  const raw = hex(crypto.getRandomValues(new Uint8Array(32)));
+  const hashed = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)));
+  let cred;
+  try {
+    cred = await nativeAppleSignIn(hashed);
+  } catch (e) {
+    if ((e as Error).name === 'NativeCancelled') return 'cancelled';
+    throw new Error('No se ha podido iniciar sesión con Apple.');
+  }
+  const { data, error } = await db.auth.signInWithIdToken({ provider: 'apple', token: cred.identityToken, nonce: raw });
+  if (error) {
+    throw new Error(/audience|aud|client/i.test(error.message) ? 'Apple no está activado para esta app en el servidor.' : 'No se ha podido iniciar sesión. Prueba otra vez.');
+  }
+  currentUser = data.user ?? currentUser;
+  if (cred.fullName && !data.user?.user_metadata?.full_name) {
+    await db.auth.updateUser({ data: { full_name: cred.fullName } }).catch(() => {});
+    if (!(await getProfileName().catch(() => ''))) await setProfileName(cred.fullName).catch(() => {});
+  }
+  if (cred.authorizationCode && API) {
+    await api('POST', '/v1/apple/authorization', { authorizationCode: cred.authorizationCode }, 20_000).catch(() => {});
+  }
+  return 'signed-in';
 }
 
 export async function getProfileName(): Promise<string> {
@@ -219,18 +289,5 @@ export interface AiAnswer {
 }
 
 export async function askAI(prompt: string, songText: string): Promise<AiAnswer> {
-  const { data, error } = await need().functions.invoke('ai', { body: { prompt, song: songText } });
-  if (error) {
-    // El cuerpo del error trae el mensaje legible.
-    const ctx = (error as { context?: Response }).context;
-    let msg = error.message;
-    try {
-      const j = await ctx?.json();
-      if (j?.error) msg = j.error;
-    } catch {
-      /* nada */
-    }
-    throw new Error(msg);
-  }
-  return data as AiAnswer;
+  return api<AiAnswer>('POST', '/v1/ai', { prompt, song: songText });
 }

@@ -1,6 +1,7 @@
 import { uid, type Song } from '../model';
 import { confirmDialog, esc, form } from '../ui/dialog';
 import * as cloud from './cloud';
+import { appleSignInAvailable } from '../native';
 
 export interface GroupDeps {
   song: () => Song;
@@ -24,7 +25,7 @@ export async function openGroupPanel(deps: GroupDeps) {
 
   async function render() {
     if (!cloud.cloudEnabled) {
-      dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Esta instalación de Voces todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/NUBE.md</code>).</p>${close}`;
+      dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Esta instalación de Voces todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/BACKEND.md</code>).</p>${close}`;
       return wireClose();
     }
     if (!cloud.user()) return renderLogin();
@@ -236,7 +237,8 @@ export async function openGroupPanel(deps: GroupDeps) {
   function renderLogin() {
     dlg.innerHTML = `
       <h2>Entrar en Voces</h2>
-      <p class="intro">Con una cuenta puedes crear el grupo de tu banda, compartir canciones y usar la IA. Te mandamos un código por email: sin contraseñas.</p>
+      <p class="intro">Con una cuenta puedes crear el grupo de tu banda, compartir canciones y usar la IA.</p>
+      ${appleSignInAvailable ? '<button type="button" class="btn apple-btn" id="l-apple"> Iniciar sesión con Apple</button><p class="or">o con tu email (te mandamos un código)</p>' : '<p class="intro">Te mandamos un código por email: sin contraseñas.</p>'}
       <form class="form" id="l-form">
         <label class="field col">Email <input type="email" id="l-email" required autocomplete="email" placeholder="tu@email.com"/></label>
         <div id="l-code-row" hidden><label class="field col">Código de 6 dígitos <input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10"/></label></div>
@@ -245,6 +247,15 @@ export async function openGroupPanel(deps: GroupDeps) {
         <div class="row end"><button type="button" class="btn small" id="l-mode" style="margin-right:auto">Usar contraseña</button><button type="button" class="btn" data-close>Cerrar</button><button class="btn primary" id="l-go">Enviarme el código</button></div>
       </form>`;
     wireClose();
+    dlg.querySelector<HTMLButtonElement>('#l-apple')?.addEventListener('click', async () => {
+      const err = dlg.querySelector<HTMLElement>('#l-err')!;
+      err.textContent = '';
+      try {
+        if ((await cloud.signInWithApple()) === 'signed-in') await render();
+      } catch (ex) {
+        err.textContent = (ex as Error).message;
+      }
+    });
     let sent = false;
     let passMode = false;
     dlg.querySelector<HTMLButtonElement>('#l-mode')!.onclick = (e) => {

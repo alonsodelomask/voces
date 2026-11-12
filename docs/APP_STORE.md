@@ -1,131 +1,101 @@
-# Publicar Voces en la App Store (y en Google Play)
+# Voces en App Store Connect
 
-El proyecto ya incluye las apps nativas generadas con **Capacitor**:
+Respuestas preparadas el 12/11/2026 a partir del código:
 
-| Carpeta    | Qué es                                                        |
-| ---------- | ------------------------------------------------------------- |
-| `ios/`     | Proyecto de Xcode (iPhone/iPad)                               |
-| `android/` | Proyecto de Android Studio                                    |
-| `assets/`  | Icono (1024×1024) y pantalla de carga de los que salen todos los tamaños |
+- App: `movil/` con la web de `src/` dentro.
+- Servidor: `server/`.
+- Base de datos: `supabase/migrations/`.
 
-Ya está configurado:
+**Si cambia el código, revisa este documento** y la política (`public/privacidad.html`). La compilación y la subida se explican en [BACKEND.md](BACKEND.md), paso 6.
 
-- Identificador de la app: `io.github.alonsodelomask.voces` (en `capacitor.config.ts`; cámbialo antes de la primera subida si quieres otro, porque luego no se puede cambiar).
-- Permiso de micrófono con su texto explicativo (iOS `Info.plist` y Android `AndroidManifest.xml`).
-- `ITSAppUsesNonExemptEncryption = NO` (la app solo usa HTTPS, así que te ahorras la pregunta de exportación de cifrado).
-- Iconos y pantalla de carga para todos los tamaños.
-- Exportar MIDI, proyecto y vídeo abre el menú de compartir del móvil (Archivos, WhatsApp, AirDrop…).
-- Borrar la cuenta desde la propia app (Apple lo exige si hay cuentas).
-- Política de privacidad pública: <https://alonsodelomask.github.io/voces/privacidad.html>
+## 1. Privacidad de la app («App Privacy»)
 
----
+### Respuesta general
 
-## 1. Lo que necesitas
+- **¿Recoges datos de esta app?** Sí, pero solo de quien crea una cuenta: email, nombre, grupos y las canciones que comparte. Sin cuenta, todo se queda en el teléfono.
+- **Seguimiento (tracking): No.** No hay publicidad, IDFA ni SDK de analítica. No hace falta el aviso de App Tracking Transparency.
+- **Micrófono:** «Tararear» analiza el audio **en el teléfono** y solo guarda las notas resultantes. El audio no se envía ni se guarda, así que **no** se declara «Audio».
 
-1. **Cuenta de Apple Developer Program**: 99 €/año en <https://developer.apple.com/programs/>. Tarda de unas horas a un par de días en activarse.
-2. **Un Mac con Xcode** (gratis en la Mac App Store). Apple solo permite compilar y subir apps de iOS desde macOS. Si no tienes Mac:
-   - **Codemagic** (<https://codemagic.io>): conectas el repositorio de GitHub y compila en sus Macs (tiene minutos gratis al mes). Recomendado si no tienes Mac.
-   - Alquilar un Mac en la nube por horas (MacinCloud, AWS EC2 Mac…).
-   - Pedir prestado un Mac un par de horas: basta para la primera subida.
-3. *(Recomendado)* **La nube configurada** antes de compilar, para que los grupos y la IA funcionen en la app: sigue [`NUBE.md`](NUBE.md).
+### Tipo por tipo
 
-## 2. Compilar en el Mac
+| Tipo de Apple | ¿Se recoge? | ¿Vinculado? | Finalidad | Dónde está en el código |
+| --- | --- | --- | --- | --- |
+| Información de contacto › Correo electrónico | Sí | Sí | Funcionalidad de la app | Inicio de sesión (Supabase Auth) |
+| Información de contacto › Nombre | Sí | Sí | Funcionalidad de la app | `profiles.display_name`, y el nombre de Apple la primera vez |
+| Contenido del usuario › Otro contenido | Sí | Sí | Funcionalidad de la app | Canciones compartidas (`songs`) y texto enviado a la IA |
+| Identificadores › ID de usuario | Sí | Sí | Funcionalidad de la app | Id de la cuenta de Supabase |
+| Audio | **No** | — | — | Se analiza en el dispositivo (`src/hum/`) |
+| Uso, diagnóstico, ubicación, contactos, fotos | **No** | — | — | — |
 
-```bash
-git clone https://github.com/alonsodelomask/voces.git
-cd voces
-npm install
-# si tienes la nube: crea .env.local (ver .env.example)
-npm run ios          # compila la web, la copia a ios/ y abre Xcode
-```
+## 2. Ficha de la tienda
 
-En Xcode:
+| Campo | Propuesta |
+| --- | --- |
+| Nombre | **Voces** (si está cogido: «Voces – Armonías del grupo») |
+| Subtítulo (30) | Ve y ensaya las voces del grupo |
+| Categoría | Música (secundaria: Educación) |
+| Edad | 4+ |
+| URL de soporte | https://github.com/alonsodelomask/voces/issues |
+| URL de privacidad | https://voces-web.onrender.com/privacidad.html (o https://alonsodelomask.github.io/voces/privacidad.html) |
+| Palabras clave (100) | `coro,a cappella,armonía,voces,partitura,musicxml,midi,ensayo,tararear,acordes` |
+| Copyright | 2026 Alonso de Lomas |
 
-1. Selecciona el proyecto **App** → pestaña **Signing & Capabilities** → en *Team* elige tu cuenta de desarrollador.
-2. *(Opcional)* Si solo quieres iPhone (así no te piden capturas de iPad): pestaña **General** → *Supported Destinations* → quita iPad.
-3. En **General**: *Version* `1.0.0`, *Build* `1`. Súbelo a `2`, `3`… en cada subida nueva.
-4. Prueba en tu iPhone: conéctalo por cable, elígelo arriba y pulsa ▶.
+### Descripción
 
-## 3. Crear la app en App Store Connect
+> Voces convierte las partituras de tu grupo en líneas de colores que se mueven con la música, como un sintetizador: cada voz con su color, la nota exacta en cada momento y el acorde que suena.
+>
+> • Importa MusicXML o MIDI desde MuseScore, Flat, Sibelius o Finale. Respeta las repeticiones.
+> • Escucha cada voz sola o silénciala, y baja la velocidad para aprender tu parte.
+> • Compón tarareando: cantas y Voces lo convierte en notas.
+> • Edita notas y acordes en una rejilla, transpón y deshaz cuando quieras.
+> • El asistente revisa las voces, propone acordes y crea armonías por ti. Con la IA, pídele cambios en lenguaje normal.
+> • Crea el grupo de tu banda, invita con un código y trabajad todos sobre la misma canción, sincronizada al momento.
+> • Exporta a MIDI o graba un vídeo vertical para redes.
+>
+> Sin anuncios. Funciona sin cuenta y sin conexión. La cuenta solo hace falta para compartir con el grupo y usar la IA.
 
-En <https://appstoreconnect.apple.com> → **Apps → +**:
+### Capturas (iPhone de 6,9")
 
-- **Nombre**: «Voces» puede estar cogido; alternativas: «Voces – Armonías para grupos», «Voces: ensaya tus voces».
-- **Idioma principal**: Español (España).
-- **ID del paquete**: `io.github.alonsodelomask.voces`.
-- **SKU**: `voces-001`.
+En este orden:
 
-Ficha de la app:
+1. El visualizador con un acorde («Cada voz, su color»).
+2. El panel de voces con Solo y Silencio («Ensaya tu parte»).
+3. Tararear («Canta y se convierte en notas»).
+4. El editor con la fila de acordes («Edita notas y acordes»).
+5. El asistente («Armonías en un toque»).
+6. El grupo con el código de invitación («Todo el grupo, la misma canción»).
 
-- **Categoría**: Música (secundaria: Educación).
-- **Subtítulo** (30 caracteres): «Ve y ensaya las voces del grupo».
-- **Descripción** (sugerencia):
-  > Voces convierte las partituras de tu grupo en líneas de colores que se mueven al ritmo de la música, como un sintetizador. Importa MusicXML o MIDI (desde MuseScore, Flat, Sibelius…), escucha cada voz por separado, ralentiza para ensayar y compón tus propias voces: tarareando, en la rejilla o con ayuda del asistente. Crea el grupo de tu banda, comparte las canciones y trabajad todos sobre la misma versión.
-- **Palabras clave**: `coro,a cappella,armonía,voces,partitura,musicxml,midi,ensayo,banda,tararear`
-- **URL de soporte**: <https://github.com/alonsodelomask/voces/issues>
-- **URL de la política de privacidad**: <https://alonsodelomask.github.io/voces/privacidad.html>
-- **Clasificación por edades**: 4+ (no hay contenido sensible).
-- **Capturas**: como mínimo para iPhone de 6,9" (1320×2868). Haz capturas del visualizador, del editor, de «Tararear» y del panel del grupo en el simulador de Xcode (iPhone 16 Pro Max → ⌘S).
+## 3. Notas para el revisor (App Review Information)
 
-### Privacidad de la app (cuestionario «App Privacy»)
-
-Con la nube activada, responde:
-
-| Dato                                    | ¿Se recoge? | Vinculado al usuario | Rastreo | Para qué               |
-| --------------------------------------- | ----------- | -------------------- | ------- | ---------------------- |
-| Información de contacto → Email         | Sí          | Sí                   | No      | Funcionalidad de la app |
-| Información de contacto → Nombre        | Sí          | Sí                   | No      | Funcionalidad de la app |
-| Contenido del usuario → Otro (canciones) | Sí          | Sí                   | No      | Funcionalidad de la app |
-| Audio                                   | **No** (se analiza en el dispositivo y no se guarda) | — | — | — |
-
-Sin la nube: «No se recogen datos».
-
-## 4. Subir y enviar a revisión
-
-1. En Xcode: destino **Any iOS Device (arm64)** → menú **Product → Archive**.
-2. En el Organizer: **Distribute App → App Store Connect → Upload**.
-3. A los ~15 minutos aparece en App Store Connect → **TestFlight**. Invita a los del grupo como probadores internos o externos: es la mejor forma de probarla antes de publicarla.
-4. Cuando esté lista: en la versión 1.0, elige la build y pulsa **Enviar a revisión**.
-
-**Notas para el revisor** (importante): el revisor de Apple necesita poder entrar. Crea en Supabase un usuario de demostración con contraseña (*Authentication → Users → Add user → Create new user*, marcando *Auto Confirm User*) y pon en *App Review Information → Sign-in required*:
+Crea en Supabase un usuario de demostración con contraseña: *Authentication › Users › Add user › Create new user*, marcando *Auto Confirm User*. Ponlo en **Sign-in required**:
 
 ```
-Email: demo@... (el que crees)
-Password: (la que pongas)
-Todas las funciones principales funcionan sin cuenta. La cuenta solo es necesaria para
-grupos compartidos e IA. En la pantalla de inicio de sesión, pulsar «Usar contraseña».
-El micrófono se usa en Editar → Tararear para convertir el canto en notas.
+Email: (el de la cuenta de demostración)
+Password: (su contraseña)
+
+Voces works fully without an account: import a score (sample loaded on first launch), play it, edit it and hum.
+An account is only needed for shared groups and the AI assistant. On the sign-in screen tap «Usar contraseña»
+to use the demo account above. Sign in with Apple is also available.
+Microphone: Editar → Tararear converts singing into notes; audio is analysed on-device and never stored or sent.
+Account deletion: Menu (⋮) → Grupo y cuenta → Eliminar mi cuenta (also revokes Sign in with Apple).
 ```
 
-### Motivos de rechazo habituales y cómo están cubiertos
+## 4. Lista de comprobación de requisitos de Apple
 
-| Norma de Apple                                     | Estado                                                        |
-| -------------------------------------------------- | ------------------------------------------------------------- |
-| 4.2: funcionalidad mínima (no ser «una web metida en una app») | Funciona sin conexión, usa el micrófono y el menú de compartir del sistema, y tiene editor y grabación |
-| 5.1.1(v): borrar la cuenta desde la app            | Grupo y cuenta → Eliminar mi cuenta                           |
-| 5.1.1: no exigir cuenta para funciones que no la necesitan | Sin cuenta funciona todo salvo grupos e IA                 |
-| 2.1: la app no debe fallar en la revisión          | Probar en TestFlight antes; dejar la cuenta de demostración   |
-| Texto del permiso de micrófono                     | Explica para qué se usa                                       |
+| Norma | Estado |
+| --- | --- |
+| 4.2 Funcionalidad mínima (no ser «una web en una app») | Funciona sin conexión (la web va dentro de la app), usa el micrófono, el menú de compartir y «Iniciar sesión con Apple» nativos, y tiene editor, audio y grabación |
+| 4.8 Iniciar sesión con Apple | Ofrecido en el iPhone junto al código por email |
+| 5.1.1(v) Borrar la cuenta en la app | Grupo y cuenta › Eliminar mi cuenta → `DELETE /v1/account`, con revocación del token de Apple |
+| 5.1.1 No exigir cuenta sin motivo | Todo funciona sin cuenta salvo grupos e IA |
+| 5.1.2 Datos y privacidad | Política en `public/privacidad.html`; IA solo con texto de la canción |
+| Permiso del micrófono | Texto en `movil/app.json` (plugin `expo-audio`) que explica el uso |
+| Cifrado | `ITSAppUsesNonExemptEncryption = false` (solo HTTPS) |
+| 2.1 Que no falle en la revisión | Probar antes en TestFlight (BACKEND.md, paso 6) y dejar la cuenta de demostración |
 
-## 5. Actualizaciones
+## 5. Qué falta comprobar en un iPhone real (TestFlight)
 
-Cada vez que cambies algo:
-
-```bash
-npm run ios     # en el Mac
-```
-
-Sube el número de *Build*, haz **Archive → Upload** y envía la nueva versión. La web se actualiza aparte con `npm run deploy`.
-
----
-
-## Google Play (Android)
-
-Se puede hacer todo desde Windows:
-
-1. Instala **Android Studio** (<https://developer.android.com/studio>).
-2. `npm run android`: compila y abre el proyecto en Android Studio.
-3. Prueba en tu móvil (activa la depuración USB) o en el emulador.
-4. **Build → Generate Signed App Bundle** → crea una clave de firma (**guárdala bien: sin ella no podrás actualizar la app**) → genera el `.aab`.
-5. Cuenta de **Google Play Console**: 25 $ (pago único) en <https://play.google.com/console>. Crea la app, sube el `.aab` a «Prueba interna» para el grupo y después a «Producción».
-6. En *Seguridad de los datos* responde lo mismo que en la tabla de privacidad de Apple.
+- **Tararear** dentro de la app (micrófono en el WebView con iOS 15 o posterior).
+- **Sonido con el iPhone en silencio** (`playsInSilentMode`).
+- **Grabar vídeo** (MediaRecorder en iOS) y compartirlo.
+- **Rotación**: la app admite horizontal; si algo se ve mal, cambia `orientation` a `portrait` en `movil/app.json`.

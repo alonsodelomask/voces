@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Voces",
+    "slug": "voces",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "voces",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#14041a",
+    "ios": {
+      "bundleIdentifier": "io.github.alonsodelomask.voces",
+      "supportsTablet": false,
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleAllowMixedLocalizations": true
+      }
+    },
+    "android": {
+      "package": "io.github.alonsodelomask.voces",
+      "adaptiveIcon": {
+        "backgroundColor": "#2a0734",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#14041a",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 140
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Voces usa el micrófono para convertir en notas lo que cantas o tarareas. El audio no se guarda ni sale del teléfono.",
+          "recordAudioAndroid": true,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ],
+      "expo-apple-authentication",
+      "expo-sharing",
+      "expo-status-bar",
+      "expo-asset"
+    ],
+    "owner": "alonsodelomas"
+  }
+}

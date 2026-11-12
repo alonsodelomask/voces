@@ -1,4 +1,4 @@
-import { askAI, cloudEnabled, user, type AiAnswer } from '../cloud/cloud';
+import { apiEnabled, askAI, user, type AiAnswer } from '../cloud/cloud';
 import { makeVoice, VOICE_COLORS, sortNotes, type ChordMark, type Note, type Song } from '../model';
 import { insertMonophonic, isValidChord, nameToMidi, prettyAccidentals } from '../music';
 import { esc } from '../ui/dialog';
@@ -151,8 +151,8 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
 }
 
 function renderAI(box: HTMLElement, deps: AssistDeps, dlg: HTMLDialogElement) {
-  if (!cloudEnabled) {
-    box.innerHTML = `<p class="intro">La IA (Claude) funciona a través de la nube de Voces, que todavía no está configurada en esta instalación. Mientras tanto, las pestañas Revisar, Acordes y Crear voces funcionan sin conexión.</p>`;
+  if (!apiEnabled) {
+    box.innerHTML = `<p class="intro">La IA (Claude) funciona a través del servidor de Voces, que todavía no está configurado en esta instalación. Mientras tanto, las pestañas Revisar, Acordes y Crear voces funcionan sin conexión.</p>`;
     return;
   }
   if (!user()) {

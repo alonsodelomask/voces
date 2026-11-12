@@ -1,7 +1,7 @@
 # Voces
 
 App para que un grupo vocal vea, escuche, componga y ensaye sus voces como líneas de neón de sintetizador.
-Funciona en el navegador, se instala como app (PWA) y tiene versión nativa para iOS y Android (Capacitor).
+Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Android con Expo (la misma web dentro, compilada con EAS como Baulify).
 
 **Web:** <https://alonsodelomask.github.io/voces/>
 
@@ -24,12 +24,13 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # genera dist/
 npm run deploy     # compila y publica en GitHub Pages
-npm run ios        # (en un Mac) compila y abre Xcode
-npm run android    # compila y abre Android Studio
+npm run build:movil  # mete la web en la app (movil/)
+cd server && npm test  # pruebas del servidor
 ```
 
-- Nube (cuentas, grupos, IA): [docs/NUBE.md](docs/NUBE.md)
-- Publicar en App Store / Google Play: [docs/APP_STORE.md](docs/APP_STORE.md)
+- Servidor, nube y publicación (Supabase, Render, EAS): [docs/BACKEND.md](docs/BACKEND.md)
+- Ficha de la App Store: [docs/APP_STORE.md](docs/APP_STORE.md)
+- Reglas para agentes: [AGENTS.md](AGENTS.md)
 - Política de privacidad: [public/privacidad.html](public/privacidad.html)
 
 ## Estructura
@@ -42,6 +43,10 @@ npm run android    # compila y abre Android Studio
 | `src/editor/pianoroll.ts` | Editor de notas y acordes |
 | `src/hum/` | Detección de tono y conversión del tarareo a notas |
 | `src/ai/` | Asistente por reglas y panel de IA |
-| `src/cloud/` | Cliente de Supabase: cuentas, grupos y sincronización |
-| `supabase/` | Esquema SQL (con RLS) y función de servidor de la IA |
-| `ios/`, `android/`, `assets/` | Apps nativas, iconos y pantallas de carga |
+| `src/cloud/` | Cliente de Supabase y del servidor: cuentas, grupos, sincronización, IA |
+| `src/native.ts` | Puente con la app nativa (compartir archivos, Apple) |
+| `server/` | API en Render: IA con Claude, borrar la cuenta, revocación de Apple |
+| `supabase/migrations/` | Esquema SQL con RLS |
+| `movil/` | App Expo (iOS/Android) que lleva la web dentro |
+| `render.yaml` | Blueprint de Render (API y web) |
+| `assets/` | Icono y pantalla de carga originales |

@@ -214,3 +214,11 @@ kbd { background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px; f
   .dlg .row { flex-wrap: wrap; }
   .hum-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- Iniciar sesión con Apple (solo en la app de iPhone) ---- */
+.apple-btn { width: 100%; justify-content: center; background: #fff; color: #000; border-color: #fff; font-weight: 600; padding: 10px 12px; font-size: 15px; }
+.apple-btn:hover { background: #eee; }
+.dlg .or { text-align: center; color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+/* Dentro de la app nativa: sin selección de texto accidental ni rebote. */
+.native body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.native input, .native textarea { -webkit-user-select: text; user-select: text; }

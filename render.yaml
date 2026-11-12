@@ -1,0 +1,95 @@
+# Blueprint de Render para Voces (servidor en la UE, Fráncfort), igual que el de Baulify.
+# NO contiene claves: las que llevan «sync: false» se pegan en el panel de Render al crear los servicios
+# (o después en Environment). Guía paso a paso: docs/BACKEND.md.
+services:
+  # API: IA de arreglos con Claude, borrar la cuenta y revocación de «Iniciar sesión con Apple».
+  - type: web
+    name: voces-api
+    runtime: node
+    region: frankfurt
+    # Gratuito para empezar: se duerme tras 15 minutos sin uso y la primera petición tarda ~1 minuto en despertarlo.
+    # Cuando el grupo lo use a diario, pásalo a Starter (7 $/mes) en el panel o cambiando esta línea a «starter».
+    plan: free
+    rootDir: server
+    # Node 24 ejecuta TypeScript directamente: no hay paso de compilación.
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/index.ts
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: VOCES_DATA
+        value: supabase
+      # «real» usa Claude si hay ANTHROPIC_API_KEY; «simulated» responde con datos ficticios sin gastar nada.
+      - key: VOCES_AI
+        value: real
+      # Peticiones a la IA por persona y día.
+      - key: VOCES_AI_DAILY_LIMIT
+        value: "40"
+      # Webs que pueden llamar a la API (la app de iPhone/Android ya está permitida en el código).
+      - key: VOCES_CORS_ORIGINS
+        value: https://voces-web.onrender.com,https://alonsodelomask.github.io
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Opcional: sólo si el proyecto usa todavía el secreto JWT heredado (HS256).
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Revocar el token de «Iniciar sesión con Apple» al borrar la cuenta (norma 5.1.1(v)). Sin las cuatro, la
+      # revocación queda desactivada y el borrado funciona igual. Cómo conseguirlas: docs/BACKEND.md, paso 7.
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      # Contenido entero del archivo .p8 (con las líneas BEGIN y END).
+      - key: APPLE_PRIVATE_KEY
+        sync: false
+      # 32 bytes al azar en base64, generados en tu ordenador (nunca en un chat).
+      - key: APPLE_TOKEN_ENCRYPTION_KEY
+        sync: false
+      # El bundle de la app (el inicio de sesión es nativo). Sólo cambia si cambia el identificador.
+      - key: APPLE_CLIENT_ID
+        value: io.github.alonsodelomask.voces
+
+  # La web de Voces (y la política de privacidad que pide Apple). Gratuita y en la CDN global de Render.
+  - type: web
+    name: voces-web
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    buildFilter:
+      paths:
+        - src/**
+        - public/**
+        - index.html
+        - package.json
+        - package-lock.json
+        - vite.config.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      # Públicas por diseño (van dentro de la web): la URL y la clave «publishable» de Supabase y la URL de voces-api.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_API_URL
+        sync: false
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      # El micrófono sólo para la propia web (Tararear).
+      - path: /*
+        name: Permissions-Policy
+        value: microphone=(self), camera=(), geolocation=()

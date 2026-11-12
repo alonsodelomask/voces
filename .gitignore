@@ -7,3 +7,5 @@ samples/
 # Configuración local
 .env.local
 .env
+dist-movil
+movil/src/generated/

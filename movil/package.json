@@ -1,0 +1,30 @@
+{
+  "name": "voces-movil",
+  "main": "index.ts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "web": "cd .. && npm run build:movil",
+    "start": "expo start",
+    "typecheck": "tsc --noEmit",
+    "eas-build-post-install": "cd .. && npm ci && node scripts/build-movil.mjs"
+  },
+  "dependencies": {
+    "expo": "57.0.32",
+    "expo-apple-authentication": "57.0.2",
+    "expo-asset": "57.0.21",
+    "expo-audio": "57.0.5",
+    "expo-file-system": "57.0.7",
+    "expo-sharing": "57.0.25",
+    "expo-splash-screen": "57.0.11",
+    "expo-status-bar": "57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "6.0.3"
+  }
+}

@@ -8,29 +8,18 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist --nojekyll -m \"Publicar\"",
-    "cap:sync": "npm run build && cap sync",
-    "ios": "npm run build && cap sync ios && cap open ios",
-    "android": "npm run build && cap sync android && cap open android",
-    "icons": "capacitor-assets generate --ios --android --iconBackgroundColor #2a0734 --splashBackgroundColor #14041a"
+    "build:movil": "tsc --noEmit && node scripts/build-movil.mjs"
   },
   "dependencies": {
-    "@capacitor/core": "^8.6.0",
-    "@capacitor/filesystem": "^8.1.5",
-    "@capacitor/share": "^8.0.3",
-    "@capacitor/splash-screen": "^8.0.2",
-    "@capacitor/status-bar": "^8.0.4",
-    "@supabase/supabase-js": "^2.119.0",
-    "@tonejs/midi": "^2.0.28",
-    "fflate": "^0.8.3",
-    "tonal": "^6.5.1"
+    "@supabase/supabase-js": "2.119.0",
+    "@tonejs/midi": "2.0.28",
+    "fflate": "0.8.3",
+    "tonal": "6.5.1"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.6.0",
-    "@capacitor/assets": "^4.0.0",
-    "@capacitor/cli": "^8.6.0",
-    "@capacitor/ios": "^8.6.0",
-    "gh-pages": "^6.3.0",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.8"
+    "gh-pages": "6.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vite-plugin-singlefile": "2.3.4"
   }
 }
