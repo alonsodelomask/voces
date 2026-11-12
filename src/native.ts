@@ -10,6 +10,7 @@ declare global {
     ReactNativeWebView?: { postMessage(message: string): void };
     VocesNative?: NativeInfo;
     __vocesNativeReply?: (reply: Reply) => void;
+    __vocesOpenFile?: (file: { name: string; base64: string }) => void;
   }
 }
 
@@ -94,6 +95,21 @@ export function nativeAppleSignIn(hashedNonce: string): Promise<AppleCredential>
 export function openExternal(url: string) {
   if (isNative) void callNative('open-url', { url }, 10_000).catch(() => {});
   else window.open(url, '_blank', 'noopener');
+}
+
+/**
+ * Partituras que llegan de otra app («Abrir con… Voces» desde WhatsApp, Archivos, Mail…). Al registrarse, la web avisa
+ * a la app de que ya escucha y la app le entrega las que estuvieran esperando.
+ */
+export function onNativeFile(handler: (file: File) => void) {
+  if (!isNative) return;
+  window.__vocesOpenFile = ({ name, base64 }) => {
+    const bin = atob(base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    handler(new File([bytes], name));
+  };
+  void callNative('ready', {}, 10_000).catch(() => {});
 }
 
 /** Ajustes al arrancar dentro de la app nativa. */

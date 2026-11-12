@@ -55,6 +55,8 @@ export class Visualizer {
   opts: VizOptions = { zoom: 1, showTitle: true, showChord: true, showNames: true, watermark: '' };
   /** Si se fija, el lienzo no se adapta a la ventana (para grabar en 1080x1920). */
   fixedSize: { w: number; h: number } | null = null;
+  /** Tramo de ensayo: se marcan su principio y su final. */
+  practice: { start: number; end: number } | null = null;
   private range = { min: 48, max: 72 };
 
   constructor(public canvas: HTMLCanvasElement) {
@@ -167,6 +169,23 @@ export class Visualizer {
     for (const v of visible) {
       const dim = v.muted || (anySolo && !v.solo);
       this.drawVoice(v, X, Y, t0, t1, u, dim);
+    }
+
+    // Tramo de ensayo.
+    if (this.practice) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(61,255,143,0.55)';
+      ctx.setLineDash([6 * u, 6 * u]);
+      ctx.lineWidth = 1.5 * u;
+      for (const t of [this.practice.start, this.practice.end]) {
+        if (t < t0 || t > t1) continue;
+        const x = Math.round(X(t)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, lineTop);
+        ctx.lineTo(x, lineBot);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Cabezal.

@@ -6,12 +6,12 @@ import { download, exportMidi, exportProject, safeName } from './export';
 import { ACCEPTED, importFile } from './import';
 import { makeSong, makeVoice, VOICE_COLORS, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
-import { form } from './ui/dialog';
+import { confirmDialog, form } from './ui/dialog';
 import { openHumPanel } from './hum/humPanel';
 import { openAssistant } from './ai/assistantPanel';
 import { openGroupPanel } from './cloud/groupPanel';
 import * as cloud from './cloud/cloud';
-import { initNative, isNative } from './native';
+import { initNative, isNative, onNativeFile } from './native';
 import { deleteSong, getLast, loadSongs, saveSong, setLast } from './storage';
 import { Visualizer } from './viz/visualizer';
 
@@ -30,6 +30,7 @@ let saveTimer: number | undefined;
 function setSong(s: Song, save = false) {
   engine.pause();
   song = s;
+  if (engine.range) setRange(null);
   undoStack.length = 0;
   redoStack.length = 0;
   engine.setSong(s);
@@ -39,7 +40,7 @@ function setSong(s: Song, save = false) {
   renderPanel();
   renderEditorControls();
   updateDuration();
-  $('#empty').hidden = s.voices.some((v) => v.notes.length);
+  updateEmptyStates();
   if (save) persist();
   watchCurrent();
 }
@@ -105,6 +106,7 @@ async function onRemoteChange(ev: { type: string; id: string; updated_by?: strin
 
 /** Llamar tras cualquier edición de notas. */
 function changed() {
+  updateEmptyStates();
   if (song.chordsAuto) song.chords = computeChords(song);
   viz.updateRange();
   updateDuration();
@@ -149,6 +151,7 @@ function redo() {
 }
 /** Refresca todo tras un cambio que no es de notas sueltas (deshacer, transponer, IA…). */
 function refreshAfterEdit(recomputeChords = true) {
+  updateEmptyStates();
   if (recomputeChords && song.chordsAuto) song.chords = computeChords(song);
   viz.updateRange();
   updateDuration();
@@ -163,6 +166,14 @@ function edit(fn: () => void, recomputeChords = true) {
   checkpoint();
   fn();
   refreshAfterEdit(recomputeChords);
+}
+
+/** Ayudas cuando la canción está vacía (visualizador y editor). */
+function updateEmptyStates() {
+  const hasNotes = song.voices.some((v) => v.notes.length);
+  $('#empty').hidden = hasNotes;
+  $('#roll-empty').hidden = hasNotes || view !== 'edit';
+  $('#roll-empty-voice').textContent = roll.activeVoice?.name ?? 'la voz elegida';
 }
 
 function updateDuration() {
@@ -234,13 +245,13 @@ function voiceRow(v: Voice): HTMLElement {
       viz.updateRange();
     }
     if (k === 'x') {
-      if (!confirm(`¿Eliminar la voz "${v.name}" y sus ${v.notes.length} notas?`)) return;
       checkpoint();
       song.voices = song.voices.filter((x) => x !== v);
       engine.setSong(song);
       changed();
       renderPanel();
       renderEditorControls();
+      toast(`Voz «${v.name}» eliminada.`, false, { label: 'Deshacer', run: undo });
       return;
     }
     engine.updateMix();
@@ -480,6 +491,7 @@ function switchView(v: 'viz' | 'edit') {
     requestAnimationFrame(() => roll.centerOnNotes());
   }
   renderPanel();
+  updateEmptyStates();
 }
 document.querySelectorAll<HTMLElement>('.tab').forEach((t) => (t.onclick = () => switchView(t.dataset.view as 'viz' | 'edit')));
 
@@ -495,8 +507,72 @@ seek.addEventListener('change', () => (seeking = false));
 
 async function togglePlay() {
   if (engine.playing) engine.pause();
-  else await engine.play();
+  else await engine.play(undefined, undefined, true);
 }
+
+// ---------------- Ensayo: tramo, metrónomo y cuenta atrás ----------------
+
+const PRACTICE_KEY = 'voces.ensayo';
+try {
+  const p = JSON.parse(localStorage.getItem(PRACTICE_KEY) ?? '{}');
+  engine.metronome = !!p.metronome;
+  engine.countIn = !!p.countIn;
+} catch {
+  /* nada */
+}
+function barLength() {
+  return (60 / song.bpm) * (song.beatsPerBar || 4);
+}
+function setRange(r: { start: number; end: number } | null) {
+  engine.range = r;
+  viz.practice = r;
+  roll.range = r;
+  $('#btn-practice').classList.toggle('on', !!r || engine.metronome || engine.countIn);
+}
+async function openPractice() {
+  if (engine.duration < 0.1) return toast('Primero añade notas a la canción (impórtala, tararea o dibújalas en el editor).');
+  const bar = barLength();
+  const total = Math.max(1, Math.ceil(engine.duration / bar - 1e-6));
+  const cur = Math.min(total, Math.floor(engine.time / bar) + 1);
+  const r = engine.range;
+  const res = await form({
+    title: 'Ensayo',
+    intro: 'Repite un trozo hasta que salga, con metrónomo si quieres. Combínalo con la velocidad (0.75×) y con Solo/Silencio en las voces.',
+    fields: [
+      { name: 'tramo', label: 'Qué tocar', type: 'select', value: r ? 'bars' : 'all', options: [{ value: 'all', label: 'Toda la canción' }, { value: 'bars', label: 'Solo unos compases (en bucle)' }] },
+      { name: 'desde', label: 'Desde el compás', type: 'number', min: 1, max: total, value: r ? Math.round(r.start / bar) + 1 : cur },
+      { name: 'hasta', label: 'Hasta el compás (incluido)', type: 'number', min: 1, max: total, value: r ? Math.round(r.end / bar) : Math.min(total, cur + 3) },
+      { name: 'loop', label: 'Repetir la canción entera al acabar', type: 'checkbox', value: engine.loop },
+      { name: 'metronome', label: `Metrónomo (${song.bpm} BPM)`, type: 'checkbox', value: engine.metronome },
+      { name: 'countIn', label: 'Cuenta atrás de un compás antes de empezar', type: 'checkbox', value: engine.countIn },
+    ],
+    okLabel: 'Aplicar',
+  });
+  if (!res) return;
+  engine.loop = res.checks.loop;
+  $<HTMLInputElement>('#opt-loop').checked = engine.loop;
+  engine.metronome = res.checks.metronome;
+  engine.countIn = res.checks.countIn;
+  try {
+    localStorage.setItem(PRACTICE_KEY, JSON.stringify({ metronome: engine.metronome, countIn: engine.countIn }));
+  } catch {
+    /* nada */
+  }
+  if (res.values.tramo === 'bars') {
+    let a = Math.max(1, Math.min(total, parseInt(res.values.desde) || 1));
+    let b = Math.max(1, Math.min(total, parseInt(res.values.hasta) || a));
+    if (b < a) [a, b] = [b, a];
+    const start = (a - 1) * bar;
+    const end = Math.min(engine.duration, b * bar);
+    if (end - start < 0.2) return toast('Ese tramo no tiene música. Elige otros compases.', true);
+    setRange({ start, end });
+    engine.seek(engine.range!.start);
+    toast(`Ensayando los compases ${a}–${b} en bucle. Dale a ▶.`);
+  } else {
+    setRange(null);
+  }
+}
+$('#btn-practice').onclick = openPractice;
 $('#btn-play').onclick = togglePlay;
 $('#btn-rewind').onclick = () => engine.seek(0);
 $<HTMLSelectElement>('#rate').onchange = (e) => engine.setRate(parseFloat((e.target as HTMLSelectElement).value));
@@ -517,27 +593,57 @@ $<HTMLInputElement>('#vzoom').oninput = (e) => (viz.opts.zoom = parseFloat((e.ta
   let startT = 0;
   let wasPlaying = false;
   let down = false;
+  const fingers = new Map<number, number>();
+  let pinch: { dist: number; zoom: number } | null = null;
+  const spread = () => {
+    const [a, b] = [...fingers.values()];
+    return Math.max(20, Math.abs(a - b));
+  };
   c.addEventListener('pointerdown', (e) => {
+    fingers.set(e.pointerId, e.clientX);
+    c.setPointerCapture(e.pointerId);
+    if (fingers.size === 2) {
+      // Dos dedos: pellizco para el zoom (se cancela el arrastre del primero).
+      down = false;
+      pinch = { dist: spread(), zoom: viz.opts.zoom };
+      return;
+    }
     down = true;
     startX = e.clientX;
     startT = engine.time;
     wasPlaying = engine.playing;
-    c.setPointerCapture(e.pointerId);
   });
   c.addEventListener('pointermove', (e) => {
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, e.clientX);
+    if (pinch && fingers.size >= 2) {
+      viz.opts.zoom = Math.max(0.4, Math.min(2.5, (pinch.zoom * spread()) / pinch.dist));
+      $<HTMLInputElement>('#vzoom').value = String(viz.opts.zoom);
+      return;
+    }
     if (!down) return;
     const dx = e.clientX - startX;
-    if (Math.abs(dx) < 4) return;
+    if (Math.abs(dx) < (e.pointerType === 'touch' ? 10 : 4)) return;
     if (engine.playing) engine.pause();
     const pps = Math.min(c.clientWidth, c.clientHeight) * 0.32 * viz.opts.zoom;
     engine.seek(Math.max(0, startT - dx / pps));
   });
-  c.addEventListener('pointerup', (e) => {
+  const end = (e: PointerEvent) => {
+    fingers.delete(e.pointerId);
+    if (pinch) {
+      if (fingers.size === 0) pinch = null;
+      return;
+    }
     if (!down) return;
     down = false;
-    const tap = Math.abs(e.clientX - startX) < 4;
+    const tap = Math.abs(e.clientX - startX) < (e.pointerType === 'touch' ? 10 : 4);
     if (tap) togglePlay();
     else if (wasPlaying) engine.play();
+  };
+  c.addEventListener('pointerup', end);
+  c.addEventListener('pointercancel', (e) => {
+    fingers.delete(e.pointerId);
+    down = false;
+    if (fingers.size === 0) pinch = null;
   });
   c.addEventListener(
     'wheel',
@@ -582,7 +688,8 @@ engine.onEnded = () => {};
 // ---------------- Importar ----------------
 
 const fileInput = $<HTMLInputElement>('#file');
-fileInput.accept = ACCEPTED;
+// En el iPhone, filtrar por extensiones raras (.musicxml, .mxl) deja los archivos en gris: allí no se filtra.
+fileInput.accept = isNative ? '' : ACCEPTED;
 $('#btn-open').onclick = () => fileInput.click();
 fileInput.onchange = async () => {
   const f = fileInput.files?.[0];
@@ -666,6 +773,9 @@ menu.addEventListener('click', (e) => {
     case 'help':
       $<HTMLDialogElement>('#dlg-help').showModal();
       break;
+    case 'welcome':
+      showWelcome();
+      break;
   }
 });
 
@@ -700,8 +810,8 @@ function openLibrary() {
       $<HTMLDialogElement>('#dlg-library').close();
       setSong(s);
     };
-    item.querySelector('button')!.onclick = () => {
-      if (!confirm(`¿Eliminar "${s.title}" de este dispositivo?`)) return;
+    item.querySelector('button')!.onclick = async () => {
+      if (!(await confirmDialog('Eliminar canción', `¿Eliminar «${s.title}» de este dispositivo? No se puede deshacer.${s.groupId ? ' En el grupo sigue estando.' : ''}`, 'Eliminar'))) return;
       deleteSong(s.id);
       openLibrary();
     };
@@ -773,13 +883,24 @@ async function recordVideo() {
 // ---------------- Avisos ----------------
 
 let toastTimer: number | undefined;
-function toast(msg: string, error = false) {
+/** Aviso breve abajo. Con `action`, lleva un botón (p. ej. «Deshacer») y dura un poco más. */
+function toast(msg: string, error = false, action?: { label: string; run: () => void }) {
   const t = $('#toast');
   t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.onclick = () => {
+      t.hidden = true;
+      action.run();
+    };
+    t.appendChild(b);
+  }
   t.classList.toggle('error', error);
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (t.hidden = true), error ? 7000 : 3500);
+  toastTimer = window.setTimeout(() => (t.hidden = true), error ? 7000 : action ? 6000 : 3500);
 }
 
 // ---------------- Bucle de dibujo ----------------
@@ -808,6 +929,60 @@ window.addEventListener('beforeunload', () => {
   if (dirty) persist();
 });
 
+// ---------------- Pantalla vacía y bienvenida ----------------
+
+$('#empty').addEventListener('click', (e) => {
+  const k = (e.target as HTMLElement).closest<HTMLElement>('[data-empty]')?.dataset.empty;
+  if (k === 'import') fileInput.click();
+  if (k === 'edit') switchView('edit');
+  if (k === 'hum') {
+    switchView('edit');
+    $('#ed-hum').click();
+  }
+});
+
+const WELCOME_KEY = 'voces.bienvenida.v1';
+function showWelcome() {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'dlg';
+  dlg.innerHTML = `
+    <h2>¡Bienvenido a Voces!</h2>
+    <p class="intro">Mira, escucha y ensaya cada voz de tu grupo como líneas de colores. ¿Por dónde empiezas?</p>
+    <div class="welcome-steps">
+      <button class="welcome-step" data-w="import"><span class="ico">📂</span><span><b>Abrir una partitura</b><small>MusicXML o MIDI, desde MuseScore, Flat, Sibelius… o te la pasan por WhatsApp.</small></span></button>
+      <button class="welcome-step" data-w="demo"><span class="ico">🎧</span><span><b>Escuchar el ejemplo</b><small>Una canción a 5 voces. Toca la pantalla para reproducir.</small></span></button>
+      <button class="welcome-step" data-w="hum"><span class="ico">🎤</span><span><b>Componer tarareando</b><small>Canta una melodía y se convierte en notas. Luego el asistente le pone voces.</small></span></button>
+      <button class="welcome-step" data-w="group"><span class="ico">👥</span><span><b>Crear el grupo de tu banda</b><small>Comparte las canciones y trabajad todos sobre la misma versión.</small></span></button>
+    </div>
+    <p class="legal">Puedes volver a verlo en Menú › Primeros pasos.</p>
+    <div class="row end"><button class="btn" data-w="close">Empezar</button></div>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.addEventListener('click', (e) => {
+    const k = (e.target as HTMLElement).closest<HTMLElement>('[data-w]')?.dataset.w;
+    if (!k) return;
+    dlg.close();
+    if (k === 'import') fileInput.click();
+    if (k === 'demo') {
+      if (!song.voices.some((v) => v.notes.length)) setSong(demoSong());
+      switchView('viz');
+      void togglePlay();
+    }
+    if (k === 'hum') {
+      setSong(makeSong({ title: 'Mi melodía', bpm: 90, voices: [makeVoice('Melodía', 0)] }), true);
+      switchView('edit');
+      $('#ed-hum').click();
+    }
+    if (k === 'group') openGroups();
+  });
+  dlg.showModal();
+  try {
+    localStorage.setItem(WELCOME_KEY, '1');
+  } catch {
+    /* nada */
+  }
+}
+
 // ---------------- Inicio ----------------
 
 cloud.initAuth().then(() => {
@@ -825,7 +1000,15 @@ const last = getLast();
 setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
 requestAnimationFrame(loop);
 
+// La primera vez (sin canciones guardadas), la bienvenida.
+try {
+  if (!saved.length && !localStorage.getItem(WELCOME_KEY) && !new URLSearchParams(location.search).has('captura')) showWelcome();
+} catch {
+  /* nada */
+}
+
 initNative();
+onNativeFile((f) => void openFile(f));
 if ('serviceWorker' in navigator && import.meta.env.PROD && !isNative) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }

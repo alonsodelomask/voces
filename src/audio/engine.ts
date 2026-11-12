@@ -35,6 +35,13 @@ export class AudioEngine {
   rate = 1;
   preset: Preset = 'synth';
   loop = false;
+  /** Tramo de ensayo: se repite en bucle de `start` a `end` (segundos de canción). */
+  range: { start: number; end: number } | null = null;
+  /** Metrónomo mientras suena. */
+  metronome = false;
+  /** Cuenta atrás de un compás al dar a reproducir. */
+  countIn = false;
+  private nextClick = 0;
   private startCtx = 0;
   private startSong = 0;
   private pausedAt = 0;
@@ -163,14 +170,32 @@ export class AudioEngine {
     }
   }
 
-  async play(from?: number, delay = 0.06) {
+  private get spb() {
+    return 60 / (this.song?.bpm || 100);
+  }
+  private get bpb() {
+    return this.song?.beatsPerBar || 4;
+  }
+
+  /** `withCountIn`: al darle la persona a reproducir (no en los reinicios internos del bucle). */
+  async play(from?: number, delay = 0.06, withCountIn = false) {
     if (!this.song) return;
     const ctx = this.ensure();
     if (ctx.state !== 'running') await ctx.resume();
     this.stopAll();
-    const start = from ?? this.pausedAt;
-    this.startSong = !this.holdOpen && start >= this.duration - 0.01 ? 0 : start;
+    let start = from ?? this.pausedAt;
+    if (!this.holdOpen && start >= this.duration - 0.01) start = 0;
+    // Con un tramo de ensayo, si se está fuera de él se empieza por su principio.
+    if (this.range && (start < this.range.start - 0.01 || start >= this.range.end - 0.01)) start = this.range.start;
+    this.startSong = start;
+    if (withCountIn && this.countIn) {
+      const beats = this.bpb;
+      const lead = (beats * this.spb) / this.rate;
+      delay += lead;
+      for (let k = 0; k < beats; k++) this.click(ctx.currentTime + delay - lead + (k * this.spb) / this.rate, k === 0);
+    }
     this.startCtx = ctx.currentTime + delay;
+    this.nextClick = Math.ceil((this.startSong - 1e-6) / this.spb) * this.spb;
     this.playing = true;
     this.updateMix();
     for (const v of this.song.voices) {
@@ -218,24 +243,30 @@ export class AudioEngine {
     const ctx = this.ctx;
     const horizon = ctx.currentTime + 0.3;
     const toCtx = (songT: number) => this.startCtx + (songT - this.startSong) / this.rate;
+    const end = this.range ? this.range.end : this.holdOpen ? Infinity : this.duration;
     for (const v of this.song.voices) {
       let i = this.nextIdx.get(v.id) ?? 0;
       while (i < v.notes.length) {
         const n = v.notes[i];
-        let when = toCtx(n.start);
-        if (when > horizon) break;
-        let dur = n.dur / this.rate;
-        if (when < this.startCtx) {
-          // Nota que ya estaba sonando al empezar: suena el resto.
-          dur -= this.startCtx - when;
-          when = this.startCtx;
-        }
-        if (dur > 0.01) this.voiceNote(v, n.midi, when, dur);
+        if (toCtx(n.start) > horizon || n.start >= end - 1e-6) break;
+        // Lo que suena de la nota: desde donde se empezó (si ya sonaba) hasta el final del tramo.
+        const s0 = Math.max(n.start, this.startSong);
+        const e0 = Math.min(n.start + n.dur, end);
+        if (e0 - s0 > 0.01) this.voiceNote(v, n.midi, toCtx(s0), (e0 - s0) / this.rate);
         i++;
       }
       this.nextIdx.set(v.id, i);
     }
+    // Metrónomo (si está apagado, el contador avanza igual para poder encenderlo sonando).
+    while (toCtx(this.nextClick) < horizon && this.nextClick < end) {
+      if (this.metronome) this.click(toCtx(this.nextClick), Math.round(this.nextClick / this.spb) % this.bpb === 0);
+      this.nextClick += this.spb;
+    }
     this.active = this.active.filter((p) => p.end > ctx.currentTime);
+    if (this.range && this.time >= this.range.end) {
+      void this.play(this.range.start, 0.03);
+      return;
+    }
     if (!this.holdOpen && this.time >= this.duration + 0.4) {
       if (this.loop) {
         this.play(0);

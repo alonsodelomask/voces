@@ -32,6 +32,34 @@ export default function App() {
   const web = useRef<WebView>(null);
   // null = aún comprobando si el iPhone ofrece «Iniciar sesión con Apple» (la web se carga después).
   const [apple, setApple] = useState<boolean | null>(Platform.OS === 'ios' ? null : false);
+  // Partituras abiertas desde otra app («Abrir con… Voces»): esperan a que la web esté lista.
+  const webReady = useRef(false);
+  const pendingFiles = useRef<{ name: string; base64: string }[]>([]);
+
+  function deliverFiles() {
+    if (!webReady.current) return;
+    for (const f of pendingFiles.current.splice(0)) {
+      web.current?.injectJavaScript(`window.__vocesOpenFile && window.__vocesOpenFile(${JSON.stringify(f)}); true;`);
+    }
+  }
+
+  async function receiveUrl(url: string | null) {
+    if (!url || !/^(file|content):/i.test(url)) return;
+    try {
+      const name = decodeURIComponent(url.split(/[/?#]/).filter(Boolean).pop() ?? 'partitura');
+      const base64 = await new File(url).base64();
+      pendingFiles.current.push({ name, base64 });
+      deliverFiles();
+    } catch {
+      // Archivo ilegible: la web no recibe nada (el sistema ya ha mostrado la app).
+    }
+  }
+
+  useEffect(() => {
+    Linking.getInitialURL().then(receiveUrl).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => void receiveUrl(url));
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     // Que el sintetizador suene aunque el iPhone esté en silencio, y que el micrófono pueda grabar (Tararear).
@@ -51,6 +79,11 @@ export default function App() {
 
   async function handle(request: Request): Promise<unknown> {
     switch (request.type) {
+      case 'ready':
+        // La web ya escucha: se le entregan las partituras que llegaron antes.
+        webReady.current = true;
+        deliverFiles();
+        return null;
       case 'save': {
         const name = String(request.name ?? 'voces').replace(/[\\/:*?"<>|]+/g, '').slice(0, 120) || 'voces';
         const file = new File(Paths.cache, name);

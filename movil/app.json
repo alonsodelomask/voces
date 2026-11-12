@@ -14,7 +14,55 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "CFBundleAllowMixedLocalizations": true
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Partitura",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "org.musicxml.musicxml",
+              "org.musicxml.mxl",
+              "public.midi-audio",
+              "public.xml"
+            ]
+          }
+        ],
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "org.musicxml.musicxml",
+            "UTTypeDescription": "MusicXML",
+            "UTTypeConformsTo": [
+              "public.xml",
+              "public.data"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "musicxml"
+              ],
+              "public.mime-type": [
+                "application/vnd.recordare.musicxml+xml"
+              ]
+            }
+          },
+          {
+            "UTTypeIdentifier": "org.musicxml.mxl",
+            "UTTypeDescription": "MusicXML comprimido",
+            "UTTypeConformsTo": [
+              "public.zip-archive",
+              "public.data"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "mxl"
+              ],
+              "public.mime-type": [
+                "application/vnd.recordare.musicxml"
+              ]
+            }
+          }
+        ],
+        "LSSupportsOpeningDocumentsInPlace": false
       }
     },
     "android": {
@@ -34,6 +82,41 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "DEFAULT",
+            "BROWSABLE"
+          ],
+          "data": [
+            {
+              "scheme": "content",
+              "mimeType": "audio/midi"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "audio/x-midi"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "application/vnd.recordare.musicxml+xml"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "application/vnd.recordare.musicxml"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "application/xml"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "text/xml"
+            }
+          ]
+        }
       ]
     },
     "plugins": [

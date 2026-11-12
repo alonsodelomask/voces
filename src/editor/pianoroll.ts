@@ -20,6 +20,17 @@ interface Drag {
   scrollX: number;
   scrollY: number;
   moved: boolean;
+  /** Toque con el dedo en un hueco: si no se arrastra, al levantarlo se pone una nota. */
+  tapToAdd?: boolean;
+}
+
+/** Pellizco con dos dedos: zoom horizontal manteniendo bajo los dedos el mismo pulso. */
+interface Pinch {
+  dist: number;
+  pxPerBeat: number;
+  beatAtCenter: number;
+  centerY: number;
+  scrollY: number;
 }
 
 /**
@@ -40,11 +51,16 @@ export class PianoRoll {
   scrollX = 0; // en px
   scrollY = 0;
   playTime = 0;
+  /** Tramo de ensayo (segundos), si lo hay: se sombrea. */
+  range: { start: number; end: number } | null = null;
   private drag: Drag | null = null;
   private dpr = 1;
   private w = 0;
   private h = 0;
   private hover: Note | null = null;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinch: Pinch | null = null;
+  private longPress: number | undefined;
 
   onChange: (() => void) | null = null;
   onPreview: ((midi: number, v: Voice) => void) | null = null;
@@ -56,10 +72,15 @@ export class PianoRoll {
 
   constructor(public canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
-    canvas.addEventListener('pointerdown', (e) => this.down(e));
-    canvas.addEventListener('pointermove', (e) => this.move(e));
-    canvas.addEventListener('pointerup', (e) => this.up(e));
-    canvas.addEventListener('pointercancel', () => (this.drag = null));
+    canvas.addEventListener('pointerdown', (e) => this.pointerDown(e));
+    canvas.addEventListener('pointermove', (e) => this.pointerMove(e));
+    canvas.addEventListener('pointerup', (e) => this.pointerUp(e));
+    canvas.addEventListener('pointercancel', (e) => {
+      this.pointers.delete(e.pointerId);
+      this.pinch = null;
+      this.cancelLongPress();
+      this.drag = null;
+    });
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const n = this.hit(this.pos(e));
@@ -159,8 +180,75 @@ export class PianoRoll {
     this.onChange?.();
   }
 
+  // ---- Gestos: ratón, lápiz y dedos ----
+
+  private cancelLongPress() {
+    clearTimeout(this.longPress);
+    this.longPress = undefined;
+  }
+
+  private startPinch() {
+    const [a, b] = [...this.pointers.values()];
+    const cx = (a.x + b.x) / 2;
+    this.pinch = {
+      dist: Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)),
+      pxPerBeat: this.pxPerBeat,
+      beatAtCenter: this.xToBeat(cx),
+      centerY: (a.y + b.y) / 2,
+      scrollY: this.scrollY,
+    };
+  }
+
+  private pointerDown(e: PointerEvent) {
+    this.pointers.set(e.pointerId, this.pos(e));
+    if (this.pointers.size === 2) {
+      // Segundo dedo: se deshace lo que hubiera empezado el primero y pasa a ser zoom/desplazamiento.
+      const d = this.drag;
+      if (d?.note && (d.kind === 'move' || d.kind === 'resize')) {
+        d.note.start = d.origStart;
+        d.note.dur = d.origDur;
+        d.note.midi = d.origMidi;
+        this.onChange?.();
+      }
+      this.drag = null;
+      this.cancelLongPress();
+      this.startPinch();
+      return;
+    }
+    if (this.pointers.size > 2) return;
+    this.down(e);
+  }
+
+  private pointerMove(e: PointerEvent) {
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, this.pos(e));
+    if (this.pinch && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()];
+      const dist = Math.max(20, Math.hypot(a.x - b.x, a.y - b.y));
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      this.pxPerBeat = Math.max(12, Math.min(220, (this.pinch.pxPerBeat * dist) / this.pinch.dist));
+      this.scrollX = Math.max(0, this.pinch.beatAtCenter * this.pxPerBeat - (cx - KEYS_W));
+      this.scrollY = this.clampY(this.pinch.scrollY - (cy - this.pinch.centerY));
+      return;
+    }
+    if (this.longPress !== undefined && this.drag?.moved) this.cancelLongPress();
+    this.move(e);
+  }
+
+  private pointerUp(e: PointerEvent) {
+    this.pointers.delete(e.pointerId);
+    this.cancelLongPress();
+    if (this.pinch) {
+      if (this.pointers.size < 2) this.pinch = null;
+      this.drag = null;
+      return;
+    }
+    this.up(e);
+  }
+
   private down(e: PointerEvent) {
     if (!this.song) return;
+    const touch = e.pointerType === 'touch';
     this.canvas.setPointerCapture(e.pointerId);
     const p = this.pos(e);
     const base = { startX: p.x, startY: p.y, origStart: 0, origDur: 0, origMidi: 0, scrollX: this.scrollX, scrollY: this.scrollY, moved: false };
@@ -197,19 +285,42 @@ export class PianoRoll {
     if (hitN) {
       this.onBeforeEdit?.();
       const xEnd = this.beatToX((hitN.start + hitN.dur) / this.spb);
-      const kind = xEnd - p.x < 8 ? 'resize' : 'move';
+      // Con el dedo, la zona para alargar es más ancha.
+      const kind = xEnd - p.x < (touch ? 18 : 8) ? 'resize' : 'move';
       this.drag = { ...base, kind, note: hitN, origStart: hitN.start, origDur: hitN.dur, origMidi: hitN.midi };
       if (kind === 'move') this.onPreview?.(hitN.midi, v);
+      if (touch) {
+        // Mantener pulsada una nota la borra.
+        this.longPress = window.setTimeout(() => {
+          this.longPress = undefined;
+          if (this.drag?.note === hitN && !this.drag.moved) {
+            this.drag = null;
+            this.remove(hitN);
+            navigator.vibrate?.(25);
+          }
+        }, 550);
+      }
       return;
     }
-    // Nota nueva.
+    if (touch) {
+      // Dedo en un hueco: arrastrar desplaza la vista; un toque sin moverse pone la nota al levantar.
+      this.drag = { ...base, kind: 'pan', tapToAdd: true };
+      return;
+    }
+    this.addNoteAt(p, base);
+  }
+
+  /** Pone una nota de la duración elegida en la casilla bajo `p` (ajustada a la rejilla). */
+  private addNoteAt(p: { x: number; y: number }, base?: Omit<Drag, 'kind'>) {
+    const v = this.activeVoice;
+    if (!v) return;
     this.onBeforeEdit?.();
     const beat = Math.max(0, Math.floor(this.xToBeat(p.x) / this.snap) * this.snap);
     const midi = this.yToMidi(p.y);
     const n: Note = { midi, start: beat * this.spb, dur: this.noteLen * this.spb };
     v.notes = insertMonophonic(v.notes, n);
     this.onPreview?.(midi, v);
-    this.drag = { ...base, kind: 'new', note: n, origStart: n.start, origDur: n.dur, origMidi: midi };
+    if (base) this.drag = { ...base, kind: 'new', note: n, origStart: n.start, origDur: n.dur, origMidi: midi };
     this.onChange?.();
   }
 
@@ -229,7 +340,7 @@ export class PianoRoll {
     const d = this.drag;
     const dx = p.x - d.startX;
     const dy = p.y - d.startY;
-    if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+    if (Math.abs(dx) + Math.abs(dy) > (d.tapToAdd ? 10 : 3)) d.moved = true;
     const v = this.activeVoice;
     switch (d.kind) {
       case 'seek':
@@ -278,6 +389,7 @@ export class PianoRoll {
     this.drag = null;
     if (!d) return;
     const v = this.activeVoice;
+    if (d.tapToAdd && !d.moved) this.addNoteAt({ x: d.startX, y: d.startY });
     if (d.kind === 'move' && d.note && v) {
       v.notes = insertMonophonic(v.notes, d.note);
       this.onChange?.();
@@ -444,6 +556,18 @@ export class PianoRoll {
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillText('Acorde', 4, BAR_H + CHORD_H / 2);
     ctx.fillText('Compás', 4, BAR_H / 2);
+
+    // Tramo de ensayo.
+    if (this.range) {
+      const x0 = Math.max(KEYS_W, this.beatToX(this.range.start / spb));
+      const x1 = this.beatToX(this.range.end / spb);
+      if (x1 > x0) {
+        ctx.fillStyle = 'rgba(61,255,143,0.07)';
+        ctx.fillRect(x0, TOP, x1 - x0, h - TOP);
+        ctx.fillStyle = 'rgba(61,255,143,0.7)';
+        ctx.fillRect(x0, 0, x1 - x0, 3);
+      }
+    }
 
     // Cabezal.
     const px = this.beatToX(this.playTime / spb);
