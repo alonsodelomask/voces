@@ -1,6 +1,7 @@
 // Pantalla de entrada: a la izquierda (arriba en el móvil) las líneas de Voces en movimiento; a la derecha, entrar,
 // registrarse, recuperar la contraseña o seguir sin cuenta. La misma pantalla sirve en la web y dentro de la app.
 import * as cloud from '../cloud/cloud';
+import { siteUrl } from '../site';
 import { demoSong } from '../demo';
 import { appleSignInAvailable, isNative } from '../native';
 import { Visualizer } from '../viz/visualizer';
@@ -15,7 +16,7 @@ export interface AuthOptions {
 }
 
 const TITLES: Record<Mode, string> = {
-  login: 'Entra en Voces',
+  login: 'Entra en Vocify',
   signup: 'Crea tu cuenta',
   magic: 'Entra con un enlace',
   forgot: 'Recupera tu contraseña',
@@ -47,7 +48,7 @@ export function showAuthScreen(opts: AuthOptions): void {
     <div class="auth-panel">
       ${opts.allowSkip ? '' : '<button class="btn icon small auth-close" id="a-close" aria-label="Cerrar">✕</button>'}
       <div class="auth-box">
-        <div class="auth-brand"><img src="./icon.svg" alt="" /><span>Voces</span></div>
+        <div class="auth-brand"><img src="./icon.svg" alt="" /><span>Vocify</span></div>
         <h1 id="a-title"></h1>
         <p class="auth-intro" id="a-intro"></p>
         <div id="a-social">
@@ -75,7 +76,7 @@ export function showAuthScreen(opts: AuthOptions): void {
         </div>
         <p class="auth-switch" id="a-switch"></p>
         ${opts.allowSkip ? '<button type="button" class="btn ghost auth-skip" id="a-skip">Continuar sin cuenta</button><p class="legal">Sin cuenta todo funciona en este dispositivo. La cuenta sirve para compartir con tu grupo y usar la IA.</p>' : ''}
-        <p class="legal">Al continuar aceptas la <a href="https://voces-web.onrender.com/privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</p>
+        <p class="legal">Al continuar aceptas las <a href="${siteUrl('condiciones/')}" target="_blank" rel="noopener">condiciones de uso</a> y la <a href="${siteUrl('privacidad/')}" target="_blank" rel="noopener">política de privacidad</a>.</p>
       </div>
     </div>`;
   document.body.appendChild(root);

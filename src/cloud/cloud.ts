@@ -171,7 +171,7 @@ class ApiUnavailable extends Error {}
 
 /** Llamada al servidor de Render con la sesión actual. Los errores traen un mensaje en español listo para enseñar. */
 async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = 150_000): Promise<T> {
-  if (!API) throw new Error('El servidor de Voces no está configurado en esta versión.');
+  if (!API) throw new Error('El servidor de Vocify no está configurado en esta versión.');
   const { data } = await need().auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error('Inicia sesión primero.');
@@ -334,10 +334,28 @@ export async function fetchSong(id: string): Promise<Song> {
   if (error) fail(error);
   return { ...(data.data as Song), id, groupId: data.group_id, remoteUpdatedAt: data.updated_at };
 }
+/** La canción ya no está en el grupo (la quitó alguien). */
+export class RemovedFromGroup extends Error {
+  constructor() {
+    super('Esta canción ya no está en el grupo.');
+  }
+}
+
 /** Sube (o actualiza) una canción en su grupo. Devuelve la marca de tiempo del servidor. */
 export async function pushSong(song: Song): Promise<string> {
   if (!song.groupId || !currentUser) throw new Error('La canción no está en ningún grupo.');
   const data: Song = { ...song, remoteUpdatedAt: undefined };
+  // Ya estaba en el grupo: solo se actualiza. Si alguien la quitó mientras tanto, no se vuelve a crear.
+  if (song.remoteUpdatedAt) {
+    const { data: rows, error } = await need()
+      .from('songs')
+      .update({ title: song.title, data, updated_by: currentUser.id })
+      .eq('id', song.id)
+      .select('updated_at');
+    if (error) fail(error);
+    if (rows && rows.length) return rows[0].updated_at as string;
+    throw new RemovedFromGroup();
+  }
   const { data: row, error } = await need()
     .from('songs')
     .upsert({ id: song.id, group_id: song.groupId, title: song.title, data, updated_by: currentUser.id })

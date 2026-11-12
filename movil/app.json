@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Voces",
-    "slug": "voces",
+    "name": "Vocify",
+    "slug": "vocify",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
-    "scheme": "voces",
+    "scheme": "vocify",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#14041a",
     "ios": {
-      "bundleIdentifier": "io.github.alonsodelomask.voces",
+      "bundleIdentifier": "es.vocify.app",
       "supportsTablet": false,
       "usesAppleSignIn": true,
       "infoPlist": {
@@ -74,7 +74,7 @@
       }
     },
     "android": {
-      "package": "io.github.alonsodelomask.voces",
+      "package": "es.vocify.app",
       "adaptiveIcon": {
         "backgroundColor": "#2a0734",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -143,7 +143,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Voces usa el micrófono para convertir en notas lo que cantas o tarareas. El audio no se guarda ni sale del teléfono.",
+          "microphonePermission": "Vocify usa el micrófono para convertir en notas lo que cantas o tarareas. El audio no se guarda ni sale del teléfono.",
           "recordAudioAndroid": true,
           "enableBackgroundPlayback": false,
           "enableBackgroundRecording": false

@@ -14,6 +14,7 @@ import { openAssistant } from './ai/assistantPanel';
 import { openGroupPanel } from './cloud/groupPanel';
 import * as cloud from './cloud/cloud';
 import { initNative, isNative, onNativeFile } from './native';
+import { linkSitePages } from './site';
 import { deleteSong, getLast, loadSongs, saveSong, setLast } from './storage';
 import { Visualizer } from './viz/visualizer';
 import type { Instrument } from './viz/chordShapes';
@@ -68,6 +69,14 @@ async function syncNow() {
     saveSong(song);
     setSyncBadge('ok');
   } catch (e) {
+    if (e instanceof cloud.RemovedFromGroup) {
+      song.groupId = undefined;
+      song.remoteUpdatedAt = undefined;
+      saveSong(song);
+      renderPanel();
+      watchCurrent();
+      return toast('Esta canción se había quitado del grupo. Sigue guardada en tu dispositivo, con tus cambios.');
+    }
     setSyncBadge('error');
     toast('No se pudo sincronizar con el grupo: ' + (e as Error).message, true);
   }
@@ -92,8 +101,21 @@ function watchCurrent() {
   unwatch = g ? cloud.watchGroup(g, onRemoteChange) : null;
 }
 async function onRemoteChange(ev: { type: string; id: string; updated_by?: string | null; updated_at?: string }) {
+  if (ev.type === 'DELETE') {
+    // Se ha quitado del grupo: aquí se queda como canción propia (y no se vuelve a subir).
+    const local = ev.id === song.id ? song : loadSongs().find((x) => x.id === ev.id);
+    if (!local?.groupId) return;
+    local.groupId = undefined;
+    local.remoteUpdatedAt = undefined;
+    saveSong(local);
+    if (local === song) {
+      renderPanel();
+      watchCurrent();
+      toast('Esta canción se ha quitado del grupo. Sigue guardada en tu dispositivo.');
+    }
+    return;
+  }
   if (ev.id !== song.id || ev.updated_by === cloud.user()?.id) return;
-  if (ev.type === 'DELETE') return toast('Alguien ha borrado esta canción del grupo (sigue guardada en tu dispositivo).');
   if (ev.updated_at && ev.updated_at === song.remoteUpdatedAt) return;
   if (dirty) return toast('Otra persona ha cambiado esta canción. Al guardar se quedará tu versión.');
   try {
@@ -854,6 +876,7 @@ function openLibrary() {
       <div class="lib-actions">
         <button class="btn small" data-a="rename" title="Cambiar el nombre" aria-label="Cambiar el nombre">✎</button>
         <button class="btn small" data-a="copy" title="Duplicar" aria-label="Duplicar">⧉</button>
+        ${s.groupId && cloud.user() ? '<button class="btn small" data-a="unshare" title="Quitar del grupo" aria-label="Quitar del grupo">⊘</button>' : ''}
         <button class="btn small" data-a="delete" title="Eliminar" aria-label="Eliminar">✕</button>
       </div>`;
     item.querySelector('b')!.textContent = s.title + (s.id === song.id ? '  · abierta' : '');
@@ -889,6 +912,23 @@ function openLibrary() {
         c.createdAt = c.updatedAt = Date.now();
         saveSong(c);
         toast(`Copia creada: «${c.title}».`);
+      }
+      if (a === 'unshare' && s.groupId) {
+        if (!(await confirmDialog('Quitar del grupo', `¿Quitar «${s.title}» del grupo? Desaparecerá para todos los miembros. En este dispositivo se queda como canción tuya.`, 'Quitar'))) return;
+        try {
+          const target = s.id === song.id ? song : s;
+          await cloud.deleteRemoteSong(s.id);
+          target.groupId = undefined;
+          target.remoteUpdatedAt = undefined;
+          saveSong(target);
+          if (target === song) {
+            renderPanel();
+            watchCurrent();
+          }
+          toast(`«${s.title}» ya no está en el grupo.`);
+        } catch (err) {
+          toast((err as Error).message || 'No se ha podido quitar del grupo.', true);
+        }
       }
       if (a === 'delete') {
         if (!(await confirmDialog('Eliminar canción', `¿Eliminar «${s.title}» de este dispositivo? No se puede deshacer.${s.groupId ? ' En el grupo sigue estando.' : ''}`, 'Eliminar'))) return;
@@ -1036,7 +1076,7 @@ function showWelcome() {
   const dlg = document.createElement('dialog');
   dlg.className = 'dlg';
   dlg.innerHTML = `
-    <h2>¡Bienvenido a Voces!</h2>
+    <h2>¡Te damos la bienvenida a Vocify!</h2>
     <p class="intro">Mira, escucha y ensaya cada voz de tu grupo como líneas de colores. ¿Por dónde empiezas?</p>
     <div class="welcome-steps">
       <button class="welcome-step" data-w="import"><span class="ico">📂</span><span><b>Abrir una partitura</b><small>MusicXML o MIDI, desde MuseScore, Flat, Sibelius… o te la pasan por WhatsApp.</small></span></button>
@@ -1112,6 +1152,7 @@ requestAnimationFrame(loop);
 
 initNative();
 onNativeFile((f) => void openFile(f));
+linkSitePages();
 if ('serviceWorker' in navigator && import.meta.env.PROD && !isNative) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }

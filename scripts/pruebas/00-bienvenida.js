@@ -25,6 +25,6 @@ async () => {
   res.acciones = [...document.querySelectorAll('#empty [data-empty]')].map((b) => b.textContent.trim());
   // No vuelve a salir al recargar.
   res.marcada = localStorage.getItem('voces.bienvenida.v1');
-  res.ok = res.entrada === 'Entra en Voces' && res.pasos === 4 && res.cancion === 'Mi melodía' && res.editor && res.ayudaEditor && /Tararear/.test(res.tararear ?? '') && res.vacio && res.acciones.length === 3 && res.marcada === '1';
+  res.ok = res.entrada === 'Entra en Vocify' && res.pasos === 4 && res.cancion === 'Mi melodía' && res.editor && res.ayudaEditor && /Tararear/.test(res.tararear ?? '') && res.vacio && res.acciones.length === 3 && res.marcada === '1';
   return res;
 }

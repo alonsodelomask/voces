@@ -14,6 +14,9 @@ const ESCENAS = (process.env.ESCENAS ?? 'visualizar,voces,editar,asistente').spl
 // ESCRITORIO=1: 1440×900 (para revisar la web en un ordenador), en la carpeta indicada por OUT_DIR.
 const ESCRITORIO = process.env.ESCRITORIO === '1';
 const OUT = process.env.OUT_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'capturas-app-store');
+// Para la web: ESCALA=1 FORMATO=jpeg OUT_DIR=public/conoce/img (más ligeras).
+const ESCALA = Number(process.env.ESCALA ?? 3);
+const FORMATO = process.env.FORMATO === 'jpeg' ? 'jpeg' : 'png';
 const PORT = 9333;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,7 +62,7 @@ const send = (method, params = {}) =>
 await send('Page.enable');
 await send('Runtime.enable');
 // iPhone de 6,9": 440×956 puntos a 3× = 1320×2868 píxeles.
-await send('Emulation.setDeviceMetricsOverride', ESCRITORIO ? { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false } : { width: 440, height: 956, deviceScaleFactor: 3, mobile: true });
+await send('Emulation.setDeviceMetricsOverride', ESCRITORIO ? { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false } : { width: 440, height: 956, deviceScaleFactor: ESCALA, mobile: true });
 await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
 for (const escena of ESCENAS) {
@@ -71,8 +74,8 @@ for (const escena of ESCENAS) {
     lista = r.result.value === true;
   }
   await sleep(400);
-  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-  const file = join(OUT, `${escena}.png`);
+  const shot = await send('Page.captureScreenshot', { format: FORMATO, ...(FORMATO === 'jpeg' ? { quality: 82 } : {}), captureBeyondViewport: false });
+  const file = join(OUT, `${escena}.${FORMATO === 'jpeg' ? 'jpg' : 'png'}`);
   writeFileSync(file, Buffer.from(shot.data, 'base64'));
   console.log(`${lista ? '✓' : '⚠ (sin señal de lista)'} ${file}`);
 }

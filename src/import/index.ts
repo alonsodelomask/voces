@@ -17,7 +17,7 @@ export async function importFile(file: File): Promise<Song> {
   if (ext === 'mxl') return parseMusicXML(readMxl(new Uint8Array(await file.arrayBuffer())), base);
   if (ext === 'json' || ext === 'voces') {
     const data = JSON.parse(await file.text());
-    if (!data || !Array.isArray(data.voices)) throw new Error('El archivo no es un proyecto de Voces.');
+    if (!data || !Array.isArray(data.voices)) throw new Error('El archivo no es un proyecto de Vocify.');
     return data as Song;
   }
   if (ext === 'mscz' || ext === 'mscx') {

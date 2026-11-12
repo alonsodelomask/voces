@@ -1,6 +1,6 @@
 {
-  "name": "Voces",
-  "short_name": "Voces",
+  "name": "Vocify",
+  "short_name": "Vocify",
   "description": "Compón y visualiza las voces de tu grupo como líneas de sintetizador.",
   "start_url": "./",
   "scope": "./",

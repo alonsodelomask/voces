@@ -8,12 +8,12 @@
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <title>Voces</title>
+    <title>Vocify</title>
   </head>
   <body>
     <div id="app">
       <header class="topbar">
-        <div class="brand"><img src="./icon.svg" alt="" /> <span>Voces</span> <i id="sync" class="sync" hidden></i></div>
+        <div class="brand"><img src="./icon.svg" alt="" /> <span>Vocify</span> <i id="sync" class="sync" hidden></i></div>
         <div class="tabs" role="tablist">
           <button class="tab active" data-view="viz" role="tab">Visualizar</button>
           <button class="tab" data-view="edit" role="tab">Editar</button>
@@ -209,7 +209,7 @@
       <dialog id="dlg-help" class="dlg">
         <h2>Cómo funciona</h2>
         <ul class="help">
-          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl), MIDI (.mid) o una grabación (WAV, MP3, M4A, OGG, FLAC…), que se convierte en voces en tu dispositivo; funciona mejor con voces solas, sin instrumentos. Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>. En el móvil también puedes abrir la partitura desde WhatsApp o Archivos con «Abrir con… Voces».</li>
+          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl), MIDI (.mid) o una grabación (WAV, MP3, M4A, OGG, FLAC…), que se convierte en voces en tu dispositivo; funciona mejor con voces solas, sin instrumentos. Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>. En el móvil también puedes abrir la partitura desde WhatsApp o Archivos con «Abrir con… Vocify».</li>
           <li>Cada voz de la partitura (parte, pentagrama o voz interna) es una línea de color. Se respetan las repeticiones y las casillas de 1ª/2ª vez (los D.C./D.S./Coda todavía no).</li>
           <li><b>Panel de voces:</b> silencia (M), escucha sola (S) u oculta cada voz. Ideal para ensayar tu parte.</li>
           <li><b>Ensayo</b> (botón ⇄ abajo): repite unos compases en bucle, con metrónomo y cuenta atrás. Combínalo con la velocidad 0.75×.</li>
@@ -219,7 +219,7 @@
           <li><b>Grabar vídeo:</b> genera un vídeo vertical listo para redes.</li>
           <li>Atajos: <kbd>Espacio</kbd> reproducir/pausa · <kbd>←</kbd>/<kbd>→</kbd> saltar 5 s · <kbd>Ctrl+Z</kbd> deshacer · <kbd>Ctrl+Y</kbd> rehacer.</li>
         </ul>
-        <p class="legal"><a href="https://voces-web.onrender.com/privacidad.html" target="_blank" rel="noopener">Política de privacidad</a> · <a href="https://github.com/alonsodelomask/voces/issues" target="_blank" rel="noopener">Soporte</a></p>
+        <p class="legal"><a data-site="privacidad/" target="_blank" rel="noopener">Privacidad</a> · <a data-site="condiciones/" target="_blank" rel="noopener">Condiciones</a> · <a data-site="soporte/" target="_blank" rel="noopener">Ayuda y contacto</a></p>
         <form method="dialog"><button class="btn primary">Entendido</button></form>
       </dialog>
     </div>

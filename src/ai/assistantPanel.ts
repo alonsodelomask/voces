@@ -152,7 +152,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
 
 function renderAI(box: HTMLElement, deps: AssistDeps, dlg: HTMLDialogElement) {
   if (!apiEnabled) {
-    box.innerHTML = `<p class="intro">La IA (Claude) funciona a través del servidor de Voces, que todavía no está configurado en esta instalación. Mientras tanto, las pestañas Revisar, Acordes y Crear voces funcionan sin conexión.</p>`;
+    box.innerHTML = `<p class="intro">La IA (Claude) funciona a través del servidor de Vocify, que todavía no está configurado en esta instalación. Mientras tanto, las pestañas Revisar, Acordes y Crear voces funcionan sin conexión.</p>`;
     return;
   }
   if (!user()) {

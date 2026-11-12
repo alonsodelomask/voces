@@ -27,7 +27,7 @@ export async function openGroupPanel(deps: GroupDeps) {
 
   async function render() {
     if (!cloud.cloudEnabled) {
-      dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Esta instalación de Voces todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/BACKEND.md</code>).</p>${close}`;
+      dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Esta instalación de Vocify todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/BACKEND.md</code>).</p>${close}`;
       return wireClose();
     }
     if (!cloud.user()) {
@@ -171,13 +171,13 @@ export async function openGroupPanel(deps: GroupDeps) {
         }
       };
     });
-    const inviteText = `Únete a «${g.name}» en Voces con el código ${g.invite_code}`;
+    const inviteText = `Únete a «${g.name}» en Vocify con el código ${g.invite_code}`;
     box.querySelector<HTMLButtonElement>('#g-copy')!.onclick = async () => {
       await navigator.clipboard?.writeText(g.invite_code);
       deps.toast('Código copiado.');
     };
     box.querySelector<HTMLButtonElement>('#g-share')!.onclick = async () => {
-      if (navigator.share) await navigator.share({ title: 'Voces', text: inviteText, url: location.href.split('#')[0] }).catch(() => {});
+      if (navigator.share) await navigator.share({ title: 'Vocify', text: inviteText, url: location.href.split('#')[0] }).catch(() => {});
       else {
         await navigator.clipboard?.writeText(inviteText);
         deps.toast('Invitación copiada.');
@@ -261,7 +261,7 @@ export async function openGroupPanel(deps: GroupDeps) {
     try {
       const g = await cloud.joinGroup(r.values.code);
       selected = g.id;
-      deps.toast(`¡Bienvenido a «${g.name}»!`);
+      deps.toast(`Ya estás en «${g.name}».`);
     } catch (e) {
       deps.toast((e as Error).message, true);
     }

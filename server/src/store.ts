@@ -103,7 +103,7 @@ export class SupabaseStore implements Store {
  */
 export class UnconfiguredStore implements Store {
   private fail(): never {
-    throw new ApiError('not-configured', 'El servidor de Voces aún no está conectado a la base de datos. Vuelve a probar más tarde.');
+    throw new ApiError('not-configured', 'El servidor de Vocify aún no está conectado a la base de datos. Vuelve a probar más tarde.');
   }
   aiUsageSince(): Promise<number> { return this.fail(); }
   recordAiUsage(): Promise<void> { return this.fail(); }

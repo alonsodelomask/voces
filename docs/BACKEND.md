@@ -1,4 +1,6 @@
-# Servidor y nube de Voces
+# Servidor y nube de Vocify (antes «Voces»)
+
+> **13/11/2026:** la app se llama **Vocify** y tiene dominio, **vocify.es**. Los servicios conservan sus nombres (`voces-api`, `voces-web`, proyecto «Voces» de Supabase). El identificador de la app pasa a ser **`es.vocify.app`** (aún no se había compilado con el anterior). Pasos del dominio: [DOMINIO.md](DOMINIO.md).
 
 Decisión del usuario (12/11/2026): Voces se despliega con **el mismo proceso que Baulify**:
 
@@ -6,7 +8,7 @@ Decisión del usuario (12/11/2026): Voces se despliega con **el mismo proceso qu
 - **Render** (UE, Fráncfort): la API `voces-api` y la web `voces-web`.
 - **Expo + EAS**: la app de iPhone se compila y se sube a App Store Connect en la nube, sin necesidad de Mac.
 
-Este documento explica qué hay preparado en el repositorio y qué tienes que hacer tú. **Nada está desplegado todavía** (salvo la web de GitHub Pages, que funciona sin nube). No se ha llamado a Claude ni a Apple de verdad: el servidor se ha probado con proveedores simulados y datos ficticios (`cd server; npm test`).
+Este documento explica qué hay preparado en el repositorio y qué tienes que hacer tú. **Lo desplegado y lo pendiente está en «Estado», más abajo.** No se ha llamado a Claude ni a Apple de verdad: el servidor se ha probado con proveedores simulados y datos ficticios (`cd server; npm test`).
 
 ## Cómo encaja todo
 
@@ -68,10 +70,11 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 
 - **Supabase: hecho.** Organización **PABLO** (la antigua «Baulify», renombrada: es la única organización y agrupa los proyectos; Baulify sigue dentro, sin cambios). Proyecto **Voces**, ref `jmkzsrqygurhlukqswes`, región *Central EU (Frankfurt)*, plan gratuito.
   - Migraciones `001_init.sql` y `002_servidor.sql` ejecutadas; las 7 tablas tienen RLS activado. Comprobado con la clave pública: sin sesión no se ve nada y las funciones de grupo y de borrado están bloqueadas.
-  - Apple activado con el Client ID `io.github.alonsodelomask.voces`, sin *Secret Key*.
-  - Site URL `https://alonsodelomask.github.io/voces/` y URL de retorno permitidas: GitHub Pages, `voces-web.onrender.com` y `localhost:5173`.
+  - Apple activado con el Client ID `io.github.alonsodelomask.voces`, sin *Secret Key*. **Hay que cambiarlo a `es.vocify.app`** (paso 5), el identificador nuevo.
+  - Migración `003_nombre_registro.sql` ejecutada (el perfil toma el nombre del registro).
+  - Site URL `https://alonsodelomask.github.io/voces/` y URL de retorno permitidas: GitHub Pages, `voces-web.onrender.com` y `localhost:5173`. Falta añadir `vocify.es` ([DOMINIO.md](DOMINIO.md), paso 3).
   - Correo: sin SMTP propio, Supabase no deja editar las plantillas y manda un **enlace**, no un código. En la web el enlace inicia la sesión. En el iPhone se entra con Apple o con contraseña. Para que llegue un código, configura un SMTP (paso 1.6) y añade `{{ .Token }}` a las plantillas.
-- **Render: hecho.** Blueprint `voces` (desde el repositorio público, sin despliegue automático) con `voces-api` → https://voces-api-0wt8.onrender.com (Fráncfort, gratuito, en **modo espera** hasta que pongas `SUPABASE_SERVICE_ROLE_KEY`) y `voces-web` → https://voces-web.onrender.com. CORS comprobado: solo admite las dos webs de Voces y la app.
+- **Render: hecho.** Blueprint `voces` (desde el repositorio público, sin despliegue automático) con `voces-api` → https://voces-api-0wt8.onrender.com (Fráncfort, gratuito, en **modo espera** hasta que pongas `SUPABASE_SERVICE_ROLE_KEY`) y `voces-web` → https://voces-web.onrender.com. CORS comprobado: solo admite las webs de Voces y la app. `render.yaml` ya añade `vocify.es` y el dominio propio en `voces-web`: se aplican con **Manual sync**.
 - **Pendiente (tuyo):** `SUPABASE_SERVICE_ROLE_KEY` y `ANTHROPIC_API_KEY` en Render, la cuenta de demostración, EAS y la revocación de Apple. Lista corta: [MANANA.md](MANANA.md).
 
 ## Guía paso a paso para ti
@@ -124,7 +127,7 @@ Para probar sin gastar, pon `VOCES_AI=simulated`: responde con una voz de ejempl
 ### 5. «Iniciar sesión con Apple» en Supabase
 
 1. **Authentication › Sign In / Providers › Apple** › *Enable*.
-2. En **Client IDs** escribe `io.github.alonsodelomask.voces` (el identificador de la app, en `movil/app.json`).
+2. En **Client IDs** escribe `es.vocify.app` (el identificador de la app, en `movil/app.json`; sustituye al antiguo `io.github.alonsodelomask.voces`).
 3. Deja vacíos *Services ID* y *Secret Key*: el inicio nativo del iPhone no los necesita (igual que en Baulify). **Save**.
 
 ### 6. Primera compilación para TestFlight (con EAS, como Baulify)
@@ -161,7 +164,7 @@ Apple exige que, al borrar la cuenta, se revoque también el acceso de «Iniciar
 
 **b) Clave «Sign in with Apple» (.p8):**
 1. developer.apple.com › **Certificates, Identifiers & Profiles › Keys › +**.
-2. Nombre «Voces revocar Apple». Marca **Sign in with Apple** › **Configure** › *Primary App ID*: `io.github.alonsodelomask.voces` (aparece tras la primera compilación con EAS) › **Save › Continue › Register**.
+2. Nombre «Vocify revocar Apple». Marca **Sign in with Apple** › **Configure** › *Primary App ID*: `es.vocify.app` (aparece tras la primera compilación con EAS) › **Save › Continue › Register**.
 3. Apunta el **Key ID** y descarga el `.p8`. **Solo se descarga una vez**: guárdalo en tu gestor de contraseñas, **nunca** en la carpeta del proyecto, en Git ni en un chat.
 
 **c) Clave de cifrado** (32 bytes al azar, sin que aparezca en pantalla). En PowerShell:

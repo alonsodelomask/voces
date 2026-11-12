@@ -20,7 +20,7 @@ const env = z.object({
   APPLE_KEY_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
   APPLE_PRIVATE_KEY: z.string().min(100).optional(),
   APPLE_TOKEN_ENCRYPTION_KEY: z.string().optional(),
-  APPLE_CLIENT_ID: z.string().default('io.github.alonsodelomask.voces'),
+  APPLE_CLIENT_ID: z.string().default('es.vocify.app'),
 });
 
 export type Config = {

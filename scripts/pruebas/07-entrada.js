@@ -43,7 +43,7 @@ async () => {
   await wait(200);
   res.cerrada = !q('.auth');
   res.ok =
-    res.titulo === 'Entra en Voces' && res.cerrar && !res.loginCampos.nombre && res.loginCampos.olvidada &&
+    res.titulo === 'Entra en Vocify' && res.cerrar && !res.loginCampos.nombre && res.loginCampos.olvidada &&
     res.registro.nombre && res.registro.clave2 && /8 caracteres/.test(res.cortaMsg) && /no coinciden/.test(res.distintasMsg) &&
     res.olvidada.titulo === 'Recupera tu contraseña' && !res.olvidada.clave && /no son correctos/.test(res.malasMsg) && res.cerrada;
   return res;

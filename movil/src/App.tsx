@@ -12,7 +12,7 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import VOCES_HTML from './generated/voces-html';
 
 /**
- * Voces en el iPhone/Android: la web entera (compilada en un solo HTML por `npm run build:movil`) dentro de un WebView,
+ * Vocify en el iPhone/Android: la web entera (compilada en un solo HTML por `npm run build:movil`) dentro de un WebView,
  * más un puente para lo que el navegador no puede hacer (ver `src/native.ts` de la web):
  *  - «save»: guardar/compartir un archivo (MIDI, proyecto, vídeo) con el menú de compartir del sistema;
  *  - «apple-sign-in»: «Iniciar sesión con Apple» nativo (el nonce lo genera la web, como en Baulify);
@@ -32,7 +32,7 @@ export default function App() {
   const web = useRef<WebView>(null);
   // null = aún comprobando si el iPhone ofrece «Iniciar sesión con Apple» (la web se carga después).
   const [apple, setApple] = useState<boolean | null>(Platform.OS === 'ios' ? null : false);
-  // Partituras abiertas desde otra app («Abrir con… Voces»): esperan a que la web esté lista.
+  // Partituras abiertas desde otra app («Abrir con… Vocify»): esperan a que la web esté lista.
   const webReady = useRef(false);
   const pendingFiles = useRef<{ name: string; base64: string }[]>([]);
 

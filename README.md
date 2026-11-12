@@ -1,15 +1,19 @@
-# Voces
+# Vocify
+
+(El repositorio y las claves internas se siguen llamando «voces»; el nombre público es **Vocify**, dominio **vocify.es**.)
 
 App para que un grupo vocal vea, escuche, componga y ensaye sus voces como líneas de neón de sintetizador.
 Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Android con Expo (la misma web dentro, compilada con EAS como Baulify).
 
-**Web:** <https://voces-web.onrender.com> (también <https://alonsodelomask.github.io/voces/>) · **API:** <https://voces-api-0wt8.onrender.com/health>
+**Web:** <https://vocify.es> (cuando el dominio apunte a Render, ver [docs/DOMINIO.md](docs/DOMINIO.md)) · <https://voces-web.onrender.com> (también <https://alonsodelomask.github.io/voces/>) · **API:** <https://voces-api-0wt8.onrender.com/health>
 
 **Qué falta para la App Store:** [docs/MANANA.md](docs/MANANA.md)
 
 ## Funciones
 
 - **Importar** MusicXML (`.musicxml`, `.xml`, `.mxl`) y MIDI. Respeta las repeticiones y las casillas de 1ª y 2ª vez, y usa el cifrado de la partitura si lo tiene.
+- **Audio → voces**: importa una grabación (WAV, MP3, M4A, AAC, OGG, OPUS, FLAC, WEBM, AIFF, CAF) y la convierte en voces en el dispositivo con Basic Pitch (Spotify): limpia armónicos, calcula el tempo, ajusta a la rejilla y reparte las notas de aguda a grave.
+- **Diagramas de acordes** opcionales para guitarra, ukelele y piano.
 - **Visualizador** tipo sintetizador: transiciones suaves entre notas, nombre de cada nota, acorde actual y chispas.
 - **Audio** sintetizado (4 sonidos), velocidad de 0.5× a 1.25× y silencio/solo/volumen por voz para ensayar.
 - **Editor**: rejilla de notas, fila de acordes editable (con «ajustar las voces al acorde»), transposición y deshacer/rehacer.
@@ -29,18 +33,21 @@ npm run deploy     # compila y publica en GitHub Pages
 npm run build:movil  # mete la web en la app (movil/)
 cd server && npm test  # pruebas del servidor
 node scripts/capturas.mjs  # capturas para la App Store (con npm run dev en marcha)
+node scripts/probar.mjs    # pruebas de uso en Chrome sin ventana (con npm run dev en marcha)
+node scripts/sitio/generar.mjs  # web pública y textos legales (public/conoce, privacidad, condiciones…)
 ```
 
 - Servidor, nube y publicación (Supabase, Render, EAS): [docs/BACKEND.md](docs/BACKEND.md)
 - Ficha de la App Store: [docs/APP_STORE.md](docs/APP_STORE.md)
 - Reglas para agentes: [AGENTS.md](AGENTS.md)
-- Política de privacidad: [public/privacidad.html](public/privacidad.html)
+- Dominio vocify.es: [docs/DOMINIO.md](docs/DOMINIO.md)
+- Web pública y textos legales: `scripts/sitio/` → `public/` (privacidad, condiciones, soporte, borrar la cuenta, en español e inglés)
 
 ## Estructura
 
 | Ruta | Contenido |
 | --- | --- |
-| `src/import/` | Lectores de MusicXML y MIDI |
+| `src/import/` | Lectores de MusicXML y MIDI, y audio → voces (`audio.ts`) |
 | `src/viz/visualizer.ts` | Visualizador (canvas) |
 | `src/audio/engine.ts` | Síntesis, reproducción y metrónomo (Web Audio) |
 | `src/editor/pianoroll.ts` | Editor de notas y acordes |

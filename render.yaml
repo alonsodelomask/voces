@@ -1,4 +1,4 @@
-# Blueprint de Render para Voces (servidor en la UE, Fráncfort), igual que el de Baulify.
+# Blueprint de Render para Vocify (antes «Voces») (servidor en la UE, Fráncfort), igual que el de Baulify.
 # NO contiene claves: las que llevan «sync: false» se pegan en el panel de Render al crear los servicios
 # (o después en Environment). Guía paso a paso: docs/BACKEND.md.
 services:
@@ -29,7 +29,7 @@ services:
         value: "40"
       # Webs que pueden llamar a la API (la app de iPhone/Android ya está permitida en el código).
       - key: VOCES_CORS_ORIGINS
-        value: https://voces-web.onrender.com,https://alonsodelomask.github.io
+        value: https://vocify.es,https://www.vocify.es,https://voces-web.onrender.com,https://alonsodelomask.github.io
       # Proyecto «Voces» de la organización PABLO (pública: es la URL del proyecto).
       - key: SUPABASE_URL
         value: https://jmkzsrqygurhlukqswes.supabase.co
@@ -54,12 +54,16 @@ services:
         sync: false
       # El bundle de la app (el inicio de sesión es nativo). Sólo cambia si cambia el identificador.
       - key: APPLE_CLIENT_ID
-        value: io.github.alonsodelomask.voces
+        value: es.vocify.app
 
-  # La web de Voces (y la política de privacidad que pide Apple). Gratuita y en la CDN global de Render.
+  # La web de Vocify: la app, la presentación (/conoce/) y las páginas legales que pide Apple. Gratuita y en la CDN global de Render.
+  # Dominio propio: vocify.es (comprado en Hostinger). Los registros DNS que hay que poner están en docs/DOMINIO.md.
   - type: web
     name: voces-web
     runtime: static
+    # Solo la raíz: Render añade www.vocify.es y lo redirige a vocify.es.
+    domains:
+      - vocify.es
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     buildFilter:
