@@ -71,7 +71,8 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
   - Apple activado con el Client ID `io.github.alonsodelomask.voces`, sin *Secret Key*.
   - Site URL `https://alonsodelomask.github.io/voces/` y URL de retorno permitidas: GitHub Pages, `voces-web.onrender.com` y `localhost:5173`.
   - Correo: sin SMTP propio, Supabase no deja editar las plantillas y manda un **enlace**, no un código. En la web el enlace inicia la sesión. En el iPhone se entra con Apple o con contraseña. Para que llegue un código, configura un SMTP (paso 1.6) y añade `{{ .Token }}` a las plantillas.
-- **Pendiente:** Render (paso 3), la clave de Anthropic (paso 4), EAS (paso 6) y la revocación de Apple (paso 7).
+- **Render: hecho.** Blueprint `voces` (desde el repositorio público, sin despliegue automático) con `voces-api` → https://voces-api-0wt8.onrender.com (Fráncfort, gratuito, en **modo espera** hasta que pongas `SUPABASE_SERVICE_ROLE_KEY`) y `voces-web` → https://voces-web.onrender.com. CORS comprobado: solo admite las dos webs de Voces y la app.
+- **Pendiente (tuyo):** `SUPABASE_SERVICE_ROLE_KEY` y `ANTHROPIC_API_KEY` en Render, la cuenta de demostración, EAS y la revocación de Apple. Lista corta: [MANANA.md](MANANA.md).
 
 ## Guía paso a paso para ti
 

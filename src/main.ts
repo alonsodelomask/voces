@@ -784,7 +784,13 @@ function toast(msg: string, error = false) {
 
 // ---------------- Bucle de dibujo ----------------
 
+let frozen = false; // modo capturas: el bucle no repinta
+
 function loop() {
+  if (frozen) {
+    requestAnimationFrame(loop);
+    return;
+  }
   const t = engine.time;
   document.body.classList.toggle('playing', engine.playing);
   if (view === 'viz') viz.render(t, engine.playing);
@@ -822,6 +828,24 @@ requestAnimationFrame(loop);
 initNative();
 if ('serviceWorker' in navigator && import.meta.env.PROD && !isNative) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+// Capturas para la App Store (solo en desarrollo): http://localhost:5173/?captura=visualizar|voces|editar|asistente
+if (import.meta.env.DEV) {
+  const escena = new URLSearchParams(location.search).get('captura');
+  if (escena) {
+    void import('./capturas').then((m) =>
+      m.preparar(escena, {
+        engine,
+        viz,
+        roll,
+        setSong: (s) => setSong(s),
+        switchView,
+        openAssistant: () => openAssistant(assistDeps, 'chords'),
+        freeze: (f) => (frozen = f),
+      }),
+    );
+  }
 }
 
 // Para depurar desde la consola.

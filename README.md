@@ -3,7 +3,9 @@
 App para que un grupo vocal vea, escuche, componga y ensaye sus voces como líneas de neón de sintetizador.
 Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Android con Expo (la misma web dentro, compilada con EAS como Baulify).
 
-**Web:** <https://alonsodelomask.github.io/voces/>
+**Web:** <https://voces-web.onrender.com> (también <https://alonsodelomask.github.io/voces/>) · **API:** <https://voces-api-0wt8.onrender.com/health>
+
+**Qué falta para la App Store:** [docs/MANANA.md](docs/MANANA.md)
 
 ## Funciones
 
@@ -26,6 +28,7 @@ npm run build      # genera dist/
 npm run deploy     # compila y publica en GitHub Pages
 npm run build:movil  # mete la web en la app (movil/)
 cd server && npm test  # pruebas del servidor
+node scripts/capturas.mjs  # capturas para la App Store (con npm run dev en marcha)
 ```
 
 - Servidor, nube y publicación (Supabase, Render, EAS): [docs/BACKEND.md](docs/BACKEND.md)
