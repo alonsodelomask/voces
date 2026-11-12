@@ -4,6 +4,7 @@ import { demoSong } from './demo';
 import type { PianoRoll } from './editor/pianoroll';
 import type { Song } from './model';
 import type { Visualizer } from './viz/visualizer';
+import { showAuthScreen } from './ui/authScreen';
 
 type Api = {
   engine: AudioEngine;
@@ -34,6 +35,11 @@ export async function preparar(escena: string, api: Api) {
   const T = 10.9; // en pleno acorde de Si menor, con la soprano subiendo
   api.engine.seek(T);
   switch (escena) {
+    case 'entrada': {
+      showAuthScreen({ allowSkip: true });
+      await wait(800);
+      break;
+    }
     case 'voces': {
       api.switchView('viz');
       const s = song.voices[0];

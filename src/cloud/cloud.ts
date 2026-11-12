@@ -11,6 +11,8 @@ const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const API = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '');
 
 export const cloudEnabled = !!(URL && KEY);
+/** Se llega desde el enlace «He olvidado mi contraseña» (se mira antes de que Supabase limpie la URL). */
+export const recoveryInUrl = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search);
 export const apiEnabled = cloudEnabled && !!API;
 export const sb: SupabaseClient | null = cloudEnabled
   ? // En la web, el enlace del correo vuelve a la página con la sesión en la URL y se recoge solo.
@@ -38,6 +40,14 @@ export interface RemoteSongMeta {
 }
 
 const ERRORS: Record<string, string> = {
+  'Invalid login credentials': 'El correo o la contraseña no son correctos.',
+  'Email not confirmed': 'Aún no has confirmado tu correo: abre el enlace que te enviamos.',
+  'User already registered': 'Ya hay una cuenta con ese correo. Entra con tu contraseña o recupérala.',
+  'Password should be at least': 'La contraseña es demasiado corta (mínimo 8 caracteres).',
+  'Unable to validate email address': 'Ese correo no parece válido.',
+  'For security purposes, you can only request this after': 'Espera unos segundos antes de pedir otro correo.',
+  'Email rate limit exceeded': 'Se han enviado demasiados correos. Prueba dentro de un rato.',
+  'New password should be different': 'La contraseña nueva tiene que ser distinta de la anterior.',
   invalid_code: 'Ese código de invitación no existe.',
   group_full: 'El grupo está completo.',
   not_owner: 'Solo el propietario del grupo puede hacer esto.',
@@ -57,14 +67,20 @@ function need(): SupabaseClient {
 
 let currentUser: User | null = null;
 const authListeners = new Set<(u: User | null) => void>();
+const recoveryListeners = new Set<() => void>();
+export function onPasswordRecovery(f: () => void) {
+  recoveryListeners.add(f);
+}
 
 export async function initAuth(): Promise<User | null> {
   if (!sb) return null;
   const { data } = await sb.auth.getSession();
   currentUser = data.session?.user ?? null;
-  sb.auth.onAuthStateChange((_e, session) => {
+  sb.auth.onAuthStateChange((event, session) => {
     currentUser = session?.user ?? null;
     authListeners.forEach((f) => f(currentUser));
+    // Vuelve del enlace «He olvidado mi contraseña»: hay que pedir la nueva.
+    if (event === 'PASSWORD_RECOVERY') recoveryListeners.forEach((f) => f());
   });
   return currentUser;
 }
@@ -88,8 +104,44 @@ export async function verifyCode(email: string, token: string) {
   if (error) fail(error);
 }
 /** Alternativa con contraseña (útil para la cuenta de demostración de la revisión de Apple). */
+/** Entrar con email y contraseña. */
 export async function signInWithPassword(email: string, password: string) {
   const { error } = await need().auth.signInWithPassword({ email, password });
+  if (error) fail(error);
+}
+
+/** Dirección a la que vuelven los enlaces de los correos (en la app no hay: se abren en la web). */
+function returnUrl(): string | undefined {
+  return isNative ? undefined : location.origin + location.pathname;
+}
+
+/**
+ * Crear cuenta con contraseña. Devuelve 'confirm' si hay que confirmar el correo antes de entrar (lo normal) o
+ * 'signed-in' si el proyecto no pide confirmación.
+ */
+export async function signUp(email: string, password: string, name: string): Promise<'confirm' | 'signed-in'> {
+  const { data, error } = await need().auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: returnUrl(), data: name ? { full_name: name } : undefined },
+  });
+  if (error) fail(error);
+  // Supabase no dice si el correo ya existía (por privacidad): sin identidades, es que ya hay cuenta.
+  if (data.user && data.user.identities && data.user.identities.length === 0) {
+    throw new Error('Ya hay una cuenta con ese correo. Entra con tu contraseña o recupérala.');
+  }
+  return data.session ? 'signed-in' : 'confirm';
+}
+
+/** Manda el correo para elegir otra contraseña. */
+export async function resetPassword(email: string) {
+  const { error } = await need().auth.resetPasswordForEmail(email, { redirectTo: returnUrl() });
+  if (error) fail(error);
+}
+
+/** Cambia la contraseña de la sesión actual (tras el enlace de recuperación o desde la cuenta). */
+export async function updatePassword(password: string) {
+  const { error } = await need().auth.updateUser({ password });
   if (error) fail(error);
 }
 export async function signOut() {

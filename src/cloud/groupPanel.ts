@@ -1,7 +1,6 @@
 import { uid, type Song } from '../model';
 import { confirmDialog, esc, form } from '../ui/dialog';
 import * as cloud from './cloud';
-import { appleSignInAvailable } from '../native';
 
 export interface GroupDeps {
   song: () => Song;
@@ -9,6 +8,8 @@ export interface GroupDeps {
   /** Guarda localmente y sube a la nube. */
   saveAndSync: () => Promise<void>;
   toast: (msg: string, error?: boolean) => void;
+  /** Pantalla de entrada (cuando no hay sesión). */
+  openAuth: () => void;
 }
 
 /** Panel «Grupo y cuenta»: iniciar sesión, crear/unirse a grupos, invitar y compartir canciones. */
@@ -28,7 +29,11 @@ export async function openGroupPanel(deps: GroupDeps) {
       dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Esta instalación de Voces todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/BACKEND.md</code>).</p>${close}`;
       return wireClose();
     }
-    if (!cloud.user()) return renderLogin();
+    if (!cloud.user()) {
+      dlg.close();
+      deps.openAuth();
+      return;
+    }
     dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Cargando…</p>`;
     try {
       const [name, groups] = await Promise.all([cloud.getProfileName(), cloud.myGroups()]);
@@ -44,6 +49,7 @@ export async function openGroupPanel(deps: GroupDeps) {
           <span>👤 <b>${esc(name || cloud.user()?.email || '')}</b> <small>${esc(cloud.user()?.email ?? '')}</small></span>
           <span class="acct-btns">
             <button class="btn small" id="g-rename">Cambiar nombre</button>
+            <button class="btn small" id="g-pass">Cambiar contraseña</button>
             <button class="btn small" id="g-out">Cerrar sesión</button>
           </span>
         </div>
@@ -61,6 +67,25 @@ export async function openGroupPanel(deps: GroupDeps) {
       dlg.querySelectorAll<HTMLButtonElement>('[data-g]').forEach((b) => (b.onclick = () => ((selected = b.dataset.g!), render())));
       dlg.querySelector<HTMLButtonElement>('#g-new')!.onclick = createGroup;
       dlg.querySelector<HTMLButtonElement>('#g-join')!.onclick = joinGroup;
+      dlg.querySelector<HTMLButtonElement>('#g-pass')!.onclick = async () => {
+        const r = await form({
+          title: 'Cambiar contraseña',
+          fields: [
+            { name: 'a', label: 'Contraseña nueva (mínimo 8 caracteres)', type: 'password' },
+            { name: 'b', label: 'Repítela', type: 'password' },
+          ],
+          okLabel: 'Guardar',
+        });
+        if (!r) return;
+        if (r.values.a.length < 8) return deps.toast('La contraseña necesita al menos 8 caracteres.', true);
+        if (r.values.a !== r.values.b) return deps.toast('Las dos contraseñas no coinciden.', true);
+        try {
+          await cloud.updatePassword(r.values.a);
+          deps.toast('Contraseña cambiada.');
+        } catch (e) {
+          deps.toast((e as Error).message, true);
+        }
+      };
       dlg.querySelector<HTMLButtonElement>('#g-out')!.onclick = async () => {
         await cloud.signOut();
         render();
@@ -232,69 +257,6 @@ export async function openGroupPanel(deps: GroupDeps) {
       deps.toast((e as Error).message, true);
     }
     render();
-  }
-
-  function renderLogin() {
-    dlg.innerHTML = `
-      <h2>Entrar en Voces</h2>
-      <p class="intro">Con una cuenta puedes crear el grupo de tu banda, compartir canciones y usar la IA.</p>
-      ${appleSignInAvailable ? '<button type="button" class="btn apple-btn" id="l-apple"> Iniciar sesión con Apple</button><p class="or">o con tu email (te mandamos un correo para entrar)</p>' : '<p class="intro">Te mandamos un correo para entrar: sin contraseñas.</p>'}
-      <form class="form" id="l-form">
-        <label class="field col">Email <input type="email" id="l-email" required autocomplete="email" placeholder="tu@email.com"/></label>
-        <div id="l-code-row" hidden><label class="field col">Código de 6 dígitos <input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10"/></label></div>
-        <div id="l-pass-row" hidden><label class="field col">Contraseña <input type="password" id="l-pass" autocomplete="current-password"/></label></div>
-        <p class="err" id="l-err"></p>
-        <p class="legal">Al entrar aceptas la <a href="https://voces-web.onrender.com/privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</p>
-        <div class="row end"><button type="button" class="btn small" id="l-mode" style="margin-right:auto">Usar contraseña</button><button type="button" class="btn" data-close>Cerrar</button><button class="btn primary" id="l-go">Enviarme el correo</button></div>
-      </form>`;
-    wireClose();
-    dlg.querySelector<HTMLButtonElement>('#l-apple')?.addEventListener('click', async () => {
-      const err = dlg.querySelector<HTMLElement>('#l-err')!;
-      err.textContent = '';
-      try {
-        if ((await cloud.signInWithApple()) === 'signed-in') await render();
-      } catch (ex) {
-        err.textContent = (ex as Error).message;
-      }
-    });
-    let sent = false;
-    let passMode = false;
-    dlg.querySelector<HTMLButtonElement>('#l-mode')!.onclick = (e) => {
-      passMode = !passMode;
-      sent = false;
-      dlg.querySelector<HTMLElement>('#l-pass-row')!.hidden = !passMode;
-      dlg.querySelector<HTMLElement>('#l-code-row')!.hidden = true;
-      (e.target as HTMLButtonElement).textContent = passMode ? 'Usar código por email' : 'Usar contraseña';
-      dlg.querySelector<HTMLButtonElement>('#l-go')!.textContent = passMode ? 'Entrar' : 'Enviarme el correo';
-    };
-    const err = dlg.querySelector<HTMLElement>('#l-err')!;
-    const go = dlg.querySelector<HTMLButtonElement>('#l-go')!;
-    dlg.querySelector<HTMLFormElement>('#l-form')!.onsubmit = async (e) => {
-      e.preventDefault();
-      err.textContent = '';
-      const email = dlg.querySelector<HTMLInputElement>('#l-email')!.value.trim();
-      go.disabled = true;
-      try {
-        if (passMode) {
-          await cloud.signInWithPassword(email, dlg.querySelector<HTMLInputElement>('#l-pass')!.value);
-          await render();
-        } else if (!sent) {
-          await cloud.sendCode(email);
-          sent = true;
-          dlg.querySelector<HTMLElement>('#l-code-row')!.hidden = false;
-          dlg.querySelector<HTMLInputElement>('#l-code')!.focus();
-          go.textContent = 'Entrar';
-          err.textContent = 'Te hemos enviado un correo: pulsa el enlace para entrar (o escribe aquí el código, si trae uno). Revisa también el spam.';
-        } else {
-          await cloud.verifyCode(email, dlg.querySelector<HTMLInputElement>('#l-code')!.value);
-          await render();
-        }
-      } catch (ex) {
-        err.textContent = (ex as Error).message;
-      } finally {
-        go.disabled = false;
-      }
-    };
   }
 
   await render();

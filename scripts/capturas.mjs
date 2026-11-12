@@ -10,8 +10,10 @@ import { fileURLToPath } from 'node:url';
 
 const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE = process.env.VOCES_URL ?? 'http://localhost:5173/';
-const ESCENAS = ['visualizar', 'voces', 'editar', 'asistente'];
-const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'capturas-app-store');
+const ESCENAS = (process.env.ESCENAS ?? 'visualizar,voces,editar,asistente').split(',');
+// ESCRITORIO=1: 1440×900 (para revisar la web en un ordenador), en la carpeta indicada por OUT_DIR.
+const ESCRITORIO = process.env.ESCRITORIO === '1';
+const OUT = process.env.OUT_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'capturas-app-store');
 const PORT = 9333;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -57,7 +59,7 @@ const send = (method, params = {}) =>
 await send('Page.enable');
 await send('Runtime.enable');
 // iPhone de 6,9": 440×956 puntos a 3× = 1320×2868 píxeles.
-await send('Emulation.setDeviceMetricsOverride', { width: 440, height: 956, deviceScaleFactor: 3, mobile: true });
+await send('Emulation.setDeviceMetricsOverride', ESCRITORIO ? { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false } : { width: 440, height: 956, deviceScaleFactor: 3, mobile: true });
 await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
 for (const escena of ESCENAS) {

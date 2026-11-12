@@ -3,7 +3,7 @@
 export interface Field {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'select' | 'checkbox' | 'textarea' | 'email';
+  type?: 'text' | 'number' | 'select' | 'checkbox' | 'textarea' | 'email' | 'password';
   value?: string | number | boolean;
   options?: { value: string; label: string }[];
   placeholder?: string;

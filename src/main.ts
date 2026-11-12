@@ -7,6 +7,7 @@ import { ACCEPTED, importFile } from './import';
 import { makeSong, makeVoice, uid, VOICE_COLORS, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
 import { confirmDialog, form } from './ui/dialog';
+import { showAuthScreen } from './ui/authScreen';
 import { openHumPanel } from './hum/humPanel';
 import { openAssistant } from './ai/assistantPanel';
 import { openGroupPanel } from './cloud/groupPanel';
@@ -395,6 +396,13 @@ function openGroups() {
       watchCurrent();
     },
     toast,
+    openAuth: () =>
+      showAuthScreen({
+        allowSkip: false,
+        onClose: (ok) => {
+          if (ok) openGroups();
+        },
+      }),
   });
 }
 $('#ed-hum').onclick = () =>
@@ -1046,8 +1054,27 @@ function showWelcome() {
 
 // ---------------- Inicio ----------------
 
+const capturando = new URLSearchParams(location.search).has('captura');
+const firstRun = (() => {
+  try {
+    return !loadSongs().length && !localStorage.getItem(WELCOME_KEY) && !capturando;
+  } catch {
+    return false;
+  }
+})();
+cloud.onPasswordRecovery(() => showAuthScreen({ allowSkip: false, mode: 'newpass' }));
 cloud.initAuth().then(() => {
   watchCurrent();
+  // Pantalla de entrada al abrir: con la nube activa, sin sesión y si no se eligió antes «Continuar sin cuenta».
+  let skipped = false;
+  try {
+    skipped = !!localStorage.getItem('voces.sinCuenta');
+  } catch {
+    /* nada */
+  }
+  if (cloud.recoveryInUrl) showAuthScreen({ allowSkip: false, mode: 'newpass' });
+  else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando) showAuthScreen({ allowSkip: true, onClose: () => firstRun && showWelcome() });
+  else if (firstRun) showWelcome();
   let signedIn = !!cloud.user();
   cloud.onAuth((u) => {
     // Al volver del enlace del correo (o al entrar con Apple), un aviso para que se note.
@@ -1061,12 +1088,6 @@ const last = getLast();
 setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
 requestAnimationFrame(loop);
 
-// La primera vez (sin canciones guardadas), la bienvenida.
-try {
-  if (!saved.length && !localStorage.getItem(WELCOME_KEY) && !new URLSearchParams(location.search).has('captura')) showWelcome();
-} catch {
-  /* nada */
-}
 
 initNative();
 onNativeFile((f) => void openFile(f));
