@@ -806,7 +806,13 @@ window.addEventListener('beforeunload', () => {
 
 cloud.initAuth().then(() => {
   watchCurrent();
-  cloud.onAuth(() => watchCurrent());
+  let signedIn = !!cloud.user();
+  cloud.onAuth((u) => {
+    // Al volver del enlace del correo (o al entrar con Apple), un aviso para que se note.
+    if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Grupo y cuenta para tu grupo.`);
+    signedIn = !!u;
+    watchCurrent();
+  });
 });
 const saved = loadSongs();
 const last = getLast();

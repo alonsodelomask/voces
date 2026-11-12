@@ -64,6 +64,15 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 
 ---
 
+## Estado (12/11/2026)
+
+- **Supabase: hecho.** Organización **PABLO** (la antigua «Baulify», renombrada: es la única organización y agrupa los proyectos; Baulify sigue dentro, sin cambios). Proyecto **Voces**, ref `jmkzsrqygurhlukqswes`, región *Central EU (Frankfurt)*, plan gratuito.
+  - Migraciones `001_init.sql` y `002_servidor.sql` ejecutadas; las 7 tablas tienen RLS activado. Comprobado con la clave pública: sin sesión no se ve nada y las funciones de grupo y de borrado están bloqueadas.
+  - Apple activado con el Client ID `io.github.alonsodelomask.voces`, sin *Secret Key*.
+  - Site URL `https://alonsodelomask.github.io/voces/` y URL de retorno permitidas: GitHub Pages, `voces-web.onrender.com` y `localhost:5173`.
+  - Correo: sin SMTP propio, Supabase no deja editar las plantillas y manda un **enlace**, no un código. En la web el enlace inicia la sesión. En el iPhone se entra con Apple o con contraseña. Para que llegue un código, configura un SMTP (paso 1.6) y añade `{{ .Token }}` a las plantillas.
+- **Pendiente:** Render (paso 3), la clave de Anthropic (paso 4), EAS (paso 6) y la revocación de Apple (paso 7).
+
 ## Guía paso a paso para ti
 
 ### 1. Supabase: crear el proyecto y las tablas

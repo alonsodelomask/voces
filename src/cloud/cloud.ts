@@ -3,7 +3,7 @@
 import { createClient, type RealtimeChannel, type SupabaseClient, type User } from '@supabase/supabase-js';
 import type { Song } from '../model';
 
-import { nativeAppleSignIn } from '../native';
+import { isNative, nativeAppleSignIn } from '../native';
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -13,7 +13,8 @@ const API = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/
 export const cloudEnabled = !!(URL && KEY);
 export const apiEnabled = cloudEnabled && !!API;
 export const sb: SupabaseClient | null = cloudEnabled
-  ? createClient(URL!, KEY!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
+  ? // En la web, el enlace del correo vuelve a la página con la sesión en la URL y se recoge solo.
+    createClient(URL!, KEY!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !isNative } })
   : null;
 
 export interface Group {
@@ -77,7 +78,9 @@ export function onAuth(f: (u: User | null) => void) {
 
 /** Envía un código de 6 dígitos al email (y crea la cuenta si no existe). */
 export async function sendCode(email: string) {
-  const { error } = await need().auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  // El correo trae un enlace (y un código si la plantilla lo incluye, con SMTP propio). En la web, el enlace vuelve aquí.
+  const emailRedirectTo = isNative ? undefined : location.origin + location.pathname;
+  const { error } = await need().auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo } });
   if (error) fail(error);
 }
 export async function verifyCode(email: string, token: string) {

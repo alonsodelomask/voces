@@ -238,13 +238,13 @@ export async function openGroupPanel(deps: GroupDeps) {
     dlg.innerHTML = `
       <h2>Entrar en Voces</h2>
       <p class="intro">Con una cuenta puedes crear el grupo de tu banda, compartir canciones y usar la IA.</p>
-      ${appleSignInAvailable ? '<button type="button" class="btn apple-btn" id="l-apple"> Iniciar sesión con Apple</button><p class="or">o con tu email (te mandamos un código)</p>' : '<p class="intro">Te mandamos un código por email: sin contraseñas.</p>'}
+      ${appleSignInAvailable ? '<button type="button" class="btn apple-btn" id="l-apple"> Iniciar sesión con Apple</button><p class="or">o con tu email (te mandamos un correo para entrar)</p>' : '<p class="intro">Te mandamos un correo para entrar: sin contraseñas.</p>'}
       <form class="form" id="l-form">
         <label class="field col">Email <input type="email" id="l-email" required autocomplete="email" placeholder="tu@email.com"/></label>
         <div id="l-code-row" hidden><label class="field col">Código de 6 dígitos <input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10"/></label></div>
         <div id="l-pass-row" hidden><label class="field col">Contraseña <input type="password" id="l-pass" autocomplete="current-password"/></label></div>
         <p class="err" id="l-err"></p>
-        <div class="row end"><button type="button" class="btn small" id="l-mode" style="margin-right:auto">Usar contraseña</button><button type="button" class="btn" data-close>Cerrar</button><button class="btn primary" id="l-go">Enviarme el código</button></div>
+        <div class="row end"><button type="button" class="btn small" id="l-mode" style="margin-right:auto">Usar contraseña</button><button type="button" class="btn" data-close>Cerrar</button><button class="btn primary" id="l-go">Enviarme el correo</button></div>
       </form>`;
     wireClose();
     dlg.querySelector<HTMLButtonElement>('#l-apple')?.addEventListener('click', async () => {
@@ -264,7 +264,7 @@ export async function openGroupPanel(deps: GroupDeps) {
       dlg.querySelector<HTMLElement>('#l-pass-row')!.hidden = !passMode;
       dlg.querySelector<HTMLElement>('#l-code-row')!.hidden = true;
       (e.target as HTMLButtonElement).textContent = passMode ? 'Usar código por email' : 'Usar contraseña';
-      dlg.querySelector<HTMLButtonElement>('#l-go')!.textContent = passMode ? 'Entrar' : 'Enviarme el código';
+      dlg.querySelector<HTMLButtonElement>('#l-go')!.textContent = passMode ? 'Entrar' : 'Enviarme el correo';
     };
     const err = dlg.querySelector<HTMLElement>('#l-err')!;
     const go = dlg.querySelector<HTMLButtonElement>('#l-go')!;
@@ -283,7 +283,7 @@ export async function openGroupPanel(deps: GroupDeps) {
           dlg.querySelector<HTMLElement>('#l-code-row')!.hidden = false;
           dlg.querySelector<HTMLInputElement>('#l-code')!.focus();
           go.textContent = 'Entrar';
-          err.textContent = 'Te hemos enviado un código. Revisa también la carpeta de spam.';
+          err.textContent = 'Te hemos enviado un correo: pulsa el enlace para entrar (o escribe aquí el código, si trae uno). Revisa también el spam.';
         } else {
           await cloud.verifyCode(email, dlg.querySelector<HTMLInputElement>('#l-code')!.value);
           await render();
