@@ -32,13 +32,13 @@
       <h2>3. Con cuenta (opcional)</h2>
       <p>Si creas una cuenta para compartir canciones con tu grupo o usar la IA, guardamos:</p>
       <ul>
-        <li><b>Tu email</b>, para iniciar sesión (te enviamos un código).</li>
+        <li><b>Tu email</b>, para iniciar sesión (te enviamos un código). Si entras con «Iniciar sesión con Apple», el email que Apple nos dé (puede ser una dirección privada de Apple) y tu nombre la primera vez.</li>
         <li><b>Tu nombre visible</b>, que ven los miembros de tus grupos.</li>
         <li><b>Los grupos</b> a los que perteneces y su código de invitación.</li>
         <li><b>Las canciones que decides compartir</b> con un grupo (notas, acordes, título), visibles para los miembros de ese grupo.</li>
         <li>Un registro con la fecha de cada petición a la IA, solo para aplicar el límite diario.</li>
       </ul>
-      <p>Estos datos se alojan en Supabase (infraestructura en la nube) y se usan únicamente para que la app funcione.</p>
+      <p>Estos datos se alojan en Supabase y en nuestro servidor de Render, ambos en la Unión Europea, y se usan únicamente para que la app funcione. Si entras con Apple, guardamos cifrado un código de Apple que solo sirve para revocar ese acceso cuando borras tu cuenta.</p>
 
       <h2>4. Asistente de IA</h2>
       <p>Cuando pides algo a la IA, se envían tu petición y una descripción en texto de la canción abierta (notas, acordes y nombres de las voces) a Anthropic, que proporciona el modelo Claude, para generar la respuesta. No se envían tu email ni tu audio. Las funciones «Revisar», «Acordes» y «Crear voces» del asistente funcionan en tu dispositivo, sin enviar nada.</p>
@@ -51,7 +51,7 @@
       </ul>
 
       <h2>6. Tus derechos y borrar la cuenta</h2>
-      <p>Puedes borrar tu cuenta en cualquier momento desde la app: <i>Menú → Grupo y cuenta → Eliminar mi cuenta</i>. Se eliminan tu email, tu nombre y tu pertenencia a los grupos. Las canciones guardadas en tu dispositivo no se tocan. También puedes salir de un grupo o dejar de compartir una canción cuando quieras.</p>
+      <p>Puedes borrar tu cuenta en cualquier momento desde la app: <i>Menú → Grupo y cuenta → Eliminar mi cuenta</i>. Se eliminan tu email, tu nombre y tu pertenencia a los grupos, y se revoca el acceso de «Iniciar sesión con Apple» si lo usaste. Las canciones guardadas en tu dispositivo no se tocan. También puedes salir de un grupo o dejar de compartir una canción cuando quieras.</p>
 
       <h2>7. Menores</h2>
       <p>Voces no está dirigida a menores de 13 años y no recogemos conscientemente sus datos.</p>
