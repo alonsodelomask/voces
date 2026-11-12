@@ -15,6 +15,7 @@ import * as cloud from './cloud/cloud';
 import { initNative, isNative, onNativeFile } from './native';
 import { deleteSong, getLast, loadSongs, saveSong, setLast } from './storage';
 import { Visualizer } from './viz/visualizer';
+import type { Instrument } from './viz/chordShapes';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 
@@ -300,6 +301,24 @@ $<HTMLInputElement>('#opt-chords-auto').onchange = (e) => {
   if (song.chordsAuto) song.chords = computeChords(song);
   persist();
 };
+// Diagrama del acorde (opcional, se recuerda en este dispositivo).
+{
+  const sel = $<HTMLSelectElement>('#opt-diagram');
+  try {
+    sel.value = localStorage.getItem('voces.diagrama') ?? 'none';
+  } catch {
+    /* nada */
+  }
+  viz.opts.chordDiagram = sel.value as Instrument;
+  sel.onchange = () => {
+    viz.opts.chordDiagram = sel.value as Instrument;
+    try {
+      localStorage.setItem('voces.diagrama', sel.value);
+    } catch {
+      /* nada */
+    }
+  };
+}
 $<HTMLInputElement>('#opt-names').onchange = (e) => (viz.opts.showNames = (e.target as HTMLInputElement).checked);
 $<HTMLInputElement>('#opt-loop').onchange = (e) => (engine.loop = (e.target as HTMLInputElement).checked);
 $<HTMLInputElement>('#opt-watermark').oninput = (e) => (viz.opts.watermark = (e.target as HTMLInputElement).value);

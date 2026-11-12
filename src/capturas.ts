@@ -66,6 +66,16 @@ export async function preparar(escena: string, api: Api) {
       }
       break;
     }
+    case 'guitarra':
+    case 'piano':
+    case 'ukelele': {
+      api.viz.opts.chordDiagram = escena === 'guitarra' ? 'guitar' : escena === 'piano' ? 'piano' : 'ukulele';
+      api.switchView('viz');
+      await wait(150);
+      api.freeze(true);
+      pintarSonando(api, T);
+      break;
+    }
     default: {
       api.switchView('viz');
       await wait(150);

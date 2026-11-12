@@ -1,5 +1,6 @@
 import type { Note, Song, Voice } from '../model';
-import { noteLabel } from '../music';
+import { midiToName, noteLabel, prettyAccidentals } from '../music';
+import { fretShape, pianoVoicing, type Instrument } from './chordShapes';
 
 interface Particle {
   t: number; // tiempo de canción en el que nació (ancla horizontal)
@@ -19,6 +20,8 @@ export interface VizOptions {
   showChord: boolean;
   showNames: boolean;
   watermark: string;
+  /** Diagrama del acorde actual abajo (opcional). */
+  chordDiagram?: Instrument;
 }
 
 const smoother = (s: number) => {
@@ -128,8 +131,10 @@ export class Visualizer {
     const short = Math.min(w / u, h / u);
     const pps = short * 0.32 * this.opts.zoom * u; // píxeles por segundo
     const headX = Math.round(w * 0.34);
+    const diagram = this.opts.chordDiagram && this.opts.chordDiagram !== 'none' ? this.opts.chordDiagram : null;
     const yTop = h * 0.3;
-    const yBot = h * 0.8;
+    // Con diagrama de acordes, las líneas dejan sitio abajo.
+    const yBot = diagram ? h * 0.6 : h * 0.8;
     const { min, max } = this.range;
     const Y = (m: number) => yBot - ((m - min) / (max - min)) * (yBot - yTop);
     const X = (t: number) => headX + (t - time) * pps;
@@ -146,7 +151,7 @@ export class Visualizer {
 
     // Marcas de acorde.
     const lineTop = yTop - 58 * u;
-    const lineBot = h * 0.93;
+    const lineBot = diagram ? h * 0.65 : h * 0.93;
     ctx.font = `${11 * u}px system-ui, "Segoe UI", sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -242,6 +247,7 @@ export class Visualizer {
     // Cabecera: acorde actual y título.
     let current = '';
     for (const c of song.chords) if (c.time <= time + 0.02) current = c.name;
+    if (diagram && current) this.drawDiagram(diagram, current, song.keyFifths, w / 2, h * 0.685, h * 0.29, u);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     if (this.opts.showChord && current) {
@@ -261,6 +267,134 @@ export class Visualizer {
     }
 
     this.lastTime = time;
+  }
+
+/** Diagrama del acorde: rejilla de cuerdas y trastes (guitarra, ukelele) o teclado (piano). */
+  private drawDiagram(inst: Instrument, chord: string, keyFifths: number, cx: number, top: number, height: number, u: number) {
+    const ctx = this.ctx;
+    const label = { guitar: 'GUITARRA', ukulele: 'UKELELE', piano: 'PIANO', none: '' }[inst];
+    const pcName = (m: number) => prettyAccidentals(midiToName(m, keyFifths).replace(/-?\d+$/, ''));
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = `600 ${11 * u}px system-ui, "Segoe UI", sans-serif`;
+    ctx.fillText(`${label} · ${chord}`, cx, top + 12 * u);
+    const gTop = top + 34 * u;
+    const avail = height - 34 * u - 22 * u;
+
+    if (inst === 'piano') {
+      const notes = pianoVoicing(chord);
+      if (!notes) return ctx.restore();
+      const low = Math.floor(Math.min(...notes) / 12) * 12;
+      const whites = [0, 2, 4, 5, 7, 9, 11];
+      const nWhite = 14;
+      const kw = Math.min((this.canvas.width * 0.8) / nWhite, avail * 0.38);
+      const kh = Math.min(avail * 0.85, kw * 4.2);
+      const x0 = cx - (nWhite * kw) / 2;
+      const on = new Set(notes);
+      const xOf = (m: number) => {
+        const oct = Math.floor((m - low) / 12);
+        const p = (m - low) % 12;
+        const wi = whites.indexOf(p);
+        return wi >= 0 ? { x: x0 + (oct * 7 + wi) * kw, black: false } : { x: x0 + (oct * 7 + whites.indexOf(p - 1) + 1) * kw - kw * 0.3, black: true };
+      };
+      for (let i = 0; i < nWhite; i++) {
+        const m = low + Math.floor(i / 7) * 12 + whites[i % 7];
+        ctx.fillStyle = on.has(m) ? '#ff5fb0' : 'rgba(240,236,245,0.92)';
+        if (on.has(m)) {
+          ctx.shadowColor = '#ff2d6f';
+          ctx.shadowBlur = 14 * u;
+        }
+        ctx.fillRect(x0 + i * kw + 1, gTop, kw - 2, kh);
+        ctx.shadowBlur = 0;
+      }
+      for (let m = low; m < low + 24; m++) {
+        const k = xOf(m);
+        if (!k.black) continue;
+        ctx.fillStyle = on.has(m) ? '#e940d6' : '#1b0f22';
+        ctx.fillRect(k.x, gTop, kw * 0.6, kh * 0.62);
+      }
+      ctx.font = `700 ${11 * u}px system-ui, "Segoe UI", sans-serif`;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      for (const m of notes) {
+        if (m < low || m >= low + 24) continue;
+        const k = xOf(m);
+        ctx.fillText(pcName(m), k.x + (k.black ? kw * 0.3 : kw / 2), gTop + kh + 16 * u);
+      }
+      return ctx.restore();
+    }
+
+    if (inst === 'none') return ctx.restore();
+    const shape = fretShape(chord, inst);
+    if (!shape) return ctx.restore();
+    const n = shape.frets.length;
+    const rows = 4;
+    const fs = Math.min(avail / (rows + 0.6), 30 * u);
+    const ss = Math.min(fs * 0.95, (this.canvas.width * 0.5) / (n - 1));
+    const gw = ss * (n - 1);
+    const x0 = cx - gw / 2;
+    const y0 = gTop + 6 * u;
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.2 * u;
+    for (let i = 0; i < n; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + i * ss, y0);
+      ctx.lineTo(x0 + i * ss, y0 + rows * fs);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= rows; r++) {
+      ctx.lineWidth = (r === 0 && shape.base === 1 ? 4 : 1.2) * u;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0 + r * fs);
+      ctx.lineTo(x0 + gw, y0 + r * fs);
+      ctx.stroke();
+    }
+    ctx.font = `${11 * u}px system-ui, "Segoe UI", sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    if (shape.base > 1) {
+      ctx.textAlign = 'right';
+      ctx.fillText(`${shape.base}fr`, x0 - 10 * u, y0 + fs * 0.6);
+      ctx.textAlign = 'center';
+    }
+    const r = Math.min(fs, ss) * 0.3;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(255,255,255,0.7)';
+    ctx.shadowBlur = 8 * u;
+    if (shape.barre) {
+      const idx = shape.frets.map((f, i) => (f === shape.barre ? i : -1)).filter((i) => i >= 0);
+      const yb = y0 + (shape.barre - shape.base + 0.5) * fs;
+      const xa = x0 + idx[0] * ss;
+      const xb = x0 + idx[idx.length - 1] * ss;
+      // Línea gruesa con extremos redondos (compatible con iOS 15, que no tiene roundRect).
+      ctx.strokeStyle = '#fff';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 2 * r;
+      ctx.beginPath();
+      ctx.moveTo(xa, yb);
+      ctx.lineTo(xb, yb);
+      ctx.stroke();
+    }
+    shape.frets.forEach((f, i) => {
+      const x = x0 + i * ss;
+      if (f > 0 && f !== shape.barre) {
+        ctx.beginPath();
+        ctx.arc(x, y0 + (f - shape.base + 0.5) * fs, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    ctx.shadowBlur = 0;
+    ctx.font = `${12 * u}px system-ui, "Segoe UI", sans-serif`;
+    shape.frets.forEach((f, i) => {
+      const x = x0 + i * ss;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      if (f < 0) ctx.fillText('×', x, y0 - 7 * u);
+      else if (f === 0) ctx.fillText('○', x, y0 - 7 * u);
+      const m = shape.midi[i];
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(m === null ? '×' : pcName(m), x, y0 + rows * fs + 18 * u);
+    });
+    ctx.restore();
   }
 
   private drawBackground(w: number, h: number, headX: number) {
