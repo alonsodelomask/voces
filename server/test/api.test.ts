@@ -210,6 +210,15 @@ describe('Modo espera', () => {
   });
 });
 
+describe('Limpieza', () => {
+  it('el registro de uso de la IA se borra a los 30 días', async () => {
+    const store = new MemoryStore();
+    store.usage.push({ userId: ALICE, at: new Date(Date.now() - 40 * 86400_000).toISOString() }, { userId: ALICE, at: new Date().toISOString() });
+    assert.equal(await store.purgeAiUsage(new Date(Date.now() - 30 * 86400_000).toISOString()), 1);
+    assert.equal(store.usage.length, 1);
+  });
+});
+
 describe('Configuración', () => {
   it('nombra la variable que falla, nunca su valor', () => {
     assert.throws(() => loadConfig({ SUPABASE_URL: 'no-es-una-url', SUPABASE_SERVICE_ROLE_KEY: 'x'.repeat(30) }), (e: Error) => {

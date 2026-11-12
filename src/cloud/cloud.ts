@@ -148,15 +148,26 @@ export async function signOut() {
   await need().auth.signOut();
 }
 export async function deleteAccount() {
+  let viaServer = false;
   if (API) {
     // El servidor revoca antes el acceso de Apple (norma 5.1.1(v)) y borra la cuenta.
-    await api('DELETE', '/v1/account');
-  } else {
+    try {
+      await api('DELETE', '/v1/account');
+      viaServer = true;
+    } catch (e) {
+      // Servidor sin configurar (503) o dormido sin respuesta: se borra igual directamente en Supabase.
+      if (!(e instanceof ApiUnavailable)) throw e;
+    }
+  }
+  if (!viaServer) {
     const { error } = await need().rpc('delete_my_account');
     if (error) fail(error);
   }
   await need().auth.signOut();
 }
+
+/** El servidor no puede atender ahora (sin configurar, dormido o sin conexión). */
+class ApiUnavailable extends Error {}
 
 /** Llamada al servidor de Render con la sesión actual. Los errores traen un mensaje en español listo para enseñar. */
 async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = 150_000): Promise<T> {
@@ -174,10 +185,12 @@ async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: un
     });
   } catch {
     // Render en el plan gratuito se duerme: la primera petición puede tardar ~1 minuto.
-    throw new Error('No se ha podido conectar con el servidor. Comprueba la conexión y prueba otra vez.');
+    throw new ApiUnavailable('No se ha podido conectar con el servidor. Comprueba la conexión y prueba otra vez.');
   }
   const json = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-  if (!res.ok) throw new Error(json?.error?.message ?? `Error del servidor (${res.status}).`);
+  const message = json?.error?.message ?? `Error del servidor (${res.status}).`;
+  if (res.status === 503) throw new ApiUnavailable(message);
+  if (!res.ok) throw new Error(message);
   return json as T;
 }
 
@@ -216,6 +229,29 @@ export async function signInWithApple(): Promise<'signed-in' | 'cancelled'> {
     await api('POST', '/v1/apple/authorization', { authorizationCode: cred.authorizationCode }, 20_000).catch(() => {});
   }
   return 'signed-in';
+}
+
+/**
+ * «Descargar mis datos» (derecho de portabilidad): perfil, grupos, miembros de cada grupo y las canciones compartidas,
+ * en un JSON. Las canciones que solo están en el dispositivo se exportan aparte (Exportar proyecto).
+ */
+export async function exportMyData(): Promise<Blob> {
+  const db = need();
+  if (!currentUser) throw new Error('Inicia sesión primero.');
+  const name = await getProfileName();
+  const groups = await myGroups();
+  const detail = [];
+  for (const g of groups) {
+    const [mem, songs] = await Promise.all([members(g.id), db.from('songs').select('id, title, data, updated_at, updated_by').eq('group_id', g.id)]);
+    if (songs.error) fail(songs.error);
+    detail.push({ grupo: { id: g.id, nombre: g.name, codigo: g.invite_code, maximo: g.max_members, rol: g.role }, miembros: mem, canciones: songs.data });
+  }
+  const data = {
+    exportado: new Date().toISOString(),
+    cuenta: { id: currentUser.id, correo: currentUser.email ?? null, nombre: name, creada: currentUser.created_at, proveedores: currentUser.app_metadata?.providers ?? [] },
+    grupos: detail,
+  };
+  return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
 }
 
 export async function getProfileName(): Promise<string> {

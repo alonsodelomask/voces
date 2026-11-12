@@ -12,6 +12,8 @@ export interface Store {
   /** Peticiones a la IA de esa persona desde `since` (ISO). */
   aiUsageSince(userId: string, since: string): Promise<number>;
   recordAiUsage(userId: string): Promise<void>;
+  /** Borra el registro de uso de la IA anterior a `before` (ISO). Devuelve cuántas filas. */
+  purgeAiUsage(before: string): Promise<number>;
   /** El `sub` de la identidad de Apple vinculada a la cuenta, o null si no entró con Apple. */
   appleIdentity(userId: string): Promise<string | null>;
   saveAppleToken(userId: string, sealed: string): Promise<void>;
@@ -43,6 +45,11 @@ export class SupabaseStore implements Store {
   async recordAiUsage(userId: string) {
     const { error } = await this.db.from('ai_usage').insert({ user_id: userId });
     SupabaseStore.check(error, 'ai-usage-insert');
+  }
+  async purgeAiUsage(before: string) {
+    const { count, error } = await this.db.from('ai_usage').delete({ count: 'exact' }).lt('created_at', before);
+    SupabaseStore.check(error, 'ai-usage-purge');
+    return count ?? 0;
   }
   async appleIdentity(userId: string) {
     const { data, error } = await this.db.auth.admin.getUserById(userId);
@@ -100,6 +107,7 @@ export class UnconfiguredStore implements Store {
   }
   aiUsageSince(): Promise<number> { return this.fail(); }
   recordAiUsage(): Promise<void> { return this.fail(); }
+  async purgeAiUsage(): Promise<number> { return 0; }
   appleIdentity(): Promise<string | null> { return this.fail(); }
   saveAppleToken(): Promise<void> { return this.fail(); }
   appleToken(): Promise<string | null> { return this.fail(); }
@@ -124,6 +132,11 @@ export class MemoryStore implements Store {
   }
   async recordAiUsage(userId: string) {
     this.usage.push({ userId, at: new Date().toISOString() });
+  }
+  async purgeAiUsage(before: string) {
+    const n = this.usage.length;
+    this.usage = this.usage.filter((u) => u.at >= before);
+    return n - this.usage.length;
   }
   async appleIdentity(userId: string) {
     return this.appleIdentities.get(userId) ?? null;

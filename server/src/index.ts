@@ -36,14 +36,19 @@ export function buildServer(config: Config) {
   // Avisos al arrancar: sólo nombres de variables, nunca valores.
   if (!ai) console.warn('[voces] IA desactivada: falta ANTHROPIC_API_KEY (o pon VOCES_AI=simulated para probar).');
   if (!apple) console.warn(`[voces] revocación del token de Apple desactivada: faltan ${config.appleMissing.join(', ')}. Borrar la cuenta funciona igual, sin revocar.`);
-  return { app, account, ai };
+  /** Limpieza: el registro de uso de la IA se guarda 30 días (lo dice la política de privacidad). */
+  const purge = () => store.purgeAiUsage(new Date(Date.now() - 30 * 24 * 3600_000).toISOString());
+  return { app, account, ai, purge };
 }
 
 if (import.meta.main) {
   const config = loadConfig();
-  const { app, account, ai } = buildServer(config);
-  // Revocaciones de Apple pendientes: al arrancar y cada hora.
-  const retry = () => account.retryRevocations().catch(() => console.error('[voces] no se han podido reintentar las revocaciones de Apple'));
+  const { app, account, ai, purge } = buildServer(config);
+  // Mantenimiento al arrancar y cada hora: revocaciones de Apple pendientes y limpieza del uso de la IA.
+  const retry = () => {
+    account.retryRevocations().catch(() => console.error('[voces] no se han podido reintentar las revocaciones de Apple'));
+    purge().catch(() => console.error('[voces] no se ha podido limpiar el registro de uso de la IA'));
+  };
   void retry();
   setInterval(retry, 3600_000).unref();
   serve({ fetch: app.fetch, port: config.port }, (info) => {

@@ -1,6 +1,7 @@
 import { uid, type Song } from '../model';
 import { confirmDialog, esc, form } from '../ui/dialog';
 import * as cloud from './cloud';
+import { saveFile } from '../native';
 
 export interface GroupDeps {
   song: () => Song;
@@ -50,6 +51,7 @@ export async function openGroupPanel(deps: GroupDeps) {
           <span class="acct-btns">
             <button class="btn small" id="g-rename">Cambiar nombre</button>
             <button class="btn small" id="g-pass">Cambiar contraseña</button>
+            <button class="btn small" id="g-export">Descargar mis datos</button>
             <button class="btn small" id="g-out">Cerrar sesión</button>
           </span>
         </div>
@@ -67,6 +69,13 @@ export async function openGroupPanel(deps: GroupDeps) {
       dlg.querySelectorAll<HTMLButtonElement>('[data-g]').forEach((b) => (b.onclick = () => ((selected = b.dataset.g!), render())));
       dlg.querySelector<HTMLButtonElement>('#g-new')!.onclick = createGroup;
       dlg.querySelector<HTMLButtonElement>('#g-join')!.onclick = joinGroup;
+      dlg.querySelector<HTMLButtonElement>('#g-export')!.onclick = async () => {
+        try {
+          await saveFile(await cloud.exportMyData(), 'voces-mis-datos.json');
+        } catch (e) {
+          deps.toast((e as Error).message, true);
+        }
+      };
       dlg.querySelector<HTMLButtonElement>('#g-pass')!.onclick = async () => {
         const r = await form({
           title: 'Cambiar contraseña',
