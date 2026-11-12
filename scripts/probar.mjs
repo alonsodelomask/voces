@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE = process.env.VOCES_URL ?? 'http://localhost:5173/';
-const DIR = join(dirname(fileURLToPath(import.meta.url)), 'pruebas');
+const DIR = join(dirname(fileURLToPath(import.meta.url)), process.env.PRUEBAS_DIR ?? 'pruebas');
 const PORT = 9334;
 const filtro = process.argv[2] ?? '';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -73,7 +73,7 @@ for (const archivo of readdirSync(DIR).filter((f) => f.endsWith('.js') && f.incl
   await sleep(1500);
   const codigo = readFileSync(join(DIR, archivo), 'utf8');
   try {
-    const r = await send('Runtime.evaluate', { expression: `(${codigo})()`, awaitPromise: true, returnByValue: true, timeout: 60_000 });
+    const r = await send('Runtime.evaluate', { expression: `(${codigo})()`, awaitPromise: true, returnByValue: true, timeout: Number(process.env.TIMEOUT ?? 60_000) });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
     const valor = r.result.value;
     const ok = valor && valor.ok !== false && errores.length === 0;

@@ -3,7 +3,8 @@ import { AudioEngine, PRESETS, type Preset } from './audio/engine';
 import { demoSong } from './demo';
 import { PianoRoll, type Tool } from './editor/pianoroll';
 import { download, exportMidi, exportProject, safeName } from './export';
-import { ACCEPTED, importFile } from './import';
+import { ACCEPTED, importFile, isAudioFile } from './import';
+import { importAudio } from './import/audioDialog';
 import { makeSong, makeVoice, uid, VOICE_COLORS, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
 import { confirmDialog, form } from './ui/dialog';
@@ -738,7 +739,8 @@ fileInput.onchange = async () => {
 
 async function openFile(f: File) {
   try {
-    const s = await importFile(f);
+    const s = isAudioFile(f.name) || (f.type.startsWith('audio/') && !/\.(mid|midi)$/i.test(f.name)) ? await importAudio(f) : await importFile(f);
+    if (!s) return;
     setSong(s, true);
     const n = s.voices.reduce((a, v) => a + v.notes.length, 0);
     toast(`"${s.title}": ${s.voices.length} voces, ${n} notas.`);

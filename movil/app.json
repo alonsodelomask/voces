@@ -26,6 +26,14 @@
               "public.midi-audio",
               "public.xml"
             ]
+          },
+          {
+            "CFBundleTypeName": "Grabación",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.audio"
+            ]
           }
         ],
         "UTImportedTypeDeclarations": [
@@ -114,6 +122,10 @@
             {
               "scheme": "content",
               "mimeType": "text/xml"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "audio/*"
             }
           ]
         }

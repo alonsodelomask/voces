@@ -3,7 +3,9 @@ import type { Song } from '../model';
 import { parseMidi } from './midi';
 import { parseMusicXML } from './musicxml';
 
-export const ACCEPTED = '.musicxml,.xml,.mxl,.mid,.midi,.json,.voces';
+export const AUDIO_EXT = ['wav', 'mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'webm', 'aiff', 'aif', 'caf'];
+export const isAudioFile = (name: string) => AUDIO_EXT.includes((name.split('.').pop() ?? '').toLowerCase());
+export const ACCEPTED = '.musicxml,.xml,.mxl,.mid,.midi,.json,.voces,' + AUDIO_EXT.map((e) => '.' + e).join(',') + ',audio/*';
 
 export async function importFile(file: File): Promise<Song> {
   const name = file.name;
@@ -24,7 +26,7 @@ export async function importFile(file: File): Promise<Song> {
   if (/^gp\d?$|^gpx$/.test(ext)) {
     throw new Error('Guitar Pro aún no está soportado. Exporta la partitura como MusicXML o MIDI.');
   }
-  throw new Error(`Formato .${ext} no soportado. Usa MusicXML (.musicxml, .xml, .mxl) o MIDI (.mid).`);
+  throw new Error(`Formato .${ext} no soportado. Usa MusicXML (.musicxml, .xml, .mxl), MIDI (.mid) o audio (WAV, MP3, M4A, OGG, FLAC…).`);
 }
 
 function readMxl(bytes: Uint8Array): string {
