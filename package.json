@@ -1,0 +1,22 @@
+{
+  "name": "voces",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && gh-pages -d dist --nojekyll -m \"Publicar\""
+  },
+  "dependencies": {
+    "@tonejs/midi": "^2.0.28",
+    "fflate": "^0.8.3",
+    "tonal": "^6.5.1"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

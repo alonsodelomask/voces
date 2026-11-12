@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#2a0734" />
+    <meta name="description" content="Compón y visualiza las voces de tu grupo como líneas de sintetizador." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <title>Voces</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand"><img src="./icon.svg" alt="" /> <span>Voces</span></div>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-view="viz" role="tab">Visualizar</button>
+          <button class="tab" data-view="edit" role="tab">Editar</button>
+        </div>
+        <div class="actions">
+          <button id="btn-open" class="btn primary" title="Importar MusicXML o MIDI">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12m0-12 4 4m-4-4L8 7M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+            <span>Importar</span>
+          </button>
+          <button id="btn-menu" class="btn icon" title="Más opciones" aria-haspopup="true">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          </button>
+          <button id="btn-voices" class="btn icon" title="Voces">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          </button>
+        </div>
+        <div id="menu" class="menu" hidden>
+          <button data-act="new">Nueva canción</button>
+          <button data-act="library">Mis canciones</button>
+          <button data-act="save">Guardar</button>
+          <hr />
+          <button data-act="export-midi">Exportar MIDI</button>
+          <button data-act="export-project">Exportar proyecto (.json)</button>
+          <button data-act="record">Grabar vídeo (9:16)</button>
+          <hr />
+          <button data-act="demo">Cargar ejemplo</button>
+          <button data-act="help">Ayuda</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="view-viz" class="view active">
+          <canvas id="viz"></canvas>
+          <div id="empty" class="empty" hidden>
+            <p>Arrastra aquí una partitura <b>MusicXML</b> (.musicxml, .mxl) o un <b>MIDI</b></p>
+          </div>
+        </section>
+        <section id="view-edit" class="view">
+          <div class="edit-toolbar">
+            <label class="field">Voz
+              <select id="ed-voice"></select>
+            </label>
+            <div class="seg" id="ed-tools">
+              <button data-tool="draw" class="active" title="Dibujar notas (arrastra para alargar)">✎ Dibujar</button>
+              <button data-tool="erase" title="Borrar notas">⌫ Borrar</button>
+              <button data-tool="pan" title="Desplazar la vista">✥ Mover</button>
+            </div>
+            <label class="field">Duración
+              <select id="ed-len">
+                <option value="4">Redonda</option>
+                <option value="2">Blanca</option>
+                <option value="1" selected>Negra</option>
+                <option value="0.5">Corchea</option>
+                <option value="0.25">Semicorchea</option>
+              </select>
+            </label>
+            <label class="field">Rejilla
+              <select id="ed-snap">
+                <option value="1">1/4</option>
+                <option value="0.5" selected>1/8</option>
+                <option value="0.25">1/16</option>
+              </select>
+            </label>
+            <label class="field">BPM <input id="ed-bpm" type="number" min="30" max="300" step="1" /></label>
+            <label class="field">Compás
+              <select id="ed-bar">
+                <option value="2">2/4</option>
+                <option value="3">3/4</option>
+                <option value="4">4/4</option>
+                <option value="6">6/8 (6 corcheas)</option>
+              </select>
+            </label>
+            <div class="zoom">
+              <button id="ed-zoom-out" class="btn icon small" title="Alejar">−</button>
+              <button id="ed-zoom-in" class="btn icon small" title="Acercar">+</button>
+            </div>
+          </div>
+          <canvas id="roll"></canvas>
+          <p class="hint">Clic para poner una nota · arrastra para alargarla o moverla · doble clic o clic derecho para borrar · clic en la regla para mover el cabezal · Ctrl+rueda para zoom</p>
+        </section>
+
+        <aside id="panel" class="panel">
+          <div class="panel-head">
+            <input id="song-title" class="title-input" placeholder="Título" />
+            <button id="panel-close" class="btn icon small" title="Cerrar">✕</button>
+          </div>
+          <div id="voice-list" class="voice-list"></div>
+          <button id="add-voice" class="btn ghost full">+ Añadir voz</button>
+          <div class="panel-section">
+            <label class="check"><input type="checkbox" id="opt-chords-auto" /> Acordes automáticos</label>
+            <label class="check"><input type="checkbox" id="opt-names" checked /> Nombres de las notas</label>
+            <label class="check"><input type="checkbox" id="opt-loop" /> Repetir en bucle</label>
+            <label class="field col">Texto en pantalla <input id="opt-watermark" placeholder="(título de la canción)" /></label>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="transport">
+        <button id="btn-rewind" class="btn icon" title="Al principio">
+          <svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 9 12l10 7z"/></svg>
+        </button>
+        <button id="btn-play" class="btn play" title="Reproducir (espacio)">
+          <svg class="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>
+          <svg class="i-pause" viewBox="0 0 24 24"><path d="M7 4h4v16H7zM13 4h4v16h-4z"/></svg>
+        </button>
+        <span id="time" class="time">0:00</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Posición" />
+        <span id="dur" class="time">0:00</span>
+        <label class="field compact" title="Velocidad">
+          <select id="rate">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+          </select>
+        </label>
+        <label class="field compact" title="Sonido">
+          <select id="preset"></select>
+        </label>
+        <label class="field compact zoom-range" title="Zoom del visualizador">
+          <input id="vzoom" type="range" min="0.4" max="2.5" step="0.05" value="1" />
+        </label>
+      </footer>
+
+      <input id="file" type="file" hidden />
+      <div id="drop" class="drop" hidden><div>Suelta el archivo para importarlo</div></div>
+      <div id="toast" class="toast" hidden></div>
+
+      <dialog id="dlg-library" class="dlg">
+        <h2>Mis canciones</h2>
+        <div id="library-list" class="library-list"></div>
+        <form method="dialog"><button class="btn">Cerrar</button></form>
+      </dialog>
+
+      <dialog id="dlg-new" class="dlg">
+        <h2>Nueva canción</h2>
+        <form id="form-new" method="dialog" class="form">
+          <label class="field col">Título <input name="title" value="Nueva canción" required /></label>
+          <div class="row">
+            <label class="field col">Voces <input name="voices" type="number" min="1" max="8" value="4" /></label>
+            <label class="field col">BPM <input name="bpm" type="number" min="30" max="300" value="90" /></label>
+            <label class="field col">Pulsos/compás <input name="bar" type="number" min="2" max="12" value="4" /></label>
+          </div>
+          <div class="row end">
+            <button value="cancel" class="btn" formnovalidate>Cancelar</button>
+            <button value="ok" class="btn primary">Crear</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="dlg-record" class="dlg">
+        <h2>Grabando vídeo…</h2>
+        <p>Se está reproduciendo la canción completa en formato vertical 1080×1920. No cambies de pestaña hasta que termine.</p>
+        <canvas id="rec-preview" class="rec-preview"></canvas>
+        <div class="row end"><button id="rec-stop" class="btn primary">Detener y guardar</button></div>
+      </dialog>
+
+      <dialog id="dlg-help" class="dlg">
+        <h2>Cómo funciona</h2>
+        <ul class="help">
+          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl) o MIDI (.mid). Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>.</li>
+          <li>Cada voz de la partitura (parte, pentagrama o voz interna) se convierte en una línea de color. Si una voz tiene acordes, cada nota del acorde es una línea.</li>
+          <li>Se respetan las repeticiones y las casillas de 1ª/2ª vez. Los D.C./D.S./Coda todavía no.</li>
+          <li><b>Panel de voces:</b> silencia (M), escucha sola (S) u oculta cada voz. Ideal para ensayar tu parte.</li>
+          <li><b>Editar:</b> compón a mano en la rejilla; cada voz es una línea melódica.</li>
+          <li><b>Grabar vídeo:</b> genera un vídeo vertical listo para redes.</li>
+          <li>Atajos: <kbd>Espacio</kbd> reproducir/pausa, <kbd>←</kbd>/<kbd>→</kbd> saltar 5 s.</li>
+        </ul>
+        <form method="dialog"><button class="btn primary">Entendido</button></form>
+      </dialog>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
