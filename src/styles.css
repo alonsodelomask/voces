@@ -245,3 +245,13 @@ kbd { background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px; f
 .welcome-step .ico { font-size: 24px; width: 36px; text-align: center; }
 .welcome-step b { display: block; }
 .welcome-step small { color: var(--muted); }
+
+/* ---- Mis canciones ---- */
+.lib-tools { display: flex; gap: 8px; margin-bottom: 10px; }
+.lib-tools input { flex: 1; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; color: var(--text); }
+.lib-item.current { border-color: var(--accent); }
+.lib-actions { display: flex; gap: 4px; flex: none; }
+.lib-empty { color: var(--muted); }
+
+.seg button:disabled { opacity: 0.35; cursor: default; }
+:focus-visible { outline: 2px solid #1fd6f2; outline-offset: 2px; }

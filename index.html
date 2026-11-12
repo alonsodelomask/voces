@@ -19,14 +19,14 @@
           <button class="tab" data-view="edit" role="tab">Editar</button>
         </div>
         <div class="actions">
-          <button id="btn-open" class="btn primary" title="Importar MusicXML o MIDI">
+          <button id="btn-open" class="btn primary" title="Importar MusicXML o MIDI" aria-label="Importar partitura">
             <svg viewBox="0 0 24 24"><path d="M12 3v12m0-12 4 4m-4-4L8 7M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
             <span>Importar</span>
           </button>
-          <button id="btn-menu" class="btn icon" title="Más opciones" aria-haspopup="true">
+          <button id="btn-menu" class="btn icon" title="Más opciones" aria-haspopup="true" aria-label="Menú">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
           </button>
-          <button id="btn-voices" class="btn icon" title="Voces">
+          <button id="btn-voices" class="btn icon" title="Voces" aria-label="Panel de voces">
             <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
           </button>
         </div>
@@ -65,8 +65,8 @@
         <section id="view-edit" class="view">
           <div class="edit-toolbar">
             <div class="seg">
-              <button id="ed-undo" title="Deshacer (Ctrl+Z)">↶</button>
-              <button id="ed-redo" title="Rehacer (Ctrl+Y)">↷</button>
+              <button id="ed-undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
+              <button id="ed-redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">↷</button>
             </div>
             <button id="ed-hum" class="btn hum" title="Canta o tararea y se convierte en notas">🎤 Tararear</button>
             <button id="ed-assist" class="btn" title="Sugerencias, armonización automática e IA">✨ Asistente</button>
@@ -105,8 +105,8 @@
               </select>
             </label>
             <div class="zoom">
-              <button id="ed-zoom-out" class="btn icon small" title="Alejar">−</button>
-              <button id="ed-zoom-in" class="btn icon small" title="Acercar">+</button>
+              <button id="ed-zoom-out" class="btn icon small" title="Alejar" aria-label="Alejar">−</button>
+              <button id="ed-zoom-in" class="btn icon small" title="Acercar" aria-label="Acercar">+</button>
             </div>
           </div>
           <canvas id="roll"></canvas>
@@ -117,7 +117,7 @@
         <aside id="panel" class="panel">
           <div class="panel-head">
             <input id="song-title" class="title-input" placeholder="Título" />
-            <button id="panel-close" class="btn icon small" title="Cerrar">✕</button>
+            <button id="panel-close" class="btn icon small" title="Cerrar" aria-label="Cerrar el panel">✕</button>
           </div>
           <div id="voice-list" class="voice-list"></div>
           <button id="add-voice" class="btn ghost full">+ Añadir voz</button>
@@ -131,10 +131,10 @@
       </main>
 
       <footer class="transport">
-        <button id="btn-rewind" class="btn icon" title="Al principio">
+        <button id="btn-rewind" class="btn icon" title="Al principio" aria-label="Volver al principio">
           <svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 9 12l10 7z"/></svg>
         </button>
-        <button id="btn-play" class="btn play" title="Reproducir (espacio)">
+        <button id="btn-play" class="btn play" title="Reproducir (espacio)" aria-label="Reproducir o pausar">
           <svg class="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>
           <svg class="i-pause" viewBox="0 0 24 24"><path d="M7 4h4v16H7zM13 4h4v16h-4z"/></svg>
         </button>
@@ -166,7 +166,12 @@
 
       <dialog id="dlg-library" class="dlg">
         <h2>Mis canciones</h2>
+        <div class="lib-tools">
+          <input id="lib-search" type="search" placeholder="Buscar…" aria-label="Buscar canciones" />
+          <button id="lib-new" class="btn small">＋ Nueva</button>
+        </div>
         <div id="library-list" class="library-list"></div>
+        <p class="legal" id="lib-group-hint" hidden>Las canciones de tu grupo están en Menú › Grupo y cuenta.</p>
         <form method="dialog"><button class="btn">Cerrar</button></form>
       </dialog>
 
@@ -196,13 +201,15 @@
       <dialog id="dlg-help" class="dlg">
         <h2>Cómo funciona</h2>
         <ul class="help">
-          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl) o MIDI (.mid). Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>.</li>
-          <li>Cada voz de la partitura (parte, pentagrama o voz interna) se convierte en una línea de color. Si una voz tiene acordes, cada nota del acorde es una línea.</li>
-          <li>Se respetan las repeticiones y las casillas de 1ª/2ª vez. Los D.C./D.S./Coda todavía no.</li>
+          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl) o MIDI (.mid). Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>. En el móvil también puedes abrir la partitura desde WhatsApp o Archivos con «Abrir con… Voces».</li>
+          <li>Cada voz de la partitura (parte, pentagrama o voz interna) es una línea de color. Se respetan las repeticiones y las casillas de 1ª/2ª vez (los D.C./D.S./Coda todavía no).</li>
           <li><b>Panel de voces:</b> silencia (M), escucha sola (S) u oculta cada voz. Ideal para ensayar tu parte.</li>
-          <li><b>Editar:</b> compón a mano en la rejilla; cada voz es una línea melódica.</li>
+          <li><b>Ensayo</b> (botón ⇄ abajo): repite unos compases en bucle, con metrónomo y cuenta atrás. Combínalo con la velocidad 0.75×.</li>
+          <li><b>Editar:</b> toca la rejilla para poner notas, arrástralas para moverlas o alargarlas, mantén pulsada una para borrarla y pellizca para hacer zoom. La fila «Acorde» se edita tocándola.</li>
+          <li><b>Tararear:</b> canta y se convierte en notas. <b>Asistente:</b> revisa las voces, propone acordes y crea armonías.</li>
+          <li><b>Grupo:</b> crea el grupo de tu banda y comparte canciones que se sincronizan solas.</li>
           <li><b>Grabar vídeo:</b> genera un vídeo vertical listo para redes.</li>
-          <li>Atajos: <kbd>Espacio</kbd> reproducir/pausa, <kbd>←</kbd>/<kbd>→</kbd> saltar 5 s.</li>
+          <li>Atajos: <kbd>Espacio</kbd> reproducir/pausa · <kbd>←</kbd>/<kbd>→</kbd> saltar 5 s · <kbd>Ctrl+Z</kbd> deshacer · <kbd>Ctrl+Y</kbd> rehacer.</li>
         </ul>
         <p class="legal"><a href="https://voces-web.onrender.com/privacidad.html" target="_blank" rel="noopener">Política de privacidad</a> · <a href="https://github.com/alonsodelomask/voces/issues" target="_blank" rel="noopener">Soporte</a></p>
         <form method="dialog"><button class="btn primary">Entendido</button></form>

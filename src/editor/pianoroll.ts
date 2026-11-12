@@ -249,7 +249,11 @@ export class PianoRoll {
   private down(e: PointerEvent) {
     if (!this.song) return;
     const touch = e.pointerType === 'touch';
-    this.canvas.setPointerCapture(e.pointerId);
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* puntero ya liberado: se sigue sin captura */
+    }
     const p = this.pos(e);
     const base = { startX: p.x, startY: p.y, origStart: 0, origDur: 0, origMidi: 0, scrollX: this.scrollX, scrollY: this.scrollY, moved: false };
     if (p.y >= BAR_H && p.y < TOP && p.x >= KEYS_W) {

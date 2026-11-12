@@ -62,6 +62,13 @@ await send('Emulation.setDeviceMetricsOverride', movil ? { width: 400, height: 8
 let fallos = 0;
 for (const archivo of readdirSync(DIR).filter((f) => f.endsWith('.js') && f.includes(filtro)).sort()) {
   errores.length = 0;
+  // Las pruebas «nativa» simulan la app del iPhone: el puente existe antes de cargar la web.
+  let script;
+  if (archivo.includes('nativa')) {
+    script = await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: "window.__msgs=[];window.ReactNativeWebView={postMessage:function(m){window.__msgs.push(JSON.parse(m));}};window.VocesNative={platform:'ios',apple:true,version:'1.0.0'};",
+    });
+  }
   await send('Page.navigate', { url: BASE });
   await sleep(1500);
   const codigo = readFileSync(join(DIR, archivo), 'utf8');

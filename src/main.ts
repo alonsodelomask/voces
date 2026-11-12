@@ -4,7 +4,7 @@ import { demoSong } from './demo';
 import { PianoRoll, type Tool } from './editor/pianoroll';
 import { download, exportMidi, exportProject, safeName } from './export';
 import { ACCEPTED, importFile } from './import';
-import { makeSong, makeVoice, VOICE_COLORS, type Song, type Voice } from './model';
+import { makeSong, makeVoice, uid, VOICE_COLORS, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
 import { confirmDialog, form } from './ui/dialog';
 import { openHumPanel } from './hum/humPanel';
@@ -33,6 +33,7 @@ function setSong(s: Song, save = false) {
   if (engine.range) setRange(null);
   undoStack.length = 0;
   redoStack.length = 0;
+  updateUndoButtons();
   engine.setSong(s);
   viz.setSong(s);
   roll.setSong(s);
@@ -130,9 +131,16 @@ function checkpoint() {
   undoStack.push(snap);
   if (undoStack.length > 150) undoStack.shift();
   redoStack.length = 0;
+  updateUndoButtons();
+}
+/** Deshacer/rehacer en gris cuando no hay nada que deshacer o rehacer. */
+function updateUndoButtons() {
+  $<HTMLButtonElement>('#ed-undo').disabled = !undoStack.length;
+  $<HTMLButtonElement>('#ed-redo').disabled = !redoStack.length;
 }
 function restore(snap: string) {
   Object.assign(song, JSON.parse(snap));
+  updateUndoButtons();
   engine.song = song;
   engine.updateMix();
   refreshAfterEdit();
@@ -601,7 +609,11 @@ $<HTMLInputElement>('#vzoom').oninput = (e) => (viz.opts.zoom = parseFloat((e.ta
   };
   c.addEventListener('pointerdown', (e) => {
     fingers.set(e.pointerId, e.clientX);
-    c.setPointerCapture(e.pointerId);
+    try {
+      c.setPointerCapture(e.pointerId);
+    } catch {
+      /* puntero ya liberado */
+    }
     if (fingers.size === 2) {
       // Dos dedos: pellizco para el zoom (se cancela el arrastre del primero).
       down = false;
@@ -797,29 +809,78 @@ $<HTMLDialogElement>('#dlg-new').addEventListener('close', () => {
 
 function openLibrary() {
   const list = $('#library-list');
+  const search = $<HTMLInputElement>('#lib-search');
+  const q = search.value.trim().toLowerCase();
   list.innerHTML = '';
-  const songs = loadSongs();
-  if (!songs.length) list.innerHTML = '<p style="color:var(--muted)">Aún no hay canciones guardadas.</p>';
+  const all = loadSongs();
+  const songs = q ? all.filter((s) => s.title.toLowerCase().includes(q)) : all;
+  if (!all.length) list.innerHTML = '<p class="lib-empty">Aún no hay canciones guardadas. Importa una partitura o crea una nueva.</p>';
+  else if (!songs.length) list.innerHTML = '<p class="lib-empty">Ninguna canción coincide con la búsqueda.</p>';
+  $('#lib-group-hint').hidden = !(cloud.cloudEnabled && cloud.user());
   for (const s of songs) {
     const item = document.createElement('div');
-    item.className = 'lib-item';
+    item.className = 'lib-item' + (s.id === song.id ? ' current' : '');
     const nNotes = s.voices.reduce((a, v) => a + v.notes.length, 0);
-    item.innerHTML = `<div class="meta"><b></b><small>${s.groupId ? '☁ ' : ''}${s.voices.length} voces · ${nNotes} notas · ${new Date(s.updatedAt).toLocaleDateString()}</small></div><button class="btn small" title="Eliminar">✕</button>`;
-    item.querySelector('b')!.textContent = s.title;
-    item.querySelector<HTMLElement>('.meta')!.onclick = () => {
+    item.innerHTML = `<div class="meta" role="button" tabindex="0"><b></b><small>${s.groupId ? '☁ Grupo · ' : ''}${s.voices.length} voces · ${nNotes} notas · ${new Date(s.updatedAt).toLocaleDateString()}</small></div>
+      <div class="lib-actions">
+        <button class="btn small" data-a="rename" title="Cambiar el nombre" aria-label="Cambiar el nombre">✎</button>
+        <button class="btn small" data-a="copy" title="Duplicar" aria-label="Duplicar">⧉</button>
+        <button class="btn small" data-a="delete" title="Eliminar" aria-label="Eliminar">✕</button>
+      </div>`;
+    item.querySelector('b')!.textContent = s.title + (s.id === song.id ? '  · abierta' : '');
+    const open = () => {
       $<HTMLDialogElement>('#dlg-library').close();
-      setSong(s);
+      if (s.id !== song.id) setSong(s);
     };
-    item.querySelector('button')!.onclick = async () => {
-      if (!(await confirmDialog('Eliminar canción', `¿Eliminar «${s.title}» de este dispositivo? No se puede deshacer.${s.groupId ? ' En el grupo sigue estando.' : ''}`, 'Eliminar'))) return;
-      deleteSong(s.id);
+    item.querySelector<HTMLElement>('.meta')!.onclick = open;
+    item.querySelector<HTMLElement>('.meta')!.onkeydown = (e) => {
+      if (e.key === 'Enter') open();
+    };
+    item.querySelector('.lib-actions')!.addEventListener('click', async (e) => {
+      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset.a;
+      if (a === 'rename') {
+        const r = await form({ title: 'Cambiar el nombre', fields: [{ name: 't', label: 'Título', value: s.title }], okLabel: 'Guardar' });
+        const t = r?.values.t.trim();
+        if (!t) return;
+        if (s.id === song.id) {
+          song.title = t;
+          persist();
+          renderPanel();
+        } else {
+          s.title = t;
+          saveSong(s);
+        }
+      }
+      if (a === 'copy') {
+        const c: Song = JSON.parse(JSON.stringify(s.id === song.id ? song : s));
+        c.id = uid();
+        c.title = `${s.title} (copia)`;
+        c.groupId = undefined;
+        c.remoteUpdatedAt = undefined;
+        c.createdAt = c.updatedAt = Date.now();
+        saveSong(c);
+        toast(`Copia creada: «${c.title}».`);
+      }
+      if (a === 'delete') {
+        if (!(await confirmDialog('Eliminar canción', `¿Eliminar «${s.title}» de este dispositivo? No se puede deshacer.${s.groupId ? ' En el grupo sigue estando.' : ''}`, 'Eliminar'))) return;
+        deleteSong(s.id);
+        if (s.id === song.id) {
+          const rest = loadSongs();
+          setSong(rest[0] ?? demoSong());
+        }
+      }
       openLibrary();
-    };
+    });
     list.appendChild(item);
   }
   const dlg = $<HTMLDialogElement>('#dlg-library');
   if (!dlg.open) dlg.showModal();
 }
+$<HTMLInputElement>('#lib-search').addEventListener('input', () => openLibrary());
+$('#lib-new').onclick = () => {
+  $<HTMLDialogElement>('#dlg-library').close();
+  $<HTMLDialogElement>('#dlg-new').showModal();
+};
 
 // ---------------- Grabar vídeo ----------------
 
