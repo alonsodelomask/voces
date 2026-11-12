@@ -48,7 +48,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   }
   const v = parsed.data;
   if (!v.SUPABASE_URL) throw new Error('Falta SUPABASE_URL (para verificar las sesiones).');
-  if (v.VOCES_DATA === 'supabase' && !v.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Falta SUPABASE_SERVICE_ROLE_KEY.');
+  // Sin SUPABASE_SERVICE_ROLE_KEY el servidor arranca igual (modo espera): /health responde y el resto dice «no configurado».
 
   const appleNames = ['APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_TOKEN_ENCRYPTION_KEY'] as const;
   const appleMissing = appleNames.filter((n) => !v[n]);

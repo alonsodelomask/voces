@@ -30,8 +30,9 @@ services:
       # Webs que pueden llamar a la API (la app de iPhone/Android ya está permitida en el código).
       - key: VOCES_CORS_ORIGINS
         value: https://voces-web.onrender.com,https://alonsodelomask.github.io
+      # Proyecto «Voces» de la organización PABLO (pública: es la URL del proyecto).
       - key: SUPABASE_URL
-        sync: false
+        value: https://jmkzsrqygurhlukqswes.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       # Opcional: sólo si el proyecto usa todavía el secreto JWT heredado (HS256).
@@ -74,11 +75,11 @@ services:
         value: 24.14.1
       # Públicas por diseño (van dentro de la web): la URL y la clave «publishable» de Supabase y la URL de voces-api.
       - key: VITE_SUPABASE_URL
-        sync: false
+        value: https://jmkzsrqygurhlukqswes.supabase.co
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
       - key: VITE_API_URL
-        sync: false
+        value: https://voces-api.onrender.com
     headers:
       - path: /*
         name: X-Content-Type-Options

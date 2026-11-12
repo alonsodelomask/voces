@@ -6,11 +6,18 @@ import { createAppleClient } from './apple/client.ts';
 import { createApp } from './app.ts';
 import { createVerifier } from './auth.ts';
 import { loadConfig, type Config } from './config.ts';
-import { MemoryStore, SupabaseStore, type Store } from './store.ts';
+import { MemoryStore, SupabaseStore, UnconfiguredStore, type Store } from './store.ts';
 
 export function buildServer(config: Config) {
   const store: Store =
-    config.data === 'memory' ? new MemoryStore() : new SupabaseStore(config.supabase.url, config.supabase.serviceRoleKey!);
+    config.data === 'memory'
+      ? new MemoryStore()
+      : config.supabase.serviceRoleKey
+        ? new SupabaseStore(config.supabase.url, config.supabase.serviceRoleKey)
+        : new UnconfiguredStore();
+  if (config.data === 'supabase' && !config.supabase.serviceRoleKey) {
+    console.warn('[voces] MODO ESPERA: falta SUPABASE_SERVICE_ROLE_KEY. /health responde; el resto dice «no configurado» hasta que la pongas.');
+  }
   const verify = createVerifier({ supabaseUrl: config.supabase.url, jwtSecret: config.supabase.jwtSecret });
 
   let ai: AiProvider | null = null;

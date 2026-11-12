@@ -195,6 +195,21 @@ describe('Cuenta y Apple', () => {
   });
 });
 
+describe('Modo espera', () => {
+  it('sin la clave secreta de Supabase arranca y responde «no configurado»', async () => {
+    const { UnconfiguredStore } = await import('../src/store.ts');
+    const c = loadConfig({ SUPABASE_URL: SUPABASE_URL, VOCES_DATA: 'supabase', SUPABASE_JWT_SECRET: SECRET, VOCES_AI: 'simulated' });
+    assert.equal(c.supabase.serviceRoleKey, null);
+    const store = new UnconfiguredStore();
+    const app = createApp({ verify: createVerifier({ supabaseUrl: SUPABASE_URL, jwtSecret: SECRET }), store, ai: createSimulatedProvider(), aiDailyLimit: 40, account: new AccountService({ store, apple: null }), corsOrigins: [] });
+    assert.equal((await call(app, 'GET', '/health')).status, 200);
+    const r = await call(app, 'POST', '/v1/ai', { auth: await token(ALICE), body: { prompt: 'hola', song: SONG } });
+    assert.equal(r.status, 503);
+    assert.equal(r.json.error.code, 'not-configured');
+    assert.equal((await call(app, 'DELETE', '/v1/account', { auth: await token(ALICE) })).status, 503);
+  });
+});
+
 describe('Configuración', () => {
   it('nombra la variable que falla, nunca su valor', () => {
     assert.throws(() => loadConfig({ SUPABASE_URL: 'no-es-una-url', SUPABASE_SERVICE_ROLE_KEY: 'x'.repeat(30) }), (e: Error) => {

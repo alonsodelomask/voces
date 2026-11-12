@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+import { ApiError } from './errors.ts';
+
 /**
  * Lo que el servidor necesita de la base. Dos implementaciones: Supabase (con la service role, sólo en Render) y una
  * en memoria para las pruebas y para probar en el PC sin proyecto.
@@ -86,6 +88,26 @@ export class SupabaseStore implements Store {
     const { error } = await this.db.auth.admin.deleteUser(userId);
     SupabaseStore.check(error, 'auth-delete');
   }
+}
+
+/**
+ * Modo espera: el servidor está desplegado pero aún no tiene la clave secreta de Supabase. Todo responde
+ * «no configurado» (503) en vez de fallar al arrancar, para poder desplegar antes de pegar las claves.
+ */
+export class UnconfiguredStore implements Store {
+  private fail(): never {
+    throw new ApiError('not-configured', 'El servidor de Voces aún no está conectado a la base de datos. Vuelve a probar más tarde.');
+  }
+  aiUsageSince(): Promise<number> { return this.fail(); }
+  recordAiUsage(): Promise<void> { return this.fail(); }
+  appleIdentity(): Promise<string | null> { return this.fail(); }
+  saveAppleToken(): Promise<void> { return this.fail(); }
+  appleToken(): Promise<string | null> { return this.fail(); }
+  queueRevocation(): Promise<void> { return this.fail(); }
+  async dueRevocations(): Promise<PendingRevocation[]> { return []; }
+  revocationDone(): Promise<void> { return this.fail(); }
+  revocationLater(): Promise<void> { return this.fail(); }
+  deleteAccount(): Promise<void> { return this.fail(); }
 }
 
 /** En memoria: pruebas y desarrollo sin proyecto de Supabase. */
