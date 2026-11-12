@@ -79,7 +79,7 @@ services:
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
       - key: VITE_API_URL
-        value: https://voces-api.onrender.com
+        value: https://voces-api-0wt8.onrender.com
     headers:
       - path: /*
         name: X-Content-Type-Options

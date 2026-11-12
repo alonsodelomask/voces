@@ -244,6 +244,7 @@ export async function openGroupPanel(deps: GroupDeps) {
         <div id="l-code-row" hidden><label class="field col">Código de 6 dígitos <input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10"/></label></div>
         <div id="l-pass-row" hidden><label class="field col">Contraseña <input type="password" id="l-pass" autocomplete="current-password"/></label></div>
         <p class="err" id="l-err"></p>
+        <p class="legal">Al entrar aceptas la <a href="https://voces-web.onrender.com/privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</p>
         <div class="row end"><button type="button" class="btn small" id="l-mode" style="margin-right:auto">Usar contraseña</button><button type="button" class="btn" data-close>Cerrar</button><button class="btn primary" id="l-go">Enviarme el correo</button></div>
       </form>`;
     wireClose();

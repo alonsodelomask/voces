@@ -105,8 +105,8 @@ En **Project Settings › API Keys**:
 2. En [render.com](https://render.com) › **New › Blueprint** › repositorio **voces**. Render lee `render.yaml` y propone dos servicios: `voces-api` (Fráncfort, plan gratuito, carpeta `server`) y `voces-web` (sitio estático).
 3. Te pedirá las variables sin valor:
    - `voces-api`: `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` (obligatorias). Deja vacías `SUPABASE_JWT_SECRET`, `ANTHROPIC_API_KEY` y las `APPLE_…` por ahora.
-   - `voces-web`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` y `VITE_API_URL` = `https://voces-api.onrender.com` (si Render le da otro nombre, usa el que salga).
-4. **Apply**. Abre `https://voces-api.onrender.com/health`: debe responder `{"ok":true}`. En **Logs** verás `IA: desactivada` hasta el paso 4.
+   - `voces-web`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` y `VITE_API_URL` = `https://voces-api-0wt8.onrender.com` (si Render le da otro nombre, usa el que salga).
+4. **Apply**. Abre `https://voces-api-0wt8.onrender.com/health`: debe responder `{"ok":true}`. En **Logs** verás `IA: desactivada` hasta el paso 4.
 5. Abre `https://voces-web.onrender.com`: es la web con la nube activada. Entra con tu email, crea el grupo y comparte el código.
 
 > Si Render pone otros nombres a los servicios (porque `voces-api` o `voces-web` ya estén cogidos), cambia `VITE_API_URL` y, en `voces-api`, `VOCES_CORS_ORIGINS` por las URL que te dé.
@@ -135,7 +135,7 @@ npx eas-cli@latest login                     # tu cuenta de expo.dev (la de Baul
 npx eas-cli@latest init                      # solo la primera vez: crea el proyecto y añade projectId a app.json
 npx eas-cli@latest env:create --environment preview --name VITE_SUPABASE_URL --value https://xxxx.supabase.co --visibility plaintext
 npx eas-cli@latest env:create --environment preview --name VITE_SUPABASE_ANON_KEY --value sb_publishable_... --visibility plaintext
-npx eas-cli@latest env:create --environment preview --name VITE_API_URL --value https://voces-api.onrender.com --visibility plaintext
+npx eas-cli@latest env:create --environment preview --name VITE_API_URL --value https://voces-api-0wt8.onrender.com --visibility plaintext
 npx eas-cli@latest build -p ios --profile preview      # te pedirá tu Apple ID; crea el identificador, certificados y perfil
 npx eas-cli@latest submit -p ios --profile preview --latest   # la sube a App Store Connect
 ```

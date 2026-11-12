@@ -36,7 +36,7 @@ Respuestas preparadas el 12/11/2026 a partir del código:
 | Categoría | Música (secundaria: Educación) |
 | Edad | 4+ |
 | URL de soporte | https://github.com/alonsodelomask/voces/issues |
-| URL de privacidad | https://voces-web.onrender.com/privacidad.html (o https://alonsodelomask.github.io/voces/privacidad.html) |
+| URL de privacidad | https://voces-web.onrender.com/privacidad.html |
 | Palabras clave (100) | `coro,a cappella,armonía,voces,partitura,musicxml,midi,ensayo,tararear,acordes` |
 | Copyright | 2026 Alonso de Lomas |
 
@@ -88,7 +88,7 @@ Account deletion: Menu (⋮) → Grupo y cuenta → Eliminar mi cuenta (also rev
 | 4.8 Iniciar sesión con Apple | Ofrecido en el iPhone junto al código por email |
 | 5.1.1(v) Borrar la cuenta en la app | Grupo y cuenta › Eliminar mi cuenta → `DELETE /v1/account`, con revocación del token de Apple |
 | 5.1.1 No exigir cuenta sin motivo | Todo funciona sin cuenta salvo grupos e IA |
-| 5.1.2 Datos y privacidad | Política en `public/privacidad.html`; IA solo con texto de la canción |
+| 5.1.2 Datos y privacidad | Política en `public/privacidad.html`, enlazada dentro de la app (Ayuda y pantalla de entrar); IA solo con texto de la canción |
 | Permiso del micrófono | Texto en `movil/app.json` (plugin `expo-audio`) que explica el uso |
 | Cifrado | `ITSAppUsesNonExemptEncryption = false` (solo HTTPS) |
 | 2.1 Que no falle en la revisión | Probar antes en TestFlight (BACKEND.md, paso 6) y dejar la cuenta de demostración |
