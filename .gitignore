@@ -1,0 +1,5 @@
+node_modules
+dist
+# Partituras de prueba locales (no se publican)
+samples/
+.claude/

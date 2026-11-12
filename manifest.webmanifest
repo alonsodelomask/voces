@@ -1,0 +1,14 @@
+{
+  "name": "Voces",
+  "short_name": "Voces",
+  "description": "Compón y visualiza las voces de tu grupo como líneas de sintetizador.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14041a",
+  "theme_color": "#2a0734",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }],
+  "file_handlers": [
+    { "action": "./", "accept": { "application/vnd.recordare.musicxml+xml": [".musicxml", ".xml"], "application/vnd.recordare.musicxml": [".mxl"], "audio/midi": [".mid", ".midi"] } }
+  ]
+}
