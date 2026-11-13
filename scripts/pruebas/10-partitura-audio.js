@@ -82,12 +82,19 @@ async () => {
   const va = s.voices.find((v) => v.name === 'Alta'), vb = s.voices.find((v) => v.name === 'Baja');
   res.notasAlta = va?.notes.map((n) => n.midi).join(',') === alta.map((m) => m - 2).join(',');
   res.notasBaja = vb?.notes.map((n) => n.midi).join(',') === baja.map((m) => m - 14).join(',');
-  // Ritmo: los ataques relativos a la primera nota, contra los reales.
-  const real = alta.map((_, i) => t[i] + (i === tarde ? 0.15 : 0) - t[0]);
-  const errA = va ? va.notes.map((n, i) => Math.abs(n.start - va.notes[0].start - real[i])) : [9];
-  const errB = vb ? vb.notes.map((n, i) => Math.abs(n.start - va.notes[0].start - (t[i] - t[0]))) : [9];
-  res.errorMaxAlta = +Math.max(...errA).toFixed(3);
-  res.errorMaxBaja = +Math.max(...errB).toFixed(3);
+  // Ritmo de cada voz: cuánto se aparta cada ataque, quitado el desplazamiento común (la canción empieza en 0).
+  const real = alta.map((_, i) => t[i] + (i === tarde ? 0.15 : 0));
+  const ritmo = (v, reales) => {
+    if (!v) return { max: 9, off: 0 };
+    const d = v.notes.map((n, i) => n.start - reales[i]);
+    const med = [...d].sort((a, b) => a - b)[Math.floor(d.length / 2)];
+    return { max: +Math.max(...d.map((x) => Math.abs(x - med))).toFixed(3), off: med };
+  };
+  const rA = ritmo(va, real), rB = ritmo(vb, t);
+  res.errorMaxAlta = rA.max;
+  res.errorMaxBaja = rB.max;
+  // Y las dos voces tienen que seguir cuadrando entre sí.
+  res.desfaseEntreVoces = +Math.abs(rA.off - rB.off).toFixed(3);
   res.tarde = va ? +(va.notes[tarde].start - vb.notes[tarde].start).toFixed(3) : null;
 
   // «Como se canta»: la voz sacada del audio, pegada a la línea de la partitura que le corresponde.
@@ -129,13 +136,13 @@ async () => {
   const mv = media?.song.voices.find((v) => v.name === 'Alta');
   res.todaLaPartitura = mv?.notes.length ?? 0;
   res.ordenadas = !!mv && mv.notes.every((n, i) => i === 0 || n.start > mv.notes[i - 1].start);
-  res.mitadCantada = mv ? +Math.max(...mv.notes.slice(0, 6).map((n, i) => Math.abs(n.start - mv.notes[0].start - real[i]))).toFixed(3) : 9;
+  res.mitadCantada = mv ? ritmo({ notes: mv.notes.slice(0, 6) }, real).max : 9;
   // Y «solo lo que se canta» con la misma grabación corta se queda en las 6 primeras.
   const corta = await mix(partitura, await wav('Media.wav', 6), { keepKey: false, span: 'match', sung: false, track: false });
   res.soloLoCantado = corta?.song.voices.find((v) => v.name === 'Alta')?.notes.length ?? 0;
 
   res.ok = res.multiple && res.trompeta && res.usaLaAbierta && res.opciones === 'match,score,audio' && res.fusion && res.fusionCerrada &&
-    res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.tarde > 0.08 &&
+    res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.desfaseEntreVoces < 0.05 && res.tarde > 0.08 &&
     res.cantada === 'Como se canta (Alta)' && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
     !!res.pista && res.pistaCargada && res.filaPista === 'grabación' && res.silenciada && res.sonando &&
     res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8 &&

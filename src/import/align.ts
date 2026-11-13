@@ -5,7 +5,7 @@
 // 4) Cada nota se mueve a su sitio y se afina el ataque con los ataques que se oyen en la grabación.
 import { makeSong, makeVoice, songDuration, uid, VOICE_COLORS, type Note, type Song, type Voice } from '../model';
 import { computeChords, transposeSong } from '../music';
-import { basicPitchOutputs, cleanNotes, decodeAudio, notesFromOutputs, type RawNote } from './audio';
+import { basicPitchOutputs, cleanNotes, decodeAudio, notesFromOutputs, type BpOutputs, type RawNote } from './audio';
 
 const SR = 22050;
 /** Resolución del alineamiento, en segundos. */
@@ -13,7 +13,20 @@ const STEP = 0.1;
 /** Nota MIDI de la primera fila de Basic Pitch (La0). */
 const MIDI0 = 21;
 /** Ajustes (se pueden cambiar en las pruebas). */
-export const ALIGN = { stall: 0.08, harm: 0.2, refine: true, smooth: 3 };
+export const ALIGN = {
+  stall: 0.08,
+  harm: 0.2,
+  refine: true,
+  smooth: 3,
+  /** Semitonos que puede apartarse de su línea lo que se oye antes de dar por hecho que es otra voz. */
+  sungWindow: 2,
+  /** Para que una nota valga de ancla: fuerza del ataque y cuánto se oye esa altura después (medidos con «La vida es una copa de licor»). */
+  onset: 0.12,
+  heard: 0.1,
+  /** La curva de corrección: tamaño del tramo, en segundos de partitura, y anclas mínimas para fiarse de él. */
+  bin: 0.5,
+  minBin: 3,
+};
 
 export interface AlignOptions {
   /** Tramo de la grabación, en segundos (end 0 = hasta el final). */
@@ -53,6 +66,8 @@ export interface AlignResult {
   audioOffset: number;
   /** Si se pidió: la voz con lo que se canta de verdad, y a qué línea de la partitura corresponde. */
   sung?: { voice: Voice; matches: string; agreement: number };
+  /** Notas que se han podido clavar en un ataque de la grabación (las demás van interpoladas entre ellas). */
+  anchors: number;
 }
 
 type Chroma = Float32Array; // 12 valores normalizados; todo ceros = silencio
@@ -260,28 +275,96 @@ function warpFromPath(path: [number, number][]): { f: (t: number) => number; fro
   return { f, from: xs[0] - STEP / 2, to: xs[xs.length - 1] + STEP / 2 };
 }
 
-/** Afina el ataque de una nota buscando, cerca de donde la pone el DTW, el ataque de esa altura en la grabación. */
-function refineOnset(t: number, midi: number, onsets: number[][], fps: number): number {
-  const WIN = 0.25;
-  const a = Math.max(0, Math.floor((t - WIN) * fps));
-  const b = Math.min(onsets.length - 1, Math.ceil((t + WIN) * fps));
-  let best = t;
-  let bestScore = 0.25; // por debajo de esto no se fía y deja el del DTW
-  for (const m of [midi, midi - 12, midi + 12]) {
-    const row = m - MIDI0;
-    if (row < 0 || row >= 88) continue;
-    for (let f = a; f <= b; f++) {
-      const x = onsets[f][row];
-      if (!x) continue;
-      const tf = f / fps;
-      const score = x * Math.exp(-((tf - t) ** 2) / (2 * 0.2 ** 2)) * (m === midi ? 1 : 0.7);
-      if (score > bestScore) {
-        bestScore = score;
-        best = tf;
-      }
-    }
+type Placed = { n: Note; s: number; e: number };
+
+/** Fuerza del ataque de esa altura (contando las octavas, que el modelo confunde a menudo). */
+function onsetAt(t: number, midi: number, out: BpOutputs, fps: number): number {
+  const f = Math.round(t * fps);
+  if (f < 0 || f >= out.onsets.length) return 0;
+  const row = (m: number) => (m - MIDI0 >= 0 && m - MIDI0 < 88 ? out.onsets[f][m - MIDI0] : 0);
+  return row(midi) + 0.6 * row(midi + 12) + 0.6 * row(midi - 12);
+}
+
+/** Cuánto se oye esa altura justo después de `t`: un ataque de otra voz no sirve de ancla. */
+function heardAfter(t: number, midi: number, out: BpOutputs, fps: number): number {
+  const row = midi - MIDI0;
+  if (row < 0 || row >= 88) return 0;
+  let s = 0;
+  let c = 0;
+  for (let d = 0.05; d < 0.3; d += 0.05) {
+    const f = Math.round((t + d) * fps);
+    if (f < 0 || f >= out.frames.length) continue;
+    c++;
+    s += out.frames[f][row];
   }
-  return best;
+  return c ? s / c : 0;
+}
+
+/** Un sitio de la partitura donde se ha reconocido el ataque en la grabación: `r` es lo que falla el DTW. */
+type Anchor = { x: number; r: number };
+
+/**
+ * Anclas de una voz: notas con un ataque claro de esa misma altura y que además se oyen después (un ataque de
+ * otra voz no vale). El DTW coloca por tramos de una décima de segundo y suavizados, así que nota a nota se
+ * queda corto; estas anclas dicen cuánto se desvía.
+ */
+function anchorsOf(placed: Placed[], out: BpOutputs, fps: number, tr: number): (number | null)[] {
+  const step = 1 / fps;
+  return placed.map((p, k) => {
+    // Nunca más de medio hueco hasta las notas vecinas: si no, dos notas iguales seguidas se quedarían con el
+    // mismo ataque (en la segunda no hay ninguno que detectar).
+    const antes = k > 0 ? (p.s - placed[k - 1].s) / 2 : 0.3;
+    const despues = k + 1 < placed.length ? (placed[k + 1].s - p.s) / 2 : 0.3;
+    const W = Math.max(0.05, Math.min(0.3, antes, despues));
+    let best = { t: p.s, x: 0 };
+    for (let d = -W; d <= W; d += step) {
+      const t = p.s + d;
+      // Cuanto más lejos del sitio que dice el DTW, menos se fía.
+      const x = onsetAt(t, p.n.midi + tr, out, fps) * Math.exp(-(d * d) / (2 * 0.22 ** 2));
+      if (x > best.x) best = { t, x };
+    }
+    return best.x > ALIGN.onset && heardAfter(best.t, p.n.midi + tr, out, fps) > ALIGN.heard ? best.t : null;
+  });
+}
+
+/**
+ * La curva de corrección: por cada segundo de partitura, la desviación típica (la mediana) de sus anclas, y entre
+ * medias se interpola. Con la mediana, un ancla equivocada no estropea el tramo. Sale `null` si hay pocas.
+ */
+function buildCorrection(anchors: Anchor[]): ((x: number) => number) | null {
+  if (anchors.length < 8) return null;
+  const orden = [...anchors].sort((a, b) => a.x - b.x);
+  const x0 = orden[0].x;
+  const x1 = orden[orden.length - 1].x;
+  const PASO = 0.25;
+  const xs: number[] = [];
+  const rs: number[] = [];
+  for (let x = x0; x <= x1 + PASO; x += PASO) {
+    // Ventana que se ensancha hasta reunir anclas suficientes: así vale igual con muchas notas que con pocas.
+    let vals: number[] = [];
+    for (let w = ALIGN.bin; w <= 4 && vals.length < ALIGN.minBin; w *= 2) {
+      vals = orden.filter((a) => Math.abs(a.x - x) <= w).map((a) => a.r);
+    }
+    if (vals.length < ALIGN.minBin) continue;
+    vals.sort((a, b) => a - b);
+    xs.push(x);
+    rs.push(vals[Math.floor(vals.length / 2)]);
+  }
+  if (xs.length < 4) return null;
+  return (x: number) => {
+    const L = xs.length - 1;
+    if (x <= xs[0]) return rs[0];
+    if (x >= xs[L]) return rs[L];
+    let lo = 0;
+    let hi = L;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (xs[m] <= x) lo = m;
+      else hi = m;
+    }
+    const d = xs[hi] - xs[lo];
+    return d > 0 ? rs[lo] + ((x - xs[lo]) / d) * (rs[hi] - rs[lo]) : rs[lo];
+  };
 }
 
 /** Cuánto se oye una voz (media de la «probabilidad de nota» del modelo durante sus notas), subida o bajada `semis`. */
@@ -331,10 +414,11 @@ function sungLine(clean: RawNote[], ref: Note[] | null): Note[] {
     const t = group[0].start;
     let pick = group.reduce((a, b) => (b.amp > a.amp ? b : a));
     if (ref) {
+      // Con una línea de referencia, solo vale lo que esté cerca de ella: si no, se estaría copiando otra voz.
       const r = refPitchAt(ref, t);
-      // Dentro de una cuarta: más lejos ya sería otra voz, y entonces vale más lo que se oye fuerte.
-      const near = r == null ? [] : group.filter((g) => Math.abs(g.midi - r) <= 5);
-      if (near.length) pick = near.reduce((a, b) => (Math.abs(a.midi - r!) <= Math.abs(b.midi - r!) ? a : b));
+      const near = r == null ? [] : group.filter((g) => Math.abs(g.midi - r) <= ALIGN.sungWindow);
+      if (!near.length) continue;
+      pick = near.reduce((a, b) => (Math.abs(a.midi - r!) <= Math.abs(b.midi - r!) ? a : b));
     }
     const prev = out[out.length - 1];
     if (prev) {
@@ -435,17 +519,50 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
     chordsAuto: score.chordsAuto,
   });
   let first = Infinity;
-  song.voices = score.voices.map((v) => {
-    const src = v.notes.filter(inRange).sort((x, y) => x.start - y.start);
-    const placed = src.map((n) => ({ n, s: toAudio(n.start), e: toAudio(n.start + n.dur) }));
-    // Afina ataques, sin desordenar la voz.
-    for (let k = 0; k < placed.length; k++) {
-      const p = placed[k];
-      const r = !ALIGN.refine ? p.s : refineOnset(p.s, p.n.midi + best.tr, out.onsets, fps);
-      const prevS = k ? placed[k - 1].s : -Infinity;
-      const nextS = k + 1 < placed.length ? placed[k + 1].s : Infinity;
-      if (r > prevS + 0.06 && r < nextS - 0.06) p.s = r;
-    }
+  let anclas = 0;
+  const lanes = score.voices.map((v) => ({
+    v,
+    placed: v.notes
+      .filter(inRange)
+      .sort((x, y) => x.start - y.start)
+      .map((n): Placed => ({ n, s: toAudio(n.start), e: toAudio(n.start + n.dur) })),
+  }));
+  // Donde se reconoce el ataque de la nota, se clava ahí. Donde no (voces tapadas, notas ligadas), se corrige con
+  // la desviación de las que sí: el grupo canta junto, así que esa desviación es una sola curva para toda la canción.
+  if (ALIGN.refine) {
+    const cands = lanes.map((l) => anchorsOf(l.placed, out, fps, best.tr));
+    const todas: Anchor[] = [];
+    lanes.forEach((l, i) => {
+      l.placed.forEach((p, k) => {
+        const t = cands[i][k];
+        if (t !== null) todas.push({ x: p.n.start, r: t - p.s });
+      });
+    });
+    anclas = todas.length;
+    const corr = buildCorrection(todas);
+    lanes.forEach((l, i) => {
+      for (let k = 0; k < l.placed.length; k++) {
+        const p = l.placed[k];
+        const t = cands[i][k];
+        const suave = corr ? corr(p.n.start) : 0;
+        // Un ataque que se aparta mucho de lo que hacen las demás voces en ese momento no es de fiar.
+        const d = t !== null && (!corr || Math.abs(t - p.s - suave) < 0.2) ? t - p.s : suave;
+        p.s += d;
+        p.e += d;
+      }
+      // Que no se crucen: una nota nunca empieza antes que la anterior de su voz.
+      for (let k = 1; k < l.placed.length; k++) {
+        const prev = l.placed[k - 1];
+        const p = l.placed[k];
+        if (p.s < prev.s + 0.03) {
+          const d = prev.s + 0.03 - p.s;
+          p.s += d;
+          p.e += d;
+        }
+      }
+    });
+  }
+  song.voices = lanes.map(({ v, placed }) => {
     const notes: Note[] = placed.map((p, k) => {
       const next = placed[k + 1];
       // Si en la partitura la nota enlaza con la siguiente, aquí también.
@@ -537,5 +654,6 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
     match,
     octaves,
     sung,
+    anchors: anclas,
   };
 }

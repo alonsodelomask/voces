@@ -3,6 +3,7 @@ import { makeVoice, VOICE_COLORS, sortNotes, type ChordMark, type Note, type Son
 import { insertMonophonic, isValidChord, nameToMidi, prettyAccidentals } from '../music';
 import { esc } from '../ui/dialog';
 import { analyzeSong, harmonize, songToPrompt, suggestChords } from './harmony';
+import { cleanSung, diffSungVsScore, findFusion, fusionPrompt, summarize } from './fusion';
 
 export interface AssistDeps {
   song: () => Song;
@@ -21,8 +22,9 @@ const IDEAS = [
   'Añade una voz aguda tipo "uuh" que sostenga los acordes',
 ];
 
-export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voices' | 'ai' = 'review') {
+export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voices' | 'ai' | 'fusion' = 'review') {
   const song = deps.song();
+  const fusion = findFusion(song);
   const melodyDefault = deps.activeVoiceId() ?? song.voices[0]?.id ?? '';
   const voiceOpts = song.voices.map((v) => `<option value="${v.id}" ${v.id === melodyDefault ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
   const dlg = document.createElement('dialog');
@@ -33,6 +35,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
       <button class="tab" data-t="review">Revisar</button>
       <button class="tab" data-t="chords">Acordes</button>
       <button class="tab" data-t="voices">Crear voces</button>
+      <button class="tab" data-t="fusion" ${fusion ? '' : 'hidden'}>Fusión</button>
       <button class="tab" data-t="ai">IA</button>
     </div>
     <section data-p="review">
@@ -59,6 +62,12 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
         </select></label>
       </div>
       <div class="row end"><button class="btn primary" id="as-h-go">Crear voces</button></div>
+    </section>
+    <section data-p="fusion">
+      <p class="intro">Esta canción ha salido de mezclar una partitura con una grabación. Comparo lo que se oye con lo que pone la partitura: lo que es del detector se quita, y lo dudoso se lo pregunto a la IA, que para eso hace falta oído musical.</p>
+      <div id="as-fu-sum"></div>
+      <div class="row end"><button class="btn" id="as-fu-clean">Limpiar lo evidente</button><button class="btn primary" id="as-fu-ai">Afinar con IA</button></div>
+      <div id="as-fu-out" class="as-out"></div>
     </section>
     <section data-p="ai">
       <div id="as-ai"></div>
@@ -145,6 +154,48 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
     deps.toast(`${created.length} voces nuevas${generated ? ' y acordes propuestos' : ''}. Escúchalas y retócalas a tu gusto.`);
     dlg.close();
   };
+
+  // ---- Fusión ----
+  if (fusion) {
+    const sum = q<HTMLElement>('#as-fu-sum');
+    const out = q<HTMLElement>('#as-fu-out');
+    const pinta = () => {
+      const s = summarize(diffSungVsScore(song, fusion));
+      const sis = s.sistematicas.length
+        ? `<p class="hint-s">Donde más se repite la misma diferencia: ${s.sistematicas.map((x) => `c.${x.bar} (${x.semis > 0 ? '+' : ''}${x.semis}, ×${x.veces})`).join(' · ')}. Ahí es probable que cantéis de verdad algo distinto.</p>`
+        : '';
+      sum.innerHTML = `<ul class="ai-changes">
+        <li><b>${s.iguales}</b> de ${s.total} notas oídas coinciden con «${esc(fusion.score.name)}».</li>
+        <li><b>${s.distintas}</b> suenan distintas${s.octavas ? ` (${s.octavas} a la octava)` : ''} y <b>${s.cortas}</b> duran menos de un suspiro.</li>
+        ${s.sinPartitura ? `<li><b>${s.sinPartitura}</b> caen donde la partitura calla.</li>` : ''}
+      </ul>${sis}`;
+    };
+    pinta();
+    q<HTMLButtonElement>('#as-fu-clean').onclick = () => {
+      const r = cleanSung(song, fusion);
+      deps.edit(() => {}, false);
+      pinta();
+      out.innerHTML = `<p class="ok">Quitadas ${r.quitadas} notas sueltas, unidas ${r.unidas} y devueltas a su octava ${r.octavas}.</p>`;
+      deps.toast('Fusión limpiada (puedes deshacerlo con ↶).');
+    };
+    const goAI = q<HTMLButtonElement>('#as-fu-ai');
+    goAI.onclick = async () => {
+      if (!apiEnabled || !user()) {
+        out.innerHTML = '<p class="intro">Para esto hace falta la IA: inicia sesión en la pestaña IA.</p>';
+        return;
+      }
+      goAI.disabled = true;
+      out.innerHTML = '<p class="thinking">Comparando con la partitura… (puede tardar un poco)</p>';
+      try {
+        const ans = await askAI(fusionPrompt(song, fusion), songToPrompt(song));
+        showAnswer(out, ans, deps, dlg);
+      } catch (err) {
+        out.innerHTML = `<p class="err">${esc((err as Error).message)}</p>`;
+      } finally {
+        goAI.disabled = false;
+      }
+    };
+  }
 
   // ---- IA ----
   renderAI(q<HTMLElement>('#as-ai'), deps, dlg);
