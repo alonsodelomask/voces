@@ -1,5 +1,5 @@
 async () => {
-  // Partitura + grabación a la vez: las notas salen de la partitura y el ritmo, de la grabación.
+  // Mezclar grabación y partitura: las notas salen de la partitura y el ritmo, de la grabación.
   // La «grabación» (sintetizada) va más rápida que la partitura y con el tempo cambiando, un tono más baja,
   // la voz grave una octava por debajo de lo escrito y una nota de la aguda cantada tarde.
   const V = window.voces;
@@ -26,62 +26,106 @@ async () => {
   for (const d of beatDur) t.push(t[t.length - 1] + d);
   const tarde = 4; // la 5.ª nota de la aguda entra 0,15 s tarde
   const SR = 22050;
-  const ctx = new OfflineAudioContext(1, Math.ceil((t[12] + 1) * SR), SR);
-  const toca = (m, a, b, vol) => {
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = 'triangle'; o.frequency.value = 440 * 2 ** ((m - 69) / 12);
-    g.gain.setValueAtTime(0, a); g.gain.linearRampToValueAtTime(vol, a + 0.03);
-    g.gain.setValueAtTime(vol, b - 0.06); g.gain.linearRampToValueAtTime(0, b - 0.02);
-    o.connect(g).connect(ctx.destination); o.start(a); o.stop(b);
-  };
-  alta.forEach((m, i) => toca(m - 2, t[i] + (i === tarde ? 0.15 : 0), t[i + 1], 0.3));
-  baja.forEach((m, i) => toca(m - 2 - 12, t[i], t[i + 1], 0.3));
-  const pcm = (await ctx.startRendering()).getChannelData(0);
-  const w = new DataView(new ArrayBuffer(44 + pcm.length * 2));
-  const str = (o, s) => [...s].forEach((c, i) => w.setUint8(o + i, c.charCodeAt(0)));
-  str(0, 'RIFF'); w.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVEfmt ');
-  w.setUint32(16, 16, true); w.setUint16(20, 1, true); w.setUint16(22, 1, true);
-  w.setUint32(24, SR, true); w.setUint32(28, SR * 2, true); w.setUint16(32, 2, true); w.setUint16(34, 16, true);
-  str(36, 'data'); w.setUint32(40, pcm.length * 2, true);
-  pcm.forEach((x, i) => w.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 32767, true));
+  // `hasta`: cuántas notas se cantan (para probar una grabación que se corta a la mitad).
+  async function wav(nombre, hasta) {
+    const fin = t[hasta] + 1;
+    const ctx = new OfflineAudioContext(1, Math.ceil(fin * SR), SR);
+    const toca = (m, a, b, vol) => {
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = 'triangle'; o.frequency.value = 440 * 2 ** ((m - 69) / 12);
+      g.gain.setValueAtTime(0, a); g.gain.linearRampToValueAtTime(vol, a + 0.03);
+      g.gain.setValueAtTime(vol, b - 0.06); g.gain.linearRampToValueAtTime(0, b - 0.02);
+      o.connect(g).connect(ctx.destination); o.start(a); o.stop(b);
+    };
+    // La aguda suena más fuerte: es la que se oye y la que debe salir en «Como se canta».
+    alta.slice(0, hasta).forEach((m, i) => toca(m - 2, t[i] + (i === tarde ? 0.15 : 0), t[i + 1], 0.34));
+    baja.slice(0, hasta).forEach((m, i) => toca(m - 2 - 12, t[i], t[i + 1], 0.2));
+    const pcm = (await ctx.startRendering()).getChannelData(0);
+    const w = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+    const str = (o, s) => [...s].forEach((c, i) => w.setUint8(o + i, c.charCodeAt(0)));
+    str(0, 'RIFF'); w.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVEfmt ');
+    w.setUint32(16, 16, true); w.setUint16(20, 1, true); w.setUint16(22, 1, true);
+    w.setUint32(24, SR, true); w.setUint32(28, SR * 2, true); w.setUint16(32, 2, true); w.setUint16(34, 16, true);
+    str(36, 'data'); w.setUint32(40, pcm.length * 2, true);
+    pcm.forEach((x, i) => w.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 32767, true));
+    return new File([w.buffer], nombre, { type: 'audio/wav' });
+  }
 
-  // Las dos a la vez, como al elegir dos archivos.
+  // Los dos archivos a la vez, como al elegirlos juntos: abre la partitura y pasa directo a la mezcla.
   const input = document.querySelector('#file');
   const dt = new DataTransfer();
-  dt.items.add(new File([w.buffer], 'Ensayo martes.wav', { type: 'audio/wav' }));
+  dt.items.add(await wav('Ensayo martes.wav', 12));
   dt.items.add(new File([xml], 'Canon de prueba.musicxml', { type: 'application/xml' }));
   input.files = dt.files;
   input.dispatchEvent(new Event('change'));
   let d = null;
-  for (let i = 0; i < 40 && !d?.querySelector('[name=target]'); i++) { await wait(100); d = document.querySelector('dialog[open]'); }
+  for (let i = 0; i < 60 && !d?.querySelector('[name=span]'); i++) { await wait(100); d = document.querySelector('dialog[open]'); }
   const res = {
     multiple: input.multiple,
     partitura: V.song.title,
     // La trompeta en Si♭ se lee a la altura real.
     trompeta: V.song.voices.find((v) => v.name === 'Alta')?.notes.map((n) => n.midi).join(',') === alta.join(','),
-    eligeAlinear: d?.querySelector('[name=target]')?.value,
-    ocultaVoces: d?.querySelector('[name=voices]')?.closest('label')?.hidden,
+    dialogo: d?.querySelector('h2')?.textContent,
+    // Usa la partitura abierta, así que no pide el archivo de la partitura.
+    usaLaAbierta: d?.querySelector('[name=useOpen]')?.checked === true && d.querySelector('[data-pick=score]')?.hidden === true,
+    grabacionElegida: d?.querySelector('[data-pick=audio] [data-name]')?.textContent,
+    opciones: [...d.querySelectorAll('[name=span] option')].map((o) => o.value).join(','),
   };
-  d.querySelector('button[value=ok]').click();
-  for (let i = 0; i < 600 && !V.song.title.includes('Ensayo martes'); i++) await wait(250);
+  const partitura = V.song; // la canción abierta es la partitura: hace falta para la última comprobación
+  d.querySelector('[data-ok]').click();
+  await wait(300);
+  res.fusion = !!document.querySelector('.fu-stage');
+  for (let i = 0; i < 600 && V.song.title !== 'Canon de prueba (grabación)'; i++) await wait(250);
   const s = V.song;
   res.titulo = s.title;
+  res.fusionCerrada = !document.querySelector('.fu-stage');
   const va = s.voices.find((v) => v.name === 'Alta'), vb = s.voices.find((v) => v.name === 'Baja');
-  res.alta = va?.notes.map((n) => n.midi).join(',');
-  res.baja = vb?.notes.map((n) => n.midi).join(',');
-  res.notasAlta = res.alta === alta.map((m) => m - 2).join(',');
-  res.notasBaja = res.baja === baja.map((m) => m - 14).join(',');
+  res.notasAlta = va?.notes.map((n) => n.midi).join(',') === alta.map((m) => m - 2).join(',');
+  res.notasBaja = vb?.notes.map((n) => n.midi).join(',') === baja.map((m) => m - 14).join(',');
   // Ritmo: los ataques relativos a la primera nota, contra los reales.
   const real = alta.map((_, i) => t[i] + (i === tarde ? 0.15 : 0) - t[0]);
   const errA = va ? va.notes.map((n, i) => Math.abs(n.start - va.notes[0].start - real[i])) : [9];
   const errB = vb ? vb.notes.map((n, i) => Math.abs(n.start - va.notes[0].start - (t[i] - t[0]))) : [9];
-  res.errA = errA.map((x) => x.toFixed(2)).join(" "); res.errB = errB.map((x) => x.toFixed(2)).join(" ");
   res.errorMaxAlta = +Math.max(...errA).toFixed(3);
   res.errorMaxBaja = +Math.max(...errB).toFixed(3);
   res.tarde = va ? +(va.notes[tarde].start - vb.notes[tarde].start).toFixed(3) : null;
-  res.bpm = s.bpm;
+
+  // «Como se canta»: la voz sacada del audio, pegada a la línea de la partitura que le corresponde.
+  const cantada = s.voices.find((v) => v.name.startsWith('Como se canta'));
+  res.cantada = cantada?.name;
+  res.cantadaJuntoAAlta = cantada ? s.voices.indexOf(cantada) === s.voices.indexOf(va) + 1 : false;
+  res.cantadaNotas = cantada?.notes.length ?? 0;
+  const parecido = cantada ? cantada.notes.filter((n) => alta.some((m, i) => m - 2 === n.midi && Math.abs(n.start - va.notes[i].start) < 0.2)).length / cantada.notes.length : 0;
+  res.cantadaParecido = +parecido.toFixed(2);
+
+  // La grabación, guardada en el dispositivo y sonando con las voces (se lee y se decodifica aparte).
+  for (let i = 0; i < 100 && !V.engine.audioBuffer; i++) await wait(100);
+  res.pista = s.audioTrack && { nombre: s.audioTrack.name, offset: +s.audioTrack.offset.toFixed(2), dur: +s.audioTrack.duration.toFixed(1) };
+  res.pistaCargada = !!V.engine.audioBuffer;
+  const fila = [...document.querySelectorAll('#voice-list .voice.track')];
+  res.filaPista = fila.length === 1 && fila[0].querySelector('.n')?.textContent;
+  // Silenciar y volver: el motor obedece.
+  fila[0].querySelector('[data-k=m]').click();
+  res.silenciada = s.audioTrack.muted;
+  fila[0].querySelector('[data-k=m]').click();
+  res.sonando = !s.audioTrack.muted;
   res.toast = document.querySelector('.toast')?.textContent;
-  res.ok = res.multiple && res.trompeta && res.eligeAlinear === 'align' && res.ocultaVoces === true && res.notasAlta && res.notasBaja &&
-    res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.tarde > 0.08;
+
+  // Duración «Toda la partitura»: con una grabación que se corta a la mitad, lo que no se canta se estira igual.
+  const { mix } = await import('/src/import/mixDialog.ts');
+  const media = await mix(partitura, await wav('Media.wav', 6), { keepKey: false, span: 'score', sung: false, track: false });
+  const mv = media?.song.voices.find((v) => v.name === 'Alta');
+  res.todaLaPartitura = mv?.notes.length ?? 0;
+  res.ordenadas = !!mv && mv.notes.every((n, i) => i === 0 || n.start > mv.notes[i - 1].start);
+  res.mitadCantada = mv ? +Math.max(...mv.notes.slice(0, 6).map((n, i) => Math.abs(n.start - mv.notes[0].start - real[i]))).toFixed(3) : 9;
+  // Y «solo lo que se canta» con la misma grabación corta se queda en las 6 primeras.
+  const corta = await mix(partitura, await wav('Media.wav', 6), { keepKey: false, span: 'match', sung: false, track: false });
+  res.soloLoCantado = corta?.song.voices.find((v) => v.name === 'Alta')?.notes.length ?? 0;
+
+  res.ok = res.multiple && res.trompeta && res.usaLaAbierta && res.opciones === 'match,score,audio' && res.fusion && res.fusionCerrada &&
+    res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.tarde > 0.08 &&
+    res.cantada === 'Como se canta (Alta)' && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
+    !!res.pista && res.pistaCargada && res.filaPista === 'grabación' && res.silenciada && res.sonando &&
+    res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8;
   return res;
 }

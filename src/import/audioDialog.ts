@@ -1,22 +1,22 @@
 // Diálogo para convertir una grabación en voces: opciones sencillas y una barra de progreso.
 // El módulo de transcripción (y el modelo, ~1 MB) solo se descarga cuando se usa.
-// Con una partitura abierta, también puede usar sus notas y sacar de la grabación solo el ritmo (align.ts).
+// Si hay una partitura abierta, también lleva a mezclarla con la grabación (mixDialog.ts), que es lo que mejor sale.
 import type { Song } from '../model';
 import { esc, form } from '../ui/dialog';
 
-export interface AudioImport {
-  song: Song;
-  /** true: añadir sus voces a la canción abierta en lugar de abrirla como canción nueva. */
-  add: boolean;
-  /** Si se usaron las notas de la partitura: lo que se ha encontrado, para contarlo. */
-  aligned?: { transpose: number; match: number; octaves: { name: string; semis: number }[]; from: number; to: number };
-}
+export type AudioImport =
+  /** Canción nueva con las notas sacadas de la grabación. */
+  | { kind: 'new'; song: Song }
+  /** Las voces de la grabación se suman a la canción abierta (pistas grabadas por separado). */
+  | { kind: 'add'; song: Song }
+  /** Mezclar con la partitura abierta: lo hace `openMix`. */
+  | { kind: 'mix' };
 
 /**
- * `current`: la canción abierta, para ofrecer añadir el audio como voz nueva (pistas grabadas por separado)
- * o usar sus notas con el ritmo de la grabación. `prefer`: la opción que sale elegida.
+ * `current`: la canción abierta, para ofrecer mezclarla con la grabación o añadir el audio como voz nueva.
+ * `prefer`: la opción que sale elegida.
  */
-export async function importAudio(file: File, current?: Song, prefer: 'new' | 'add' | 'align' = 'new'): Promise<AudioImport | null> {
+export async function importAudio(file: File, current?: Song, prefer: 'new' | 'add' | 'mix' = 'new'): Promise<AudioImport | null> {
   const title = file.name.replace(/\.[^.]+$/, '');
   const canAdd = !!current && current.voices.some((v) => v.notes.length);
   const pending = form({
@@ -33,24 +33,13 @@ export async function importAudio(file: File, current?: Song, prefer: 'new' | 'a
               type: 'select' as const,
               value: prefer,
               options: [
+                { value: 'mix', label: `Mezclar con «${current!.title}»` },
                 { value: 'new', label: 'Sacar las notas de la grabación' },
-                { value: 'align', label: `Notas de «${current!.title}», ritmo de la grabación` },
                 { value: 'add', label: `Añadir a «${current!.title}» como voz nueva` },
               ],
               hint:
-                '<b>Notas de la partitura</b>: si «' + esc(current!.title) + '» es la partitura de lo que se canta, sus notas se colocan donde suenan en la grabación (mucho más fiable que sacarlas del audio). ' +
+                '<b>Mezclar</b>: si «' + esc(current!.title) + '» es la partitura de lo que se canta, sus notas se colocan donde suenan en la grabación. Es lo que mejor sale. ' +
                 '<b>Añadir</b>: cuando cada cantante graba su voz por separado, empezando todos en el mismo punto.',
-            },
-            {
-              name: 'key',
-              label: 'Tonalidad',
-              type: 'select' as const,
-              value: 'audio',
-              options: [
-                { value: 'audio', label: 'La de la grabación' },
-                { value: 'score', label: 'La de la partitura' },
-              ],
-              hint: 'Si la cantáis más alta o más baja que la partitura.',
             },
           ]
         : []),
@@ -99,17 +88,17 @@ export async function importAudio(file: File, current?: Song, prefer: 'new' | 'a
   const target = dlgForm?.querySelector<HTMLSelectElement>('[name=target]');
   if (dlgForm && target) {
     const row = (name: string) => dlgForm.querySelector(`[name=${name}]`)?.closest<HTMLElement>('label');
+    // Al mezclar, las opciones las pregunta el diálogo de la mezcla.
     const sync = () => {
-      const align = target.value === 'align';
-      for (const n of ['voices', 'grid', 'bpm', 'sens']) row(n)!.hidden = align;
-      row('key')!.hidden = !align;
+      const mix = target.value === 'mix';
+      for (const n of ['voices', 'grid', 'bpm', 'start', 'end', 'sens']) row(n)!.hidden = mix;
     };
     target.addEventListener('change', sync);
     sync();
   }
   const r = await pending;
   if (!r) return null;
-  const align = canAdd && r.values.target === 'align';
+  if (canAdd && r.values.target === 'mix') return { kind: 'mix' };
   const num = (s: string) => (s.trim() === '' ? 0 : Math.max(0, Number(s.replace(',', '.')) || 0));
   const add = canAdd && r.values.target === 'add';
   const opts = {
@@ -145,20 +134,9 @@ export async function importAudio(file: File, current?: Song, prefer: 'new' | 'a
       fase.textContent = f;
       bar.value = p;
     };
-    if (align) {
-      const { alignScoreToAudio } = await import('./align');
-      const res = await alignScoreToAudio(current!, await file.arrayBuffer(), `${current!.title} (${title})`, {
-        start: opts.start,
-        end: opts.end,
-        keepKey: r.values.key === 'score',
-        onProgress,
-      });
-      const { song, ...aligned } = res;
-      return cancelled ? null : { song, add: false, aligned };
-    }
     const { audioToSong } = await import('./audio');
     const song = await audioToSong(await file.arrayBuffer(), title, { ...opts, onProgress });
-    return cancelled ? null : { song, add };
+    return cancelled ? null : { kind: add ? 'add' : 'new', song };
   } finally {
     if (dlg.open) dlg.close();
     dlg.remove();

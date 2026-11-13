@@ -22,8 +22,13 @@ interface Playing {
 export class AudioEngine {
   ctx: AudioContext | null = null;
   private master!: GainNode;
+  private comp!: DynamicsCompressorNode;
   private dry!: GainNode;
   private wet!: GainNode;
+  private trackGain!: GainNode;
+  private trackSrc: AudioBufferSourceNode | null = null;
+  /** Grabación de la canción, ya decodificada (la carga quien abre la canción). */
+  audioBuffer: AudioBuffer | null = null;
   private recDest: MediaStreamAudioDestinationNode | null = null;
   private voiceGains = new Map<string, GainNode>();
   private nextIdx = new Map<string, number>();
@@ -90,6 +95,7 @@ export class AudioEngine {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
     comp.ratio.value = 4;
+    this.comp = comp;
     this.master = ctx.createGain();
     this.master.gain.value = 0.9;
     this.dry = ctx.createGain();
@@ -101,6 +107,10 @@ export class AudioEngine {
     this.dry.connect(conv);
     conv.connect(this.wet);
     this.wet.connect(comp);
+    // La grabación va sin reverberación: ya la trae la sala donde se grabó.
+    this.trackGain = ctx.createGain();
+    this.trackGain.gain.value = 0;
+    this.trackGain.connect(comp);
     comp.connect(this.master);
     this.master.connect(ctx.destination);
     return ctx;
@@ -132,13 +142,22 @@ export class AudioEngine {
     this.pausedAt = 0;
     this.playing = false;
     this.voiceGains.clear();
+    // La grabación la carga quien abre la canción (está en el almacén del dispositivo).
+    this.audioBuffer = null;
   }
 
   get duration(): number {
     if (!this.song) return 0;
     let end = 0;
     for (const v of this.song.voices) for (const n of v.notes) end = Math.max(end, n.start + n.dur);
+    const t = this.song.audioTrack;
+    if (t && this.audioBuffer) end = Math.max(end, Math.min(t.duration, this.audioBuffer.duration) - t.offset);
     return end;
+  }
+
+  /** La grabación solo suena a velocidad normal: a otra velocidad bajaría o subiría de tono y desafinaría con las voces. */
+  get trackPlayable(): boolean {
+    return !!(this.audioBuffer && this.song?.audioTrack && this.rate === 1);
   }
 
   /** Tiempo actual de la canción en segundos (compensando la latencia de salida). */
@@ -159,15 +178,18 @@ export class AudioEngine {
     return g;
   }
 
-  /** Aplica volumen, silencio y solo de cada voz. */
+  /** Aplica volumen, silencio y solo de cada voz (y de la grabación, que cuenta como una más). */
   updateMix() {
     if (!this.song || !this.ctx) return;
-    const anySolo = this.song.voices.some((v) => v.solo);
+    const t = this.song.audioTrack;
+    const anySolo = this.song.voices.some((v) => v.solo) || !!t?.solo;
     for (const v of this.song.voices) {
       const g = this.gainFor(v);
       const audible = !v.muted && (!anySolo || v.solo);
       g.gain.setTargetAtTime(audible ? v.volume : 0, this.ctx.currentTime, 0.02);
     }
+    const on = t && !t.muted && (!anySolo || t.solo) && this.trackPlayable;
+    this.trackGain.gain.setTargetAtTime(on ? t!.volume : 0, this.ctx.currentTime, 0.02);
   }
 
   private get spb() {
@@ -204,8 +226,28 @@ export class AudioEngine {
       while (i < v.notes.length && v.notes[i].start + v.notes[i].dur <= this.startSong) i++;
       this.nextIdx.set(v.id, i);
     }
+    this.startTrack();
     this.schedule();
     this.timer = window.setInterval(() => this.schedule(), 25);
+  }
+
+  /** Arranca la grabación en el punto que toca (las notas están colocadas en el tiempo del propio audio). */
+  private startTrack() {
+    const t = this.song?.audioTrack;
+    if (!t || !this.audioBuffer || !this.trackPlayable || !this.ctx) return;
+    let pos = t.offset + this.startSong;
+    let when = this.startCtx;
+    if (pos < 0) {
+      when -= pos; // la canción empieza antes que la grabación: espera
+      pos = 0;
+    }
+    const end = Math.min(t.duration, this.audioBuffer.duration);
+    if (pos >= end) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.audioBuffer;
+    src.connect(this.trackGain);
+    src.start(when, pos, end - pos);
+    this.trackSrc = src;
   }
 
   pause() {
@@ -228,6 +270,15 @@ export class AudioEngine {
     this.rate = r;
     if (this.playing) this.play(t);
     else this.pausedAt = t;
+    this.updateMix();
+  }
+
+  /** Pone (o quita) la grabación ya decodificada de la canción abierta. */
+  setAudioBuffer(buf: AudioBuffer | null) {
+    this.audioBuffer = buf;
+    if (!this.ctx) return;
+    if (this.playing) void this.play(this.time);
+    else this.updateMix();
   }
 
   private stopAll() {
@@ -236,6 +287,15 @@ export class AudioEngine {
     const now = this.ctx?.currentTime ?? 0;
     for (const p of this.active) p.stop(now);
     this.active = [];
+    if (this.trackSrc) {
+      try {
+        this.trackSrc.stop();
+      } catch {
+        /* ya parado */
+      }
+      this.trackSrc.disconnect();
+      this.trackSrc = null;
+    }
   }
 
   private schedule() {

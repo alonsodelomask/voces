@@ -5,7 +5,9 @@ import { PianoRoll, type Tool } from './editor/pianoroll';
 import { download, exportMidi, exportProject, safeName } from './export';
 import { ACCEPTED, importFile, isAudioFile } from './import';
 import { importAudio } from './import/audioDialog';
-import { makeSong, makeVoice, uid, VOICE_COLORS, type Song, type Voice } from './model';
+import { openMix } from './import/mixDialog';
+import { delTrack, getTrack, trackIds } from './audio/track';
+import { makeSong, makeVoice, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
 import { confirmDialog, form } from './ui/dialog';
 import { showAuthScreen } from './ui/authScreen';
@@ -48,6 +50,30 @@ function setSong(s: Song, save = false) {
   updateEmptyStates();
   if (save) persist();
   watchCurrent();
+  void loadAudioTrack(s);
+}
+
+/** La grabación de la canción (si tiene) está guardada en este dispositivo: se carga y se decodifica aparte. */
+let trackLoading = 0;
+async function loadAudioTrack(s: Song) {
+  const turno = ++trackLoading;
+  if (!s.audioTrack) return;
+  const data = await getTrack(s.id);
+  if (turno !== trackLoading || song !== s) return;
+  if (!data) {
+    // Pasa con una canción compartida: el audio no viaja al grupo.
+    renderPanel();
+    return;
+  }
+  try {
+    const buf = await engine.context().decodeAudioData(data);
+    if (turno !== trackLoading || song !== s) return;
+    engine.setAudioBuffer(buf);
+    updateDuration();
+    renderPanel();
+  } catch (e) {
+    console.warn('[voces] no se ha podido leer la grabación guardada', e);
+  }
 }
 
 function persist() {
@@ -121,6 +147,8 @@ async function onRemoteChange(ev: { type: string; id: string; updated_by?: strin
   try {
     const t = engine.time;
     const remote = await cloud.fetchSong(song.id);
+    // La grabación es de este dispositivo y no viaja al grupo: se conserva.
+    if (song.audioTrack) remote.audioTrack = song.audioTrack;
     setSong(remote);
     saveSong(remote);
     engine.seek(t);
@@ -228,7 +256,62 @@ function renderPanel() {
   const list = $('#voice-list');
   list.innerHTML = '';
   song.voices.forEach((v) => list.appendChild(voiceRow(v)));
+  if (song.audioTrack) list.appendChild(trackRow(song.audioTrack));
   $<HTMLInputElement>('#opt-chords-auto').checked = song.chordsAuto;
+}
+
+/** La grabación se maneja como una voz más: silencio, solo, volumen y quitarla. */
+function trackRow(t: AudioTrack): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'voice track';
+  row.innerHTML = `
+    <span class="vmic" title="Grabación">🎙</span>
+    <input class="vname" readonly />
+    <div class="vbtns">
+      <button data-k="m" title="Silenciar">M</button>
+      <button data-k="s" title="Oír solo la grabación">S</button>
+      <button data-k="x" title="Quitar la grabación">✕</button>
+    </div>
+    <div class="vrange"><span>Vol</span><input type="range" min="0" max="1" step="0.01" /><span class="n"></span></div>`;
+  const name = row.querySelector<HTMLInputElement>('.vname')!;
+  name.value = t.name;
+  name.title = t.name;
+  const vol = row.querySelector<HTMLInputElement>('input[type=range]')!;
+  vol.value = String(t.volume);
+  row.querySelector('.n')!.textContent = !engine.audioBuffer
+    ? 'no está en este dispositivo'
+    : engine.rate !== 1
+      ? 'solo a velocidad normal'
+      : 'grabación';
+  const refresh = () => {
+    row.querySelector('[data-k=m]')!.classList.toggle('on-m', t.muted);
+    row.querySelector('[data-k=s]')!.classList.toggle('on-s', t.solo);
+  };
+  refresh();
+  vol.oninput = () => {
+    t.volume = parseFloat(vol.value);
+    engine.updateMix();
+    dirty = true;
+  };
+  row.querySelector('.vbtns')!.addEventListener('click', async (e) => {
+    const k = (e.target as HTMLElement).closest('button')?.dataset.k;
+    if (k === 'x') {
+      if (!(await confirmDialog('Quitar la grabación', `Se borrará «${t.name}» de este dispositivo. Las voces se quedan como están.`, 'Quitar'))) return;
+      await delTrack(song.id);
+      delete song.audioTrack;
+      engine.setAudioBuffer(null);
+      updateDuration();
+      renderPanel();
+      persist();
+      return;
+    }
+    if (k === 'm') t.muted = !t.muted;
+    if (k === 's') t.solo = !t.solo;
+    engine.updateMix();
+    refresh();
+    dirty = true;
+  });
+  return row;
 }
 
 function voiceRow(v: Voice): HTMLElement {
@@ -762,31 +845,37 @@ fileInput.onchange = async () => {
 
 const isAudio = (f: File) => isAudioFile(f.name) || (f.type.startsWith('audio/') && !/\.(mid|midi)$/i.test(f.name));
 
-/** Varios archivos a la vez: primero las partituras y después las grabaciones (que entonces usan sus notas). */
+/** Una partitura y una grabación a la vez: se abre la partitura y se pasa directo a mezclarlas. */
 async function openFiles(fs: File[]) {
   const scores = fs.filter((f) => !isAudio(f));
   const audios = fs.filter(isAudio);
   for (const f of scores) await openFile(f);
-  for (const f of audios) await openFile(f, scores.length ? 'align' : 'new');
+  if (scores.length === 1 && audios.length === 1) return runMix({ audio: audios[0] });
+  for (const f of audios) await openFile(f, scores.length ? 'mix' : 'new');
 }
 
-async function openFile(f: File, prefer: 'new' | 'align' = 'new') {
+/** Abre el diálogo de la mezcla y deja puesta la canción que salga. */
+async function runMix(preset: { score?: File; audio?: File } = {}) {
+  try {
+    const res = await openMix(song, preset);
+    if (!res) return;
+    setSong(res.song, true);
+    const n = res.song.voices.reduce((x, v) => x + v.notes.length, 0);
+    toast(`«${res.song.title}»: ${n} notas${res.notes.length ? '; ' + res.notes.join('; ') : ''}.`);
+  } catch (err) {
+    console.error(err);
+    toast((err as Error).message || 'No se ha podido mezclar.', true);
+  }
+}
+
+async function openFile(f: File, prefer: 'new' | 'mix' = 'new') {
   try {
     let s: Song;
     if (isAudio(f)) {
       const res = await importAudio(f, song, prefer);
       if (!res) return;
-      if (res.aligned) {
-        setSong(res.song, true);
-        const a = res.aligned;
-        const n = res.song.voices.reduce((x, v) => x + v.notes.length, 0);
-        const extra = [
-          a.transpose ? `cantada ${Math.abs(a.transpose)} semitono${Math.abs(a.transpose) === 1 ? '' : 's'} más ${a.transpose < 0 ? 'baja' : 'alta'} que la partitura` : '',
-          ...a.octaves.map((o) => `«${o.name}» una octava más ${o.semis < 0 ? 'baja' : 'alta'} de lo escrito`),
-        ].filter(Boolean);
-        return toast(`Notas de la partitura con el ritmo de la grabación: ${n} notas${extra.length ? '; ' + extra.join('; ') : ''}.`);
-      }
-      if (res.add) {
+      if (res.kind === 'mix') return runMix({ audio: f });
+      if (res.kind === 'add') {
         // Pista grabada por separado: sus voces se suman a la canción abierta.
         const base = f.name.replace(/\.[^.]+$/, '');
         const nuevas = res.song.voices;
@@ -847,6 +936,9 @@ menu.addEventListener('click', (e) => {
   switch (act) {
     case 'new':
       $<HTMLDialogElement>('#dlg-new').showModal();
+      break;
+    case 'mix':
+      void runMix();
       break;
     case 'library':
       openLibrary();
@@ -973,6 +1065,7 @@ function openLibrary() {
       if (a === 'delete') {
         if (!(await confirmDialog('Eliminar canción', `¿Eliminar «${s.title}» de este dispositivo? No se puede deshacer.${s.groupId ? ' En el grupo sigue estando.' : ''}`, 'Eliminar'))) return;
         deleteSong(s.id);
+        void delTrack(s.id);
         if (s.id === song.id) {
           const rest = loadSongs();
           setSong(rest[0] ?? demoSong());
@@ -1104,6 +1197,7 @@ window.addEventListener('beforeunload', () => {
 $('#empty').addEventListener('click', (e) => {
   const k = (e.target as HTMLElement).closest<HTMLElement>('[data-empty]')?.dataset.empty;
   if (k === 'import') fileInput.click();
+  if (k === 'mix') void runMix();
   if (k === 'edit') switchView('edit');
   if (k === 'hum') {
     switchView('edit');
@@ -1188,6 +1282,12 @@ const saved = loadSongs();
 const last = getLast();
 setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
 requestAnimationFrame(loop);
+
+// Grabaciones de canciones que ya no existen: ocupan mucho y no sirven para nada.
+void (async () => {
+  const vivas = new Set(loadSongs().map((s) => s.id));
+  for (const id of await trackIds()) if (!vivas.has(id)) await delTrack(id);
+})();
 
 
 initNative();

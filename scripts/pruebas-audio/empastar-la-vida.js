@@ -8,14 +8,33 @@ async () => {
   const otra = parseMusicXML(await (await fetch('/samples/la-vida.musicxml')).text());
   const notas = (s) => s.voices.map((v) => v.notes.map((n) => n.midi + '@' + n.start.toFixed(2)).join(',')).join('|');
   const res = {
-    partitura: { voces: sib.voices.map((v) => `${v.name} ${v.notes.length} ${Math.min(...v.notes.map((n) => n.midi))}-${Math.max(...v.notes.map((n) => n.midi))}`), bpm: sib.bpm, clave: sib.keyFifths, igualQueLaOtra: notas(sib) === notas(otra) },
+    partitura: { voces: sib.voices.map((v) => `${v.name} ${v.notes.length}`).join(' / '), bpm: sib.bpm, clave: sib.keyFifths, igualQueLaOtra: notas(sib) === notas(otra) },
   };
-  for (const [nombre, url] of [['mp3', '/samples/la-vida-partitura.mp3'], ['acapella', '/samples/la-vida.wav']]) {
+  for (const [nombre, url, span] of [
+    ['mp3', '/samples/la-vida-partitura.mp3', 'match'],
+    ['acapella', '/samples/la-vida.wav', 'match'],
+    ['acapella-partitura', '/samples/la-vida.wav', 'score'],
+    ['acapella-grabacion', '/samples/la-vida.wav', 'audio'],
+  ]) {
     const t0 = performance.now();
-    const r = await alignScoreToAudio(sib, await get(url), 'x', { start: 0, end: 0, keepKey: false });
-    // Con el MP3 de la propia partitura, el mapa debería ser casi una recta (mismo tempo).
-    const mapa = [2, 10, 20, 30, 40, 50, 60, 70, 75].map((t) => +(r.toAudio(t) - t).toFixed(2));
-    res[nombre] = { segundos: +((performance.now() - t0) / 1000).toFixed(1), transpone: r.transpose, parecido: +r.match.toFixed(2), grabacion: [+r.audioFrom.toFixed(1), +r.audioTo.toFixed(1)], bpm: r.song.bpm, octavas: r.octaves, desfaseSegunTiempo: mapa.join(' ') };
+    const r = await alignScoreToAudio(sib, await get(url), 'x', { start: 0, end: 0, keepKey: false, span, addSung: true });
+    const dur = Math.max(...r.song.voices.flatMap((v) => v.notes.map((n) => n.start + n.dur)));
+    const ini = Math.min(...r.song.voices.flatMap((v) => v.notes.map((n) => n.start)));
+    res[nombre] = {
+      segundos: +((performance.now() - t0) / 1000).toFixed(1),
+      transpone: r.transpose,
+      parecido: +r.match.toFixed(2),
+      partitura: [+r.from.toFixed(1), +r.to.toFixed(1)],
+      grabacion: [+r.audioFrom.toFixed(1), +r.audioTo.toFixed(1)],
+      cancion: [+ini.toFixed(1), +dur.toFixed(1)],
+      offsetAudio: +r.audioOffset.toFixed(2),
+      bpm: r.song.bpm,
+      notas: r.song.voices.reduce((a, v) => a + v.notes.length, 0),
+      octavas: r.octaves.map((o) => `${o.name} ${o.semis}`).join(' / '),
+      cantada: r.sung && { nombre: r.sung.voice.name, notas: r.sung.voice.notes.length, coincide: +r.sung.agreement.toFixed(2) },
+      // Con el MP3 de la propia partitura el mapa debería ser casi una recta (mismo tempo).
+      desfase: [2, 20, 40, 60, 75].map((t) => +(r.toAudio(t) - t).toFixed(1)).join(' '),
+    };
   }
   return res;
 }

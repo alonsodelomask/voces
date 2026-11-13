@@ -32,6 +32,7 @@
         </div>
         <div id="menu" class="menu" hidden>
           <button data-act="new">Nueva canción</button>
+          <button data-act="mix">Mezclar grabación y partitura</button>
           <button data-act="library">Mis canciones</button>
           <button data-act="save">Guardar</button>
           <button data-act="group">Grupo y cuenta</button>
@@ -53,9 +54,10 @@
           <div id="empty" class="empty" hidden>
             <div class="empty-card">
               <p class="empty-title">Esta canción aún no tiene notas</p>
-              <p>Importa una partitura (<b>MusicXML</b> o <b>MIDI</b>), una <b>grabación</b> (WAV, MP3…), compón en el editor o tararea una melodía.</p>
+              <p>Importa una partitura (<b>MusicXML</b> o <b>MIDI</b>), una <b>grabación</b> (WAV, MP3…), las dos a la vez para mezclarlas, compón en el editor o tararea una melodía.</p>
               <div class="empty-actions">
                 <button class="btn primary" data-empty="import">Importar partitura</button>
+                <button class="btn" data-empty="mix">✨ Mezclar grabación y partitura</button>
                 <button class="btn" data-empty="hum">🎤 Tararear</button>
                 <button class="btn" data-empty="edit">✎ Ir al editor</button>
               </div>
@@ -209,7 +211,8 @@
       <dialog id="dlg-help" class="dlg">
         <h2>Cómo funciona</h2>
         <ul class="help">
-          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl), MIDI (.mid) o una grabación (WAV, MP3, M4A, OGG, FLAC…), que se convierte en voces en tu dispositivo; funciona mejor con voces solas, sin instrumentos. Si cada uno graba su voz aparte, añade cada pista a la misma canción como voz nueva. <b>Lo más fiable: partitura + grabación.</b> Elige los dos archivos a la vez (o abre la partitura y después importa la grabación con «Notas de la partitura, ritmo de la grabación»): las notas salen de la partitura y el ritmo, de cómo lo cantáis. Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>. En el móvil también puedes abrir la partitura desde WhatsApp o Archivos con «Abrir con… Vocify».</li>
+          <li><b>Importar:</b> MusicXML (.musicxml, .xml, .mxl), MIDI (.mid) o una grabación (WAV, MP3, M4A, OGG, FLAC…), que se convierte en voces en tu dispositivo; funciona mejor con voces solas, sin instrumentos. Si cada uno graba su voz aparte, añade cada pista a la misma canción como voz nueva. Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>. En el móvil también puedes abrir la partitura desde WhatsApp o Archivos con «Abrir con… Vocify».</li>
+          <li><b>Mezclar grabación y partitura</b> (en el menú, o eligiendo los dos archivos a la vez): lo que mejor sale. Las notas las pone la partitura y el ritmo, el tono y la octava los pone la grabación. Puedes elegir si la canción abarca solo lo que se canta, toda la partitura o toda la grabación, añadir una voz con <b>lo que se canta de verdad</b> (la app dice a qué línea de la partitura corresponde) y <b>oír la grabación</b> junto a las voces, que se silencia y se sube como una más. La grabación se guarda solo en tu dispositivo: no se sube al grupo.</li>
           <li>Cada voz de la partitura (parte, pentagrama o voz interna) es una línea de color. Se respetan las repeticiones y las casillas de 1ª/2ª vez (los D.C./D.S./Coda todavía no).</li>
           <li><b>Panel de voces:</b> silencia (M), escucha sola (S) u oculta cada voz. Ideal para ensayar tu parte.</li>
           <li><b>Ensayo</b> (botón ⇄ abajo): repite unos compases en bucle, con metrónomo y cuenta atrás. Combínalo con la velocidad 0.75×.</li>

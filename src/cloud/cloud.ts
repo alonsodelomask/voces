@@ -344,7 +344,8 @@ export class RemovedFromGroup extends Error {
 /** Sube (o actualiza) una canción en su grupo. Devuelve la marca de tiempo del servidor. */
 export async function pushSong(song: Song): Promise<string> {
   if (!song.groupId || !currentUser) throw new Error('La canción no está en ningún grupo.');
-  const data: Song = { ...song, remoteUpdatedAt: undefined };
+  // La grabación está guardada en este dispositivo y no viaja al grupo, así que su ficha tampoco.
+  const data: Song = { ...song, remoteUpdatedAt: undefined, audioTrack: undefined };
   // Ya estaba en el grupo: solo se actualiza. Si alguien la quitó mientras tanto, no se vuelve a crear.
   if (song.remoteUpdatedAt) {
     const { data: rows, error } = await need()

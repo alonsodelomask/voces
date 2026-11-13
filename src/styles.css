@@ -80,6 +80,9 @@ main { position: relative; overflow: hidden; display: flex; min-height: 0; }
 .voice .vbtns button.on-m { background: #6b2340; color: #fff; }
 .voice .vbtns button.on-s { background: #b58a00; color: #fff; }
 .voice .vbtns button.on-h { background: #333; color: #fff; }
+.voice.track { border-style: dashed; }
+.voice .vmic { width: 22px; text-align: center; font-size: 15px; }
+.voice .vname[readonly] { color: var(--muted); }
 .voice .vrange { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .voice .vrange input { flex: 1; }
 .panel-section { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
@@ -146,6 +149,46 @@ kbd { background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px; f
 .btn.hum { border-color: rgba(31,214,242,0.5); }
 .btn.hum.rec { background: #ff2d6f; color: #fff; animation: pulse 1s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(255,45,111,0.25); } }
+
+/* ---- Elegir partitura y grabación ---- */
+.mix-pick { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.mix-plus { color: var(--muted); font-size: 22px; }
+.mix-plus[hidden] { display: none; }
+.mix-slot { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px; border: 1px dashed var(--line); border-radius: 12px; background: rgba(255,255,255,0.03); color: var(--text); font: inherit; cursor: pointer; }
+.mix-slot[hidden] { display: none; }
+.mix-slot:hover, .mix-slot:focus-visible { border-color: var(--accent); }
+.mix-slot.filled { border-style: solid; border-color: var(--accent); background: rgba(233,64,214,0.1); }
+.mix-slot i { display: grid; place-items: center; width: 40px; height: 40px; }
+.mix-slot svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.mix-slot b { font-size: 13px; }
+.mix-slot small { color: var(--muted); font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Fusión de partitura y grabación ---- */
+/* --p: 0 = cada una en su sitio; 1 = juntas en el centro. */
+.fu-stage { position: relative; display: flex; align-items: center; justify-content: center; gap: 0; height: 128px; margin: 2px 0 6px; overflow: hidden; border-radius: 12px; background: radial-gradient(60% 90% at 50% 55%, rgba(233,64,214,calc(0.05 + var(--p) * 0.28)), transparent 70%); }
+.fu { position: relative; width: 112px; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; transition: transform 0.25s ease-out; will-change: transform; }
+.fu-a { transform: translateX(calc((1 - var(--p)) * -62px)) rotate(calc((1 - var(--p)) * -4deg)); color: var(--accent2); }
+.fu-b { transform: translateX(calc((1 - var(--p)) * 62px)) rotate(calc((1 - var(--p)) * 4deg)); color: #1fd6f2; }
+.fu i { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%; border: 2px solid currentColor; background: rgba(255,255,255,0.04); box-shadow: 0 0 calc(6px + var(--p) * 26px) currentColor, inset 0 0 calc(4px + var(--p) * 14px) currentColor; animation: fu-float 2.4s ease-in-out infinite; }
+.fu-b i { animation-delay: -1.2s; }
+.fu svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.fu b { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+.fu small { color: var(--muted); font-size: 11px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* El punto de energía del centro crece con el progreso. */
+.fu-core { position: absolute; left: 50%; top: 46px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: #fff; opacity: calc(var(--p) * 0.9); transform: scale(calc(0.3 + var(--p) * 1.4)); box-shadow: 0 0 calc(var(--p) * 40px) calc(var(--p) * 10px) rgba(255,225,77,0.75); }
+@keyframes fu-float { 50% { transform: translateY(-5px); } }
+/* Destello final: las dos se juntan y la luz lo tapa todo un instante. */
+.fu-stage.fused .fu { transform: translateX(0) scale(0.82); opacity: 0; transition: transform 0.45s ease-in, opacity 0.45s ease-in 0.2s; }
+.fu-stage.fused .fu-core { animation: fu-flash 0.9s ease-out forwards; }
+@keyframes fu-flash {
+  0% { transform: scale(1.7); }
+  45% { transform: scale(26); opacity: 1; box-shadow: 0 0 80px 40px #fff; }
+  100% { transform: scale(3.4); opacity: 0.85; box-shadow: 0 0 60px 18px rgba(233,64,214,0.8); background: var(--accent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fu, .fu i, .fu-core, .fu-stage.fused .fu, .fu-stage.fused .fu-core { animation: none; transition: none; transform: none; }
+  .fu-stage.fused .fu { opacity: 1; }
+}
 
 /* ---- Tararear ---- */
 .hum-dlg { width: min(640px, calc(100vw - 24px)); }

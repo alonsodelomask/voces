@@ -24,6 +24,22 @@ export interface ChordMark {
   name: string;
 }
 
+/**
+ * Grabación que suena junto a las voces. El audio no cabe en el almacén de canciones (un WAV son decenas de MB),
+ * así que se guarda aparte en este dispositivo (`audio/track.ts`) y aquí solo queda cómo encaja con la canción.
+ */
+export interface AudioTrack {
+  /** Nombre del archivo original, para mostrarlo. */
+  name: string;
+  /** Segundo de la grabación guardada que corresponde al instante 0 de la canción (puede ser negativo). */
+  offset: number;
+  /** Duración de la grabación guardada, en segundos. */
+  duration: number;
+  volume: number; // 0..1
+  muted: boolean;
+  solo: boolean;
+}
+
 export interface Song {
   id: string;
   title: string;
@@ -43,6 +59,8 @@ export interface Song {
   remoteUpdatedAt?: string;
   /** Si salió de una grabación: segundos que se recortaron al principio para cuadrar el primer pulso (para añadir otras pistas igual). */
   audioPhase?: number;
+  /** Grabación que suena junto a las voces (el audio está guardado en este dispositivo). */
+  audioTrack?: AudioTrack;
 }
 
 // Colores neón, ordenados de la voz más aguda a la más grave.

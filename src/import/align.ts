@@ -3,9 +3,9 @@
 // 2) Se busca en qué tono está cantada (puede estar más alta o más baja que la partitura).
 // 3) DTW (alineamiento temporal dinámico) empareja cada momento de la partitura con su momento en la grabación.
 // 4) Cada nota se mueve a su sitio y se afina el ataque con los ataques que se oyen en la grabación.
-import { makeSong, songDuration, uid, type Note, type Song } from '../model';
+import { makeSong, makeVoice, songDuration, uid, VOICE_COLORS, type Note, type Song, type Voice } from '../model';
 import { computeChords, transposeSong } from '../music';
-import { basicPitchOutputs, decodeAudio } from './audio';
+import { basicPitchOutputs, cleanNotes, decodeAudio, notesFromOutputs, type RawNote } from './audio';
 
 const SR = 22050;
 /** Resolución del alineamiento, en segundos. */
@@ -21,6 +21,15 @@ export interface AlignOptions {
   end: number;
   /** true: dejar la tonalidad de la partitura; false: pasar a la tonalidad en la que se canta. */
   keepKey: boolean;
+  /**
+   * Qué abarca la canción que sale:
+   * - `match` (lo normal): solo el trozo de partitura que se encuentra en la grabación;
+   * - `score`: toda la partitura, estirando el ritmo también en lo que no se llegó a cantar;
+   * - `audio`: toda la grabación, dejando las notas en el segundo del archivo en que suenan.
+   */
+  span?: 'match' | 'score' | 'audio';
+  /** Añadir una voz con las notas que de verdad se cantan (sacadas del audio). */
+  addSung?: boolean;
   onProgress?: (fase: string, fraccion: number) => void;
 }
 
@@ -40,6 +49,10 @@ export interface AlignResult {
   match: number;
   /** Voces que se cantan una octava por encima (+12) o por debajo (−12) de como están escritas. */
   octaves: { name: string; semis: number }[];
+  /** Segundo del archivo de audio que corresponde al instante 0 de la canción (para oír la grabación encima). */
+  audioOffset: number;
+  /** Si se pidió: la voz con lo que se canta de verdad, y a qué línea de la partitura corresponde. */
+  sung?: { voice: Voice; matches: string; agreement: number };
 }
 
 type Chroma = Float32Array; // 12 valores normalizados; todo ceros = silencio
@@ -288,6 +301,70 @@ function heard(notes: Note[], semis: number, frames: number[][], fps: number): n
   return tot >= 20 ? on / tot : 0;
 }
 
+/** La nota de `ref` que suena en `t` (o la más cercana, si no hay ninguna justo ahí). */
+function refPitchAt(ref: Note[], t: number): number | null {
+  let best: number | null = null;
+  let bestD = Infinity;
+  for (const n of ref) {
+    const d = n.start <= t && n.start + n.dur > t ? 0 : Math.min(Math.abs(n.start - t), Math.abs(n.start + n.dur - t));
+    if (d < bestD) {
+      bestD = d;
+      best = n.midi;
+    }
+  }
+  return bestD <= 0.5 ? best : null;
+}
+
+/**
+ * Una sola línea con lo que se oye: en cada ataque se queda con una nota, la más cercana a `ref` (la voz de la
+ * partitura que le corresponde) o, si no hay referencia, la más fuerte.
+ */
+function sungLine(clean: RawNote[], ref: Note[] | null): Note[] {
+  const ev = [...clean].sort((a, b) => a.start - b.start || b.amp - a.amp);
+  const out: Note[] = [];
+  let i = 0;
+  while (i < ev.length) {
+    const group: RawNote[] = [ev[i]];
+    let j = i + 1;
+    while (j < ev.length && ev[j].start - ev[i].start < 0.06) group.push(ev[j++]);
+    i = j;
+    const t = group[0].start;
+    let pick = group.reduce((a, b) => (b.amp > a.amp ? b : a));
+    if (ref) {
+      const r = refPitchAt(ref, t);
+      // Dentro de una cuarta: más lejos ya sería otra voz, y entonces vale más lo que se oye fuerte.
+      const near = r == null ? [] : group.filter((g) => Math.abs(g.midi - r) <= 5);
+      if (near.length) pick = near.reduce((a, b) => (Math.abs(a.midi - r!) <= Math.abs(b.midi - r!) ? a : b));
+    }
+    const prev = out[out.length - 1];
+    if (prev) {
+      if (t <= prev.start + 0.02) continue;
+      // Misma nota partida por la respiración del detector: se une.
+      if (prev.midi === pick.midi && t - (prev.start + prev.dur) < 0.09) {
+        prev.dur = Math.max(prev.dur, t + pick.dur - prev.start);
+        continue;
+      }
+      if (prev.start + prev.dur > t) prev.dur = t - prev.start;
+    }
+    out.push({ midi: pick.midi, start: t, dur: Math.max(0.08, pick.dur) });
+  }
+  return out;
+}
+
+/** Fracción del tiempo de `ref` en que `line` canta esa misma nota. */
+function agreement(line: Note[], ref: Note[]): number {
+  let ok = 0;
+  let tot = 0;
+  for (const n of ref) {
+    for (let t = n.start + 0.03; t < n.start + n.dur - 0.03; t += 0.05) {
+      tot++;
+      const m = line.find((x) => x.start <= t && x.start + x.dur > t);
+      if (m && m.midi === n.midi) ok++;
+    }
+  }
+  return tot ? ok / tot : 0;
+}
+
 /** Coloca las notas de `score` donde suenan en la grabación `data`. */
 export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: string, opts: AlignOptions): Promise<AlignResult> {
   const progress = opts.onProgress ?? (() => {});
@@ -347,9 +424,10 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
   const offset = j0 * STEP; // segundos recortados al principio de la grabación
   const toAudio = (t: number) => warp.f(t) + offset;
 
-  progress('Colocando las notas…', 0.97);
-  // Notas que caen dentro del tramo emparejado (con un poco de margen).
-  const inRange = (n: Note) => n.start + n.dur > warp.from - 0.05 && n.start < warp.to + 0.05;
+  progress('Colocando las notas…', 0.96);
+  // Notas que caen dentro del tramo emparejado (con un poco de margen); con `score`, toda la partitura.
+  const whole = opts.span === 'score';
+  const inRange = (n: Note) => whole || (n.start + n.dur > warp.from - 0.05 && n.start < warp.to + 0.05);
   const song: Song = makeSong({
     title,
     beatsPerBar: score.beatsPerBar,
@@ -399,18 +477,65 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
     }
   }
   // El tiempo de la canción empieza con la primera nota (como en la partitura si empezaba con silencio, a escala).
+  // Con `audio` no se mueve nada: cada nota se queda en el segundo del archivo en que suena.
   const span = Math.max(0.5, toAudio(warp.to) - toAudio(warp.from));
   const ratio = (warp.to - warp.from) / span; // > 1: se canta más rápido que la partitura
   const firstScore = Math.min(...score.voices.flatMap((v) => v.notes.filter(inRange).map((n) => n.start)));
   const lead = Math.max(0, (firstScore - warp.from) / ratio);
-  const shift = first - lead;
+  const shift = opts.span === 'audio' ? 0 : first - lead;
   for (const v of song.voices) for (const n of v.notes) n.start = Math.max(0, n.start - shift);
   song.bpm = Math.max(30, Math.min(260, Math.round(score.bpm * ratio)));
   song.chords = score.chordsAuto
     ? []
     : score.chords.filter((c) => c.time >= warp.from - 0.05 && c.time <= warp.to + 0.05).map((c) => ({ ...c, time: Math.max(0, toAudio(c.time) - shift) }));
   if (!opts.keepKey && best.tr) transposeSong(song, best.tr);
+
+  // Una voz más con lo que de verdad se canta, y a qué línea de la partitura corresponde.
+  let sung: AlignResult['sung'];
+  if (opts.addSung) {
+    progress('Oyendo cómo se canta…', 0.98);
+    await new Promise((r) => setTimeout(r));
+    const a0 = toAudio(warp.from) - 0.3;
+    const a1 = toAudio(warp.to) + 0.3;
+    const heardNotes = cleanNotes(await notesFromOutputs(out, 0.5)).filter((n) => n.start + n.dur > a0 && n.start < a1);
+    // Las voces de la canción ya están en su tonalidad final: para comparar con el audio hay que
+    // devolverlas a la tonalidad en que se canta si se ha dejado la de la partitura.
+    const cmp = opts.keepKey ? best.tr : 0;
+    const inAudio = (v: Voice) => v.notes.map((n) => ({ midi: n.midi + cmp, start: n.start + shift, dur: n.dur }));
+    const rough = sungLine(heardNotes, null);
+    let pick: { v: Voice; a: number } | null = null;
+    for (const v of song.voices) {
+      if (!v.notes.length) continue;
+      const a = agreement(rough, inAudio(v));
+      if (!pick || a > pick.a) pick = { v, a };
+    }
+    const ref = pick && pick.a > 0.12 ? inAudio(pick.v) : null;
+    const line = ref ? sungLine(heardNotes, ref) : rough;
+    if (line.length >= 4) {
+      const notes = line.map((n) => ({ midi: n.midi - cmp, start: Math.max(0, n.start - shift), dur: n.dur }));
+      const name = ref ? `Como se canta (${pick!.v.name})` : 'Como se canta';
+      const voice = makeVoice(name, song.voices.length, notes);
+      const used = new Set(song.voices.map((v) => v.color));
+      voice.color = VOICE_COLORS.find((c) => !used.has(c)) ?? '#ffffff';
+      const at = ref ? song.voices.indexOf(pick!.v) + 1 : song.voices.length;
+      song.voices.splice(at, 0, voice);
+      sung = { voice, matches: ref ? pick!.v.name : '', agreement: ref ? agreement(line, ref) : 0 };
+    }
+  }
+
   if (song.chordsAuto) song.chords = computeChords(song);
   progress('Listo', 1);
-  return { song, transpose: best.tr, from: Math.max(0, warp.from), to: warp.to, audioFrom: opts.start + toAudio(warp.from), audioTo: opts.start + toAudio(warp.to), toAudio: (t) => opts.start + toAudio(t), match, octaves };
+  return {
+    song,
+    transpose: best.tr,
+    from: Math.max(0, warp.from),
+    to: warp.to,
+    audioFrom: opts.start + toAudio(warp.from),
+    audioTo: opts.start + toAudio(warp.to),
+    toAudio: (t) => opts.start + toAudio(t),
+    audioOffset: opts.start + shift,
+    match,
+    octaves,
+    sung,
+  };
 }
