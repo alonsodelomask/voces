@@ -236,7 +236,8 @@ export class Visualizer {
         ctx.arc(headX, st.y, r * 0.45, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-        if (st.sounding && st.note) labels.push({ y: st.y, text: noteLabel(st.note, song.keyFifths), color: v.color, dim });
+        if (st.sounding && st.note)
+          labels.push({ y: st.y, text: noteLabel(st.note, song.keyFifths) + (st.note.lyric ? ` · ${st.note.lyric}` : ''), color: v.color, dim });
       }
     }
 
@@ -265,8 +266,50 @@ export class Visualizer {
       ctx.fillStyle = 'rgba(255,255,255,0.62)';
       ctx.fillText(caption, w / 2, yTop - 78 * u);
     }
+    this.drawLyrics(visible, time, w / 2, yTop - 46 * u, u);
 
     this.lastTime = time;
+  }
+
+  /**
+   * La letra como en un karaoke: el trozo de frase que se está cantando, con la sílaba de ahora resaltada. Sale de la
+   * primera voz visible que tenga letra (la melodía, normalmente).
+   */
+  private drawLyrics(visible: Voice[], time: number, cx: number, y: number, u: number) {
+    const v = visible.find((x) => x.sungOf === undefined && x.notes.some((n) => n.lyric));
+    if (!v) return;
+    let k = -1;
+    for (let i = 0; i < v.notes.length && v.notes[i].start <= time + 0.02; i++) if (v.notes[i].lyric) k = i;
+    if (k < 0 || time > v.notes[k].start + v.notes[k].dur + 2.5) return; // antes de empezar o en un silencio largo
+    // Unas sílabas antes y unas cuantas después; las de una misma palabra van juntas.
+    const trozos: { text: string; now: boolean }[] = [];
+    let antes = 0;
+    for (let i = k - 1; i >= 0 && antes < 4; i--) if (v.notes[i].lyric) antes++;
+    let i = k;
+    for (let n = 0; i > 0 && n < antes; ) if (v.notes[--i].lyric) n++;
+    for (let n = 0; i < v.notes.length && n < antes + 8; i++) {
+      const s = v.notes[i].lyric;
+      if (!s) continue;
+      n++;
+      trozos.push({ text: s.endsWith('-') ? s.slice(0, -1) : `${s} `, now: i === k });
+    }
+    const ctx = this.ctx;
+    ctx.font = `600 ${22 * u}px system-ui, "Segoe UI", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const total = trozos.reduce((acc, t) => acc + ctx.measureText(t.text).width, 0);
+    let x = cx - total / 2;
+    for (const t of trozos) {
+      ctx.globalAlpha = t.now ? 1 : 0.5;
+      ctx.fillStyle = t.now ? lighten(v.color, 0.35) : 'rgba(255,255,255,0.9)';
+      ctx.shadowColor = v.color;
+      ctx.shadowBlur = t.now ? 14 * u : 0;
+      ctx.fillText(t.text, x, y);
+      x += ctx.measureText(t.text).width;
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center';
   }
 
 /** Diagrama del acorde: rejilla de cuerdas y trastes (guitarra, ukelele) o teclado (piano). */

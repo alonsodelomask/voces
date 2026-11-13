@@ -539,6 +539,15 @@ roll.onChordClick = (time, index) => editChord(time, index);
 $('#ed-undo').onclick = undo;
 $('#ed-redo').onclick = redo;
 $('#ed-transpose').onclick = openTranspose;
+// La letra (y su separador de sílabas) se carga al pulsar el botón.
+$('#ed-lyrics').onclick = async () =>
+  (await import('./editor/lyricsDialog')).openLyrics({
+    song: () => song,
+    voice: () => roll.activeVoice,
+    time: () => engine.time,
+    edit: (fn) => edit(fn, false),
+    toast,
+  });
 const assistDeps = {
   song: () => song,
   activeVoiceId: () => roll.activeVoice?.id ?? null,

@@ -19,6 +19,7 @@ Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Androi
 - **Audio** sintetizado (4 sonidos), velocidad de 0.5× a 1.25× y silencio/solo/volumen por voz para ensayar.
 - **Cuerda de cada voz** (soprano, mezzosoprano, contralto, tenor, barítono, bajo) a partir de su tesitura, aunque la voz se llame como quien la canta (`voiceType` en `music.ts`).
 - **Editor**: rejilla de notas, fila de acordes editable (con «ajustar las voces al acorde»), transposición y deshacer/rehacer.
+- **Letra**: en el editor, «🔤 Letra» parte en sílabas lo que se escribe (castellano, con sinalefa; `src/lyrics.ts`) y pone una en cada nota de la voz, en orden, y en las notas sin letra de las voces que van al mismo ritmo (`editor/lyricsDialog.ts`); una letra ya puesta se abre tal cual, sin volver a partirla, para corregirla. Se ve bajo cada nota y, al reproducir, como un karaoke. La letra del MusicXML entra con la partitura (la estrofa que toca en cada vuelta de una repetición), la mezcla con una grabación la lleva a cada toma y el MIDI la guarda como eventos de letra de karaoke.
 - **Tararear**: cantas y se convierte en notas (detección de tono YIN en el dispositivo), con metrónomo, cuenta atrás y la opción de oír las otras voces mientras grabas.
 - **Asistente**: revisión de voces (paralelas, cruces, saltos, registros), propuesta de acordes para una melodía y armonización automática.
 - **IA (Claude)**: pídele cambios en lenguaje natural; ves la propuesta antes de aplicarla.

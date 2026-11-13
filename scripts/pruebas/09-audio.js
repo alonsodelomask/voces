@@ -10,9 +10,16 @@ async () => {
   const baja = [60, 60, 55, 55, 57, 57, 53, 53, 55, 55, 48, 48];
   const media = [67, 67, 67, 69, 71, 69, 67, 65, 64, 64, 67, 67];
 
-  async function wav(name, voces) {
+  // `diapason`: un La de medio segundo antes de empezar (antes del 0 de la canción).
+  async function wav(name, voces, diapason = false) {
     const dur = 12 * beat + 1;
     const ctx = new OfflineAudioContext(1, Math.ceil(dur * SR), SR);
+    if (diapason) {
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = 'triangle'; o.frequency.value = 440;
+      g.gain.setValueAtTime(0, 0.05); g.gain.linearRampToValueAtTime(0.3, 0.08); g.gain.setValueAtTime(0.3, 0.5); g.gain.linearRampToValueAtTime(0, 0.55);
+      o.connect(g).connect(ctx.destination); o.start(0.05); o.stop(0.56);
+    }
     for (const notas of voces) notas.forEach((m, i) => {
       const o = ctx.createOscillator(); const g = ctx.createGain();
       o.type = 'triangle'; o.frequency.value = 440 * 2 ** ((m - 69) / 12);
@@ -69,7 +76,26 @@ async () => {
   const t = (v, m) => v.notes.find((n) => n.midi === m)?.start;
   res.alineada = nueva ? Math.abs(t(nueva, 71) - t(V.song.voices[1], 57)) < 0.01 : false;
   res.mismaCancion = V.song.title === 'Prueba a dos voces';
+
+  // La misma pista convertida «Desde el segundo» 1: el archivo es el mismo, así que sus notas caen donde las de antes
+  // (antes quedaban un segundo antes: se contaban desde el principio del tramo y no del archivo).
+  d = await abrir(await wav('Contralto bis.wav', [media]));
+  d.querySelector('[name=target]').value = 'add';
+  d.querySelector('[name=start]').value = '1';
+  d.querySelector('button[value=ok]').click();
+  for (let i = 0; i < 600 && V.song.voices.length < 4; i++) await wait(250);
+  const cuarta = V.song.voices[3];
+  res.desdeElSegundo = cuarta && nueva ? +(t(cuarta, 71) - t(nueva, 71)).toFixed(3) : null;
+
+  // Y una pista con un diapasón que suena antes del 0 de la canción (aquí, una canción cuyo 0 está en el segundo 1 del
+  // archivo): lo de antes del 0 no entra y lo que lo cruza se recorta. Antes se amontonaba todo en el 0 y tapaba la
+  // primera nota.
+  const { audioToSong } = await import('/src/import/audio.ts');
+  const conDiapason = await audioToSong(await (await wav('Contralto con diapasón.wav', [media], true)).arrayBuffer(), 'x', { voices: 1, grid: 0.5, bpm: 120, keepTime: true, phase: 1, start: 0, end: 0, sensitivity: 0.5 });
+  const cn = conDiapason.voices[0]?.notes ?? [];
+  res.conDiapason = { primera: cn[0] && `${cn[0].midi}@${cn[0].start}`, laAlPrincipio: cn.some((n) => n.midi === 69 && n.start < 0.3) };
   res.ok = res.acepta && s.voices.length >= 2 && res.aciertoAlta >= 0.8 && res.aciertoBaja >= 0.8 && Math.abs(s.bpm - 120) <= 3 &&
-    res.ofreceAnadir && res.mismaCancion && V.song.voices.length === 3 && res.aciertoMedia >= 0.8 && res.alineada;
+    res.ofreceAnadir && res.mismaCancion && V.song.voices.length === 4 && res.aciertoMedia >= 0.8 && res.alineada &&
+    res.desdeElSegundo !== null && Math.abs(res.desdeElSegundo) < 0.01 && res.conDiapason.primera === '67@0' && !res.conDiapason.laAlPrincipio;
   return res;
 }

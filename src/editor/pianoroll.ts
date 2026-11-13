@@ -514,6 +514,25 @@ export class PianoRoll {
     }
     ctx.globalAlpha = 1;
 
+    // Letra de la voz activa: cada sílaba debajo de su nota (al final, para que ninguna nota la tape).
+    if (active?.notes.some((n) => n.lyric)) {
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(20,0,25,0.9)';
+      ctx.fillStyle = '#fff';
+      for (const n of active.notes) {
+        if (!n.lyric) continue;
+        const x = this.beatToX(n.start / spb);
+        if (x < KEYS_W - 30 || x > w) continue;
+        const y = this.midiToY(n.midi) + this.rowH + 1;
+        if (y < TOP || y > h) continue;
+        ctx.strokeText(n.lyric, x + 2, y);
+        ctx.fillText(n.lyric, x + 2, y);
+      }
+    }
+
     // Teclado.
     for (let m = mBot; m <= mTop; m++) {
       const y = this.midiToY(m);

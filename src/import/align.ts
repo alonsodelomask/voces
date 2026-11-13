@@ -1021,6 +1021,7 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
       if (next && e > next.s) e = next.s;
       const note: Note = { midi: p.n.midi, start: p.s, dur: Math.max(0.06, e - p.s), bar: barOf(p.n.start) };
       if (p.n.name) note.name = p.n.name;
+      if (p.n.lyric) note.lyric = p.n.lyric;
       first = Math.min(first, p.s);
       return note;
     });
@@ -1150,6 +1151,10 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
   const laps = pasadas.reduce((k, p, i) => k + (i > 0 && p.lo <= pasadas[i - 1].lo + 0.05 ? 1 : 0), 1);
 
   if (song.chordsAuto) song.chords = computeChords(song);
+  // Dónde cae el 0 de la canción en el archivo, y cuánto más alta suena la grabación (si se deja el tono de la
+  // partitura): para añadir después otra pista grabada a la vez en su sitio y en su tono.
+  song.audioPhase = opts.start + shift;
+  if (opts.keepKey && best.tr) song.audioTranspose = best.tr;
   progress('Listo', 1);
   return {
     song,

@@ -107,6 +107,7 @@ export async function importAudio(file: File, current?: Song, prefer: 'new' | 'a
     bpm: add ? current!.bpm : num(r.values.bpm),
     keepTime: add,
     phase: add ? (current!.audioPhase ?? 0) : 0,
+    transpose: add ? (current!.audioTranspose ?? 0) : 0,
     start: num(r.values.start),
     end: num(r.values.end),
     sensitivity: Number(r.values.sens) || 0.5,

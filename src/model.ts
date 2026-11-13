@@ -8,6 +8,8 @@ export interface Note {
   name?: string;
   /** Si salió de mezclar partitura y grabación: el compás de la partitura (desde 1) del que viene. */
   bar?: number;
+  /** La sílaba que se canta en esta nota («cer-» si la palabra sigue; «se‿a» si se unen dos palabras). */
+  lyric?: string;
 }
 
 export interface Voice {
@@ -64,8 +66,13 @@ export interface Song {
   groupId?: string;
   /** Marca de tiempo de la última versión conocida en la nube. */
   remoteUpdatedAt?: string;
-  /** Si salió de una grabación: segundos que se recortaron al principio para cuadrar el primer pulso (para añadir otras pistas igual). */
+  /**
+   * Si salió de una grabación (convertida o mezclada): el segundo del archivo en que cae el 0 de la canción (puede ser
+   * negativo). Sirve para añadir después otra pista grabada a la vez y que caiga en su sitio.
+   */
   audioPhase?: number;
+  /** Si salió de mezclar dejando el tono de la partitura: semitonos que la grabación suena por encima de la canción. */
+  audioTranspose?: number;
   /** Grabación que suena junto a las voces (el audio está guardado en este dispositivo). */
   audioTrack?: AudioTrack;
   /** Segundo en que empieza cada compás de la partitura (repeticiones desarrolladas), si se sabe. */

@@ -12,9 +12,11 @@ async () => {
   // Partitura: dos partes de negras a 100 BPM (la segunda parte escrita para trompeta en Si♭: suena un tono más baja).
   const STEPS = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
   const pitch = (m) => `<pitch><step>${STEPS[m % 12]}</step>${[1, 3, 6, 8, 10].includes(m % 12) ? '<alter>1</alter>' : ''}<octave>${Math.floor(m / 12) - 1}</octave></pitch>`;
+  // La voz aguda trae letra: la mezcla tiene que conservarla nota a nota (y repetirla en cada toma).
+  const SIL = ['do', 're', 'mi', 'fa', 'sol', 'fa', 'mi', 're', 'do', 'do', 'mi', 'sol'];
   const parte = (id, notas, trompeta) => `<part id="${id}">` + [0, 1, 2].map((c) =>
     `<measure number="${c + 1}">${c === 0 ? `<attributes><divisions>1</divisions><key><fifths>${trompeta ? 2 : 0}</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time>${trompeta ? '<transpose><diatonic>1</diatonic><chromatic>2</chromatic></transpose>' : ''}<clef><sign>G</sign><line>2</line></clef></attributes>${id === 'P1' ? '<sound tempo="100"/>' : ''}` : ''}` +
-    notas.slice(c * 4, c * 4 + 4).map((m) => `<note>${pitch(trompeta ? m - 2 : m)}<duration>1</duration><voice>1</voice><type>quarter</type></note>`).join('') + '</measure>').join('') + '</part>';
+    notas.slice(c * 4, c * 4 + 4).map((m, k) => `<note>${pitch(trompeta ? m - 2 : m)}<duration>1</duration><voice>1</voice><type>quarter</type>${id === 'P1' ? `<lyric number="1"><syllabic>single</syllabic><text>${SIL[c * 4 + k]}</text></lyric>` : ''}</note>`).join('') + '</measure>').join('') + '</part>';
   // La parte de trompeta se escribe 2 semitonos por debajo para que, con <transpose> +2, suene a la altura de `alta`.
   const xml = `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><work><work-title>Canon de prueba</work-title></work>
     <part-list><score-part id="P1"><part-name>Alta</part-name></score-part><score-part id="P2"><part-name>Baja</part-name></score-part></part-list>
@@ -87,6 +89,7 @@ async () => {
   const va = s.voices.find((v) => v.name === 'Alta'), vb = s.voices.find((v) => v.name === 'Baja');
   res.notasAlta = va?.notes.map((n) => n.midi).join(',') === alta.map((m) => m - 2).join(',');
   res.notasBaja = vb?.notes.map((n) => n.midi).join(',') === baja.map((m) => m - 14).join(',');
+  res.letraMezcla = va?.notes.map((n) => n.lyric ?? '·').join(' ');
   // Ritmo de cada voz: cuánto se aparta cada ataque, quitado el desplazamiento común (la canción empieza en 0).
   // La 5.ª nota no cuenta: ahí la grabación no va junta (la aguda entra tarde) y la mezcla no puede seguir a las dos.
   const ritmo = (v, reales) => {
@@ -160,6 +163,32 @@ async () => {
   res.sonando = !s.audioTrack.muted;
   res.toast = document.querySelector('.toast')?.textContent;
 
+  // «Añadir como voz nueva» sobre la mezcla: otra pista grabada a la vez cae en su sitio. El 0 de la mezcla está en el
+  // segundo `audioPhase` del archivo (antes no se guardaba y se tomaba el 0 del archivo: quedaba 0,7 s tarde).
+  const { audioToSong } = await import('/src/import/audio.ts');
+  const extra = await audioToSong(await (await wav('Ensayo martes.wav', 12)).arrayBuffer(), 'x', { voices: 1, grid: 0, bpm: s.bpm, keepTime: true, phase: s.audioPhase ?? 0, start: 0, end: 0, sensitivity: 0.5 });
+  const difs = [];
+  for (const n of extra.voices[0]?.notes ?? []) {
+    const m = va.notes.find((x) => x.midi === n.midi && Math.abs(x.start - n.start) < 0.3);
+    if (m) difs.push(n.start - m.start);
+  }
+  difs.sort((a, b) => a - b);
+  res.anadidaSobreMezcla = difs.length >= 6 ? +difs[difs.length >> 1].toFixed(3) : null;
+  // Con «Tonalidad: la de la partitura», la mezcla se queda en el tono escrito (la grabación va un tono más baja): la
+  // pista añadida tiene que quedar en ese mismo tono, no en el de la grabación.
+  const { mix: mezcla } = await import('/src/import/mixDialog.ts');
+  const tono = await mezcla(partitura, await wav('Ensayo martes.wav', 12), { keepKey: true, span: 'match', sung: false, track: false });
+  const ta = tono?.song.voices.find((v) => v.name === 'Alta');
+  const extra2 = await audioToSong(await (await wav('Ensayo martes.wav', 12)).arrayBuffer(), 'x', { voices: 1, grid: 0, bpm: tono.song.bpm, keepTime: true, phase: tono.song.audioPhase ?? 0, transpose: tono.song.audioTranspose ?? 0, start: 0, end: 0, sensitivity: 0.5 });
+  const saltos = [];
+  for (const n of extra2.voices[0]?.notes ?? []) {
+    const m = ta?.notes.find((x) => Math.abs(x.start - n.start) < 0.15 && Math.abs(x.midi - n.midi) <= 3);
+    if (m) saltos.push(n.midi - m.midi);
+  }
+  saltos.sort((a, b) => a - b);
+  res.anadidaEnTono = saltos.length >= 6 ? saltos[saltos.length >> 1] : null;
+  res.transporteMezcla = tono?.song.audioTranspose ?? 0;
+
   // Duración «Toda la partitura»: con una grabación que se corta a la mitad, lo que no se canta se estira igual.
   const { mix } = await import('/src/import/mixDialog.ts');
   const media = await mix(partitura, await wav('Media.wav', 6), { keepKey: false, span: 'score', sung: false, track: false });
@@ -176,6 +205,7 @@ async () => {
   const dos = await mix(partitura, await wav('Dos tomas.wav', 12, 2, 1.5), { keepKey: false, span: 'audio', sung: false, track: false });
   const dv = dos?.song.voices.find((v) => v.name === 'Alta');
   res.dosTomas = { notas: dv?.notes.length, avisos: dos?.notes.join('; ') };
+  res.letraDosTomas = dv?.notes.map((n) => n.lyric ?? '·').join(' ') === [...SIL, ...SIL].join(' ');
   const dbaja = dos?.song.voices.find((v) => v.name === 'Baja');
   res.dosTomasJuntas = dv && dbaja && dv.notes.length === dbaja.notes.length ? +Math.max(...dv.notes.map((n, i) => Math.abs(n.start - dbaja.notes[i].start))).toFixed(3) : 9;
   res.dosVueltas = !!dos?.notes.some((x) => x.includes('se canta 2 veces'));
@@ -191,6 +221,8 @@ async () => {
   res.ok = res.multiple && res.trompeta && res.usaLaAbierta && res.opciones === 'audio,match,score' && res.fusion && res.fusionCerrada &&
     res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.desfaseEntreVoces < 0.05 &&
     res.vocesJuntas < 0.005 && res.golpeTarde > -0.03 && res.golpeTarde < 0.18 && res.dosTomasJuntas < 0.005 &&
+    res.anadidaSobreMezcla !== null && Math.abs(res.anadidaSobreMezcla) < 0.06 && res.transporteMezcla === -2 && res.anadidaEnTono === 0 &&
+    res.letraMezcla === SIL.join(' ') && res.letraDosTomas &&
     res.cantada === '🎙 Alta' && res.enlazada && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
     !!res.pista && res.pistaCargada && res.filaPista === 'grabación' && res.silenciada && res.sonando &&
     res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8 &&

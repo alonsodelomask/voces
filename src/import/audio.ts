@@ -25,8 +25,10 @@ export interface AudioOptions {
   sensitivity: number;
   /** Respetar el tiempo del archivo (sin desplazar al primer pulso): para añadir pistas grabadas por separado. */
   keepTime?: boolean;
-  /** Con keepTime: el recorte inicial de la canción a la que se añade (su `audioPhase`). */
+  /** Con keepTime: el segundo del archivo en que cae el 0 de la canción a la que se añade (su `audioPhase`). */
   phase?: number;
+  /** Con keepTime: semitonos que la grabación suena por encima de la canción (su `audioTranspose`); se restan. */
+  transpose?: number;
   onProgress?: (fase: string, fraccion: number) => void;
 }
 
@@ -61,18 +63,61 @@ let modelPromise: Promise<unknown> | null = null;
 
 export type BpOutputs = { frames: number[][]; onsets: number[][]; contours: number[][] };
 
+/**
+ * Carga el modelo (una vez). Si la descarga falla (sin conexión, un corte), se olvida para reintentarlo la próxima
+ * vez: antes se quedaba guardado el fallo y no se podía convertir ni mezclar hasta recargar la página.
+ */
+async function loadModel(): Promise<import('@tensorflow/tfjs').GraphModel> {
+  const tf = await import('@tensorflow/tfjs');
+  await tf.ready();
+  if (!modelPromise) {
+    const p = (async () => {
+      // Sin conexión, un aviso que se entienda (el del navegador sale en inglés: «Failed to fetch»).
+      const bajar = async (url: string) => {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r;
+        } catch (e) {
+          console.warn('[voces] no se pudo descargar el modelo', e);
+          throw new Error('No se ha podido descargar el modelo que escucha las voces. Comprueba la conexión y vuelve a intentarlo.');
+        }
+      };
+      const json = await (await bajar(modelJsonUrl)).json();
+      const weights = await (await bajar(weightsUrl)).arrayBuffer();
+      return tf.loadGraphModel(
+        tf.io.fromMemory({
+          modelTopology: json.modelTopology,
+          weightSpecs: json.weightsManifest[0].weights,
+          weightData: weights,
+          format: json.format,
+          generatedBy: json.generatedBy,
+          convertedBy: json.convertedBy,
+        }),
+      );
+    })();
+    modelPromise = p;
+    p.catch(() => {
+      if (modelPromise === p) modelPromise = null;
+    });
+  }
+  return modelPromise as Promise<import('@tensorflow/tfjs').GraphModel>;
+}
+
 /** Pasa el audio por el modelo (lo lento). */
 export async function basicPitchOutputs(samples: Float32Array, onProgress?: (f: number) => void): Promise<BpOutputs> {
+  // Un fallo al descargar el modelo no es cosa de la tarjeta gráfica: se avisa tal cual, sin pasar al procesador.
+  const model = await loadModel();
   try {
-    return await basicPitchOnce(samples, onProgress);
+    return await basicPitchOnce(model, samples, onProgress);
   } catch (e) {
-    // Si la tarjeta gráfica (WebGL) falla, se repite en el procesador: más lento, pero funciona en cualquier equipo.
+    // Si la tarjeta gráfica (WebGL) falla al escuchar, se repite en el procesador: más lento, pero funciona en cualquier equipo.
     const tf = await import('@tensorflow/tfjs');
     if (tf.getBackend() === 'cpu') throw e;
     console.warn('[voces] WebGL no disponible para la transcripción; se usa el procesador', e);
     await tf.setBackend('cpu');
     modelPromise = null;
-    return basicPitchOnce(samples, onProgress);
+    return basicPitchOnce(await loadModel(), samples, onProgress);
   }
 }
 
@@ -97,26 +142,8 @@ const OUTPUTS = ['Identity_1', 'Identity_2', 'Identity']; // fotogramas, ataques
  *   colocaba las notas cada vez más tarde: +0,2 s a los 30 s, +1,15 s a los 3 minutos (medido con tonos).
  * Aquí cada ventana avanza exactamente lo que se queda, y el fotograma f cae en la muestra f·256 sin corregir nada.
  */
-async function basicPitchOnce(samples: Float32Array, onProgress?: (f: number) => void): Promise<BpOutputs> {
+async function basicPitchOnce(model: import('@tensorflow/tfjs').GraphModel, samples: Float32Array, onProgress?: (f: number) => void): Promise<BpOutputs> {
   const tf = await import('@tensorflow/tfjs');
-  await tf.ready();
-  if (!modelPromise) {
-    modelPromise = (async () => {
-      const json = await (await fetch(modelJsonUrl)).json();
-      const weights = await (await fetch(weightsUrl)).arrayBuffer();
-      return tf.loadGraphModel(
-        tf.io.fromMemory({
-          modelTopology: json.modelTopology,
-          weightSpecs: json.weightsManifest[0].weights,
-          weightData: weights,
-          format: json.format,
-          generatedBy: json.generatedBy,
-          convertedBy: json.convertedBy,
-        }),
-      );
-    })();
-  }
-  const model = (await modelPromise) as import('@tensorflow/tfjs').GraphModel;
   const want = Math.ceil(samples.length / HOP); // un fotograma por cada 256 muestras, hasta el final
   const windows = Math.ceil(want / KEEP);
   const frames: number[][] = [];
@@ -343,6 +370,9 @@ export async function audioToSong(data: ArrayBuffer, title: string, opts: AudioO
   const a = Math.max(0, Math.floor(opts.start * SR));
   const b = opts.end > opts.start ? Math.min(samples.length, Math.floor(opts.end * SR)) : samples.length;
   if (b - a < SR) throw new Error('El tramo elegido es demasiado corto.');
+  // Las notas salen contadas desde el principio del tramo; `audioPhase` se guarda en segundos del archivo (dónde cae el
+  // 0 de la canción), y así otra pista grabada a la vez cae en su sitio aunque se convierta desde otro segundo.
+  const t0 = a / SR;
   opts.onProgress?.('Escuchando las voces…', 0.02);
   const out = await basicPitchOutputs(samples.subarray(a, b), (p) => opts.onProgress?.('Escuchando las voces…', 0.02 + p * 0.9));
   const raw = await notesFromOutputs(out, opts.sensitivity);
@@ -350,10 +380,21 @@ export async function audioToSong(data: ArrayBuffer, title: string, opts: AudioO
   const clean = cleanNotes(raw);
   if (!clean.length) throw new Error('No he encontrado notas en ese audio. ¿Tiene voces cantando?');
   const nVoices = opts.voices || estimateVoices(clean);
-  const tempo = opts.bpm ? { bpm: opts.bpm, phase: opts.keepTime ? (opts.phase ?? 0) : estimateTempo(clean).phase } : estimateTempo(clean);
+  // Con keepTime, el 0 de la canción abierta está en el segundo `opts.phase` del archivo: desde el tramo, en phase − t0.
+  const tempo = opts.bpm
+    ? { bpm: opts.bpm, phase: opts.keepTime ? (opts.phase ?? 0) - t0 : estimateTempo(clean).phase }
+    : estimateTempo(clean);
   const spb = 60 / tempo.bpm;
-  const lanes = assignVoices(clean, nVoices)
+  // Al añadir a una canción, lo que suena antes de su 0 (el diapasón, la cuenta) no es de ella: fuera, y lo que lo cruza
+  // se recorta. Si no, todo eso se amontonaba en el 0 y tapaba la primera nota.
+  const notas = opts.keepTime
+    ? clean
+        .filter((n) => n.start + n.dur > tempo.phase + 0.02)
+        .map((n) => (n.start < tempo.phase ? { ...n, start: tempo.phase, dur: n.start + n.dur - tempo.phase } : n))
+    : clean;
+  const lanes = assignVoices(notas, nVoices)
     .map((l) => (opts.grid ? quantizeLane(l, spb, opts.grid, tempo.phase) : l.map((x) => ({ ...x, start: Math.max(0, x.start - tempo.phase) }))))
+    .map((l) => (opts.keepTime && opts.transpose ? l.map((x) => ({ ...x, midi: x.midi - opts.transpose! })) : l))
     .filter((l) => l.length >= 3);
   const names = lanes.length === 1 ? ['Voz'] : lanes.map((_, k) => `Voz ${k + 1}`);
   const voices = lanes.map((notes, k) => {
@@ -363,7 +404,7 @@ export async function audioToSong(data: ArrayBuffer, title: string, opts: AudioO
   });
   const song = makeSong({ title, bpm: tempo.bpm, beatsPerBar: 4, voices });
   song.chords = computeChords(song);
-  song.audioPhase = tempo.phase;
+  song.audioPhase = t0 + tempo.phase;
   opts.onProgress?.('Listo', 1);
   void duration;
   return song;

@@ -64,7 +64,36 @@ export function parseMidi(buf: ArrayBuffer, fallbackTitle = 'MIDI'): Song {
     barStarts: barStartsOf(midi),
   });
   song.chords = computeChords(song);
+  addMidiLyrics(song, midi);
   return song;
+}
+
+/**
+ * La letra de un MIDI de karaoke (en la pista de cabecera): va a la voz cuyas notas empiezan donde caen más sílabas,
+ * una sílaba por nota. Sin espacio detrás, la palabra sigue en la sílaba siguiente («cer» → «cer-»).
+ */
+function addMidiLyrics(song: Song, midi: Midi) {
+  const letras = midi.header.meta
+    .filter((m) => m.type === 'lyrics' && m.text.trim())
+    .map((m) => ({ t: midi.header.ticksToSeconds(m.ticks), text: midiString(m.text) }));
+  if (!letras.length) return;
+  const nota = (v: Voice, t: number) => v.notes.find((n) => Math.abs(n.start - t) < 0.03);
+  let mejor: Voice | null = null;
+  let cuantas = 0;
+  for (const v of song.voices) {
+    const c = letras.filter((l) => nota(v, l.t)).length;
+    if (c > cuantas) {
+      mejor = v;
+      cuantas = c;
+    }
+  }
+  if (!mejor) return;
+  for (const l of letras) {
+    const n = nota(mejor, l.t);
+    if (!n) continue;
+    const fin = /\s$/.test(l.text) || /[.,;:!?¡¿)]$/.test(l.text.trim());
+    n.lyric = fin ? l.text.trim() : `${l.text.trim()}-`;
+  }
 }
 
 function avg(l: Note[]) {

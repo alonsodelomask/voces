@@ -35,6 +35,18 @@ interface RawNote {
   lane: string; // parte|pentagrama|voz
   tieStart: boolean;
   tieStop: boolean;
+  /** Sílabas de la letra por estrofa (número de estrofa → texto, con guion si la palabra sigue). */
+  lyrics?: Map<number, string>;
+}
+
+/** La sílaba de un `<lyric>`: con guion si la palabra sigue, y las elisiones unidas con «‿». Vacía si solo alarga. */
+function lyricText(l: Element): string {
+  const texts = kids(l, 'text').map((t) => t.textContent ?? '');
+  const text = texts.join('‿').trim();
+  if (!text) return '';
+  const syllabic = kids(l, 'syllabic').map((s) => s.textContent?.trim());
+  const last = syllabic[syllabic.length - 1];
+  return last === 'begin' || last === 'middle' ? `${text}-` : text;
 }
 interface MeasureData {
   lenQ: number;
@@ -162,6 +174,12 @@ function parseMeasure(m: Element, partIdx: number, state: PartState): MeasureDat
         const ties = kids(el, 'tie').map((t) => t.getAttribute('type'));
         const notations = kid(el, 'notations');
         if (notations) for (const t of kids(notations, 'tied')) ties.push(t.getAttribute('type'));
+        const lyrics = new Map<number, string>();
+        kids(el, 'lyric').forEach((l, k) => {
+          const s = lyricText(l);
+          // Uno que solo alarga (<extend/>) cuenta para su estrofa, vacío: esa nota es un melisma en esa estrofa.
+          lyrics.set(parseInt(l.getAttribute('number') ?? '') || k + 1, s);
+        });
         data.notes.push({
           onsetQ: onset / state.divisions,
           durQ: dur / state.divisions,
@@ -170,6 +188,7 @@ function parseMeasure(m: Element, partIdx: number, state: PartState): MeasureDat
           lane: `${partIdx}|${staff}|${voice}`,
           tieStart: ties.includes('start'),
           tieStop: ties.includes('stop'),
+          lyrics: lyrics.size ? lyrics : undefined,
         });
         break;
       }
@@ -248,9 +267,11 @@ function barlineInfo(m: Element) {
   return { forward, backwardTimes, endingStart, endingStop };
 }
 
-function expandRepeats(measures: Element[]): number[] {
+/** Orden en que se tocan los compases (repeticiones y casillas desarrolladas), y en qué vuelta va cada uno. */
+function expandRepeats(measures: Element[]): { seq: number[]; passes: number[] } {
   const info = measures.map(barlineInfo);
   const seq: number[] = [];
+  const passes: number[] = [];
   let i = 0;
   let repeatStart = 0;
   let pass = 1;
@@ -272,6 +293,7 @@ function expandRepeats(measures: Element[]): number[] {
       continue;
     }
     seq.push(i);
+    passes.push(pass);
     if (inf.backwardTimes) {
       const done = jumps.get(i) ?? 0;
       if (done < inf.backwardTimes - 1) {
@@ -287,7 +309,7 @@ function expandRepeats(measures: Element[]): number[] {
     }
     i++;
   }
-  return seq;
+  return { seq, passes };
 }
 
 // ---------- Conversión principal ----------
@@ -332,10 +354,13 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
     measureLen[i] = Math.max(0, ...parsed.map((p) => p[i]?.lenQ ?? 0));
   }
 
-  const seq = expandRepeats(partMeasures[0]);
+  const { seq, passes } = expandRepeats(partMeasures[0]);
 
-  // Línea temporal en negras.
-  const laneNotes = new Map<string, (RawNote & { absQ: number })[]>();
+  // Línea temporal en negras. La letra de cada nota: la estrofa de la vuelta en que se canta (la 1.ª la primera vez,
+  // la 2.ª al repetir…), o la primera que tenga si no hay tantas.
+  const laneNotes = new Map<string, (RawNote & { absQ: number; lyric?: string })[]>();
+  // La estrofa se elige por compás y por carril: la de esta vuelta si ese carril la tiene en ese compás; si no, la de
+  // número más bajo que tenga. Nota a nota, un melisma de una estrofa se llenaba con la sílaba de otra.
   const tempos: { q: number; bpm: number }[] = [];
   const harmonies: { q: number; name: string }[] = [];
   let beats = 4;
@@ -346,11 +371,24 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
   // Dónde empieza cada compás (en negras), con las repeticiones ya desarrolladas: sirve para saltar entre compases
   // al mezclar con una grabación (la anacrusa, los cambios de compás y los 7/8 no caen en una rejilla regular).
   const barQ: number[] = [];
-  for (const mi of seq) {
+  seq.forEach((mi, si) => {
     barQ.push(t);
     parsed.forEach((pm, pi) => {
       const md = pm[mi];
       if (!md) return;
+      // Estrofas que trae cada carril en este compás.
+      const estrofas = new Map<string, Set<number>>();
+      for (const n of md.notes) {
+        if (!n.lyrics) continue;
+        const s = estrofas.get(n.lane) ?? new Set<number>();
+        for (const k of n.lyrics.keys()) s.add(k);
+        estrofas.set(n.lane, s);
+      }
+      const verso = (lane: string) => {
+        const s = estrofas.get(lane);
+        if (!s?.size) return undefined;
+        return s.has(passes[si]) ? passes[si] : Math.min(...s);
+      };
       if (md.beats && !gotBeats) {
         beats = md.beats;
         gotBeats = true;
@@ -361,14 +399,15 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
       }
       for (const n of md.notes) {
         const arr = laneNotes.get(n.lane) ?? [];
-        arr.push({ ...n, absQ: t + n.onsetQ });
+        const v = verso(n.lane);
+        arr.push({ ...n, absQ: t + n.onsetQ, lyric: v === undefined ? undefined : n.lyrics?.get(v) || undefined });
         laneNotes.set(n.lane, arr);
       }
       for (const tp of md.tempos) tempos.push({ q: t + tp.q, bpm: tp.bpm });
       if (pi === 0 || !harmonies.length) for (const h of md.harmonies) harmonies.push({ q: t + h.q, name: h.name });
     });
     t += measureLen[mi];
-  }
+  });
 
   // Mapa de tempo: negras -> segundos.
   tempos.sort((a, b) => a.q - b.q);
@@ -400,6 +439,8 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
     while (k < raw.length) {
       let j = k;
       while (j < raw.length && Math.abs(raw[j].absQ - raw[k].absQ) < 1e-6) j++;
+      // En un acorde de una misma voz, la sílaba (que el programa suele poner en una sola nota) es de todas.
+      const silaba = raw.slice(k, j).find((x) => x.lyric)?.lyric;
       for (let r = k; r < j; r++) {
         const n = raw[r];
         const key = `${lane}|${r - k}`;
@@ -410,7 +451,9 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
         if (n.tieStop && prev && prev.midi === n.midi && Math.abs(prev.start + prev.dur - startSec) < 0.05) {
           prev.dur = endSec - prev.start;
         } else {
-          arr.push({ midi: n.midi, start: startSec, dur: Math.max(0.02, endSec - startSec), name: n.name });
+          const note: Note = { midi: n.midi, start: startSec, dur: Math.max(0.02, endSec - startSec), name: n.name };
+          if (n.lyric ?? silaba) note.lyric = n.lyric ?? silaba;
+          arr.push(note);
         }
         lines.set(key, arr);
         if (!lineMeta.has(key)) lineMeta.set(key, { part: parseInt(lane), key: lane, rank: r - k });
