@@ -1,5 +1,5 @@
 import { makeSong, makeVoice, orderVoicesByPitch, sortNotes, type ChordMark, type Note, type Song } from '../model';
-import { computeChords, prettyAccidentals } from '../music';
+import { computeChords, fifthsAfterTranspose, prettyAccidentals, transposeChordName } from '../music';
 
 // ---------- Utilidades XML ----------
 
@@ -31,7 +31,7 @@ interface RawNote {
   onsetQ: number; // en negras, relativo al compás
   durQ: number;
   midi: number;
-  name: string;
+  name?: string;
   lane: string; // parte|pentagrama|voz
   tieStart: boolean;
   tieStop: boolean;
@@ -91,7 +91,29 @@ function parseHarmony(h: Element): string | null {
   return prettyAccidentals(name);
 }
 
-function parseMeasure(m: Element, partIdx: number, state: { divisions: number }): MeasureData {
+/** Estado de una parte entre compases. `chromatic`/`diatonic`: instrumento transpositor (p. ej. trompeta en Si♭: −2/−1). */
+interface PartState {
+  divisions: number;
+  chromatic: number;
+  diatonic: number;
+}
+
+const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+/** Altura real de una nota escrita para un instrumento transpositor, con su nombre bien escrito. */
+function soundingPitch(step: string, alter: number, octave: number, st: PartState): { midi: number; name: string } {
+  const written = (octave + 1) * 12 + (STEP_PC[step] ?? 0) + Math.round(alter);
+  if (!st.chromatic && !st.diatonic) return { midi: written, name: step + alterStr(alter) + octave };
+  const midi = written + st.chromatic;
+  const idx = STEPS.indexOf(step) + octave * 7 + st.diatonic;
+  const nStep = STEPS[((idx % 7) + 7) % 7];
+  const nOct = Math.floor(idx / 7);
+  const nAlter = midi - ((nOct + 1) * 12 + STEP_PC[nStep]);
+  // Si la casilla diatónica no cuadra (archivo raro), mejor sin nombre que con uno equivocado.
+  return Math.abs(nAlter) <= 2 ? { midi, name: nStep + alterStr(nAlter) + nOct } : { midi, name: '' };
+}
+
+function parseMeasure(m: Element, partIdx: number, state: PartState): MeasureData {
   const data: MeasureData = { lenQ: 0, notes: [], tempos: [], harmonies: [] };
   let cursor = 0; // en divisiones
   let maxCursor = 0;
@@ -105,7 +127,14 @@ function parseMeasure(m: Element, partIdx: number, state: { divisions: number })
         if (d) state.divisions = d;
         const key = kid(el, 'key');
         const f = num(key, 'fifths');
-        if (f !== undefined && data.fifths === undefined) data.fifths = f;
+        const tr = kid(el, 'transpose');
+        if (tr) {
+          const oct = num(tr, 'octave-change') ?? 0;
+          state.chromatic = (num(tr, 'chromatic') ?? 0) + oct * 12;
+          state.diatonic = (num(tr, 'diatonic') ?? 0) + oct * 7;
+        }
+        // La armadura escrita de un instrumento transpositor no es la que suena.
+        if (f !== undefined && data.fifths === undefined) data.fifths = state.chromatic % 12 ? fifthsAfterTranspose(f, state.chromatic) : f;
         const time = kid(el, 'time');
         const b = num(time, 'beats');
         const bt = num(time, 'beat-type');
@@ -127,7 +156,7 @@ function parseMeasure(m: Element, partIdx: number, state: { divisions: number })
         const step = txt(pitch, 'step') ?? 'C';
         const alter = num(pitch, 'alter') ?? 0;
         const octave = num(pitch, 'octave') ?? 4;
-        const midi = (octave + 1) * 12 + (STEP_PC[step] ?? 0) + Math.round(alter);
+        const { midi, name } = soundingPitch(step, alter, octave, state);
         const staff = txt(el, 'staff') ?? '1';
         const voice = txt(el, 'voice') ?? '1';
         const ties = kids(el, 'tie').map((t) => t.getAttribute('type'));
@@ -137,7 +166,7 @@ function parseMeasure(m: Element, partIdx: number, state: { divisions: number })
           onsetQ: onset / state.divisions,
           durQ: dur / state.divisions,
           midi,
-          name: step + alterStr(alter) + octave,
+          name: name || undefined,
           lane: `${partIdx}|${staff}|${voice}`,
           tieStart: ties.includes('start'),
           tieStop: ties.includes('stop'),
@@ -179,7 +208,8 @@ function parseMeasure(m: Element, partIdx: number, state: { divisions: number })
         break;
       }
       case 'harmony': {
-        const name = parseHarmony(el);
+        let name = parseHarmony(el);
+        if (name && state.chromatic % 12) name = transposeChordName(name, state.chromatic, 0);
         const offset = (num(el, 'offset') ?? 0) / state.divisions;
         if (name) data.harmonies.push({ q: q() + offset, name });
         break;
@@ -294,7 +324,7 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
 
   // Parseo de cada compás en orden de documento.
   const parsed: MeasureData[][] = partMeasures.map((ms, pi) => {
-    const state = { divisions: 1 };
+    const state: PartState = { divisions: 1, chromatic: 0, diatonic: 0 };
     return ms.map((m) => parseMeasure(m, pi, state));
   });
   const measureLen: number[] = [];

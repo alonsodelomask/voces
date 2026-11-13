@@ -13,6 +13,7 @@ Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Androi
 
 - **Importar** MusicXML (`.musicxml`, `.xml`, `.mxl`) y MIDI. Respeta las repeticiones y las casillas de 1ª y 2ª vez, y usa el cifrado de la partitura si lo tiene.
 - **Audio → voces**: importa una grabación (WAV, MP3, M4A, AAC, OGG, OPUS, FLAC, WEBM, AIFF, CAF) y la convierte en voces en el dispositivo con Basic Pitch (Spotify): limpia armónicos, calcula el tempo, ajusta a la rejilla y reparte las notas de aguda a grave.
+- **Partitura + grabación**: con la partitura abierta (o eligiendo los dos archivos a la vez), coloca las notas de la partitura donde se cantan en la grabación (DTW sobre cromas, `align.ts`): detecta si se canta más alto o más bajo, en qué octava canta cada voz y qué toma de una grabación larga corresponde a la partitura.
 - **Diagramas de acordes** opcionales para guitarra, ukelele y piano.
 - **Visualizador** tipo sintetizador: transiciones suaves entre notas, nombre de cada nota, acorde actual y chispas.
 - **Audio** sintetizado (4 sonidos), velocidad de 0.5× a 1.25× y silencio/solo/volumen por voz para ensayar.
@@ -47,7 +48,7 @@ node scripts/sitio/generar.mjs  # web pública y textos legales (public/conoce, 
 
 | Ruta | Contenido |
 | --- | --- |
-| `src/import/` | Lectores de MusicXML y MIDI, y audio → voces (`audio.ts`) |
+| `src/import/` | Lectores de MusicXML y MIDI, audio → voces (`audio.ts`) y partitura + grabación (`align.ts`) |
 | `src/viz/visualizer.ts` | Visualizador (canvas) |
 | `src/audio/engine.ts` | Síntesis, reproducción y metrónomo (Web Audio) |
 | `src/editor/pianoroll.ts` | Editor de notas y acordes |

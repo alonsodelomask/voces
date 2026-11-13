@@ -753,18 +753,39 @@ const fileInput = $<HTMLInputElement>('#file');
 // En el iPhone, filtrar por extensiones raras (.musicxml, .mxl) deja los archivos en gris: allí no se filtra.
 fileInput.accept = isNative ? '' : ACCEPTED;
 $('#btn-open').onclick = () => fileInput.click();
+fileInput.multiple = true;
 fileInput.onchange = async () => {
-  const f = fileInput.files?.[0];
+  const fs = [...(fileInput.files ?? [])];
   fileInput.value = '';
-  if (f) await openFile(f);
+  await openFiles(fs);
 };
 
-async function openFile(f: File) {
+const isAudio = (f: File) => isAudioFile(f.name) || (f.type.startsWith('audio/') && !/\.(mid|midi)$/i.test(f.name));
+
+/** Varios archivos a la vez: primero las partituras y después las grabaciones (que entonces usan sus notas). */
+async function openFiles(fs: File[]) {
+  const scores = fs.filter((f) => !isAudio(f));
+  const audios = fs.filter(isAudio);
+  for (const f of scores) await openFile(f);
+  for (const f of audios) await openFile(f, scores.length ? 'align' : 'new');
+}
+
+async function openFile(f: File, prefer: 'new' | 'align' = 'new') {
   try {
     let s: Song;
-    if (isAudioFile(f.name) || (f.type.startsWith('audio/') && !/\.(mid|midi)$/i.test(f.name))) {
-      const res = await importAudio(f, { title: song.title, bpm: song.bpm, voices: song.voices.length, audioPhase: song.audioPhase });
+    if (isAudio(f)) {
+      const res = await importAudio(f, song, prefer);
       if (!res) return;
+      if (res.aligned) {
+        setSong(res.song, true);
+        const a = res.aligned;
+        const n = res.song.voices.reduce((x, v) => x + v.notes.length, 0);
+        const extra = [
+          a.transpose ? `cantada ${Math.abs(a.transpose)} semitono${Math.abs(a.transpose) === 1 ? '' : 's'} más ${a.transpose < 0 ? 'baja' : 'alta'} que la partitura` : '',
+          ...a.octaves.map((o) => `«${o.name}» una octava más ${o.semis < 0 ? 'baja' : 'alta'} de lo escrito`),
+        ].filter(Boolean);
+        return toast(`Notas de la partitura con el ritmo de la grabación: ${n} notas${extra.length ? '; ' + extra.join('; ') : ''}.`);
+      }
       if (res.add) {
         // Pista grabada por separado: sus voces se suman a la canción abierta.
         const base = f.name.replace(/\.[^.]+$/, '');
@@ -808,8 +829,8 @@ window.addEventListener('drop', (e) => {
   e.preventDefault();
   dragDepth = 0;
   $('#drop').hidden = true;
-  const f = e.dataTransfer?.files?.[0];
-  if (f) openFile(f);
+  const fs = [...(e.dataTransfer?.files ?? [])];
+  if (fs.length) void openFiles(fs);
 });
 
 // ---------------- Menú ----------------
