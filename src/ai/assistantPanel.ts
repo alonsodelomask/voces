@@ -217,7 +217,7 @@ function renderAI(box: HTMLElement, deps: AssistDeps, dlg: HTMLDialogElement) {
   box.innerHTML = `
     <p class="intro">Pídele a la IA lo que quieras sobre esta canción. Verás su propuesta antes de aplicarla, y siempre puedes deshacer.</p>
     <div class="chips">${IDEAS.map((i) => `<button class="chip as-idea">${esc(i)}</button>`).join('')}</div>
-    <textarea id="as-ai-q" rows="3" placeholder="Ej.: haz que la voz de Pablo sea más sencilla en el estribillo"></textarea>
+    <textarea id="as-ai-q" rows="3" placeholder="Ej.: haz que la voz del tenor sea más sencilla en el estribillo"></textarea>
     <div class="row end"><button class="btn primary" id="as-ai-go">Preguntar</button></div>
     <div id="as-ai-out" class="as-out"></div>`;
   const ta = box.querySelector<HTMLTextAreaElement>('#as-ai-q')!;

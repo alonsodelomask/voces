@@ -343,7 +343,11 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
   let gotBeats = false;
   let gotFifths = false;
   let t = 0;
+  // Dónde empieza cada compás (en negras), con las repeticiones ya desarrolladas: sirve para saltar entre compases
+  // al mezclar con una grabación (la anacrusa, los cambios de compás y los 7/8 no caen en una rejilla regular).
+  const barQ: number[] = [];
   for (const mi of seq) {
+    barQ.push(t);
     parsed.forEach((pm, pi) => {
       const md = pm[mi];
       if (!md) return;
@@ -446,6 +450,7 @@ export function parseMusicXML(text: string, fallbackTitle = 'Partitura'): Song {
     beatsPerBar: Math.round(beats) || 4,
     keyFifths: fifths,
     voices: ordered,
+    barStarts: barQ.map(qToSec),
   });
 
   if (harmonies.length) {

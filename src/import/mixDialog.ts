@@ -6,6 +6,7 @@ import { isNative } from '../native';
 import { esc } from '../ui/dialog';
 import { openFusion } from '../ui/fusion';
 import type { Song } from '../model';
+import { isSung } from '../ai/fusion';
 import { AUDIO_EXT, importFile } from './index';
 
 export interface MixResult {
@@ -21,7 +22,10 @@ const AUDIO_SVG = `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 24h4m
 
 /** Pregunta los dos archivos y las opciones, y devuelve la canción fusionada. `current`: la canción abierta. */
 export async function openMix(current: Song | null, preset: { score?: File; audio?: File } = {}): Promise<MixResult | null> {
-  const canUseOpen = !!current && current.voices.some((v) => v.notes.length);
+  const canUseOpen = !!current && current.voices.some((v) => v.notes.length && !isSung(v));
+  // Si la canción abierta ya es una mezcla, sus notas van al ritmo de aquella grabación (y repetidas en cada vuelta):
+  // no sirve como partitura, así que no viene marcada.
+  const yaMezcla = !!current && (!!current.audioTrack || current.voices.some(isSung));
   let scoreFile = preset.score ?? null;
   let audioFile = preset.audio ?? null;
 
@@ -35,16 +39,17 @@ export async function openMix(current: Song | null, preset: { score?: File; audi
       <span class="mix-plus" aria-hidden="true">+</span>
       <button type="button" class="mix-slot" data-pick="audio"><i>${AUDIO_SVG}</i><b>Grabación</b><small data-name>WAV, MP3, M4A…</small></button>
     </div>
-    ${canUseOpen ? `<label class="check"><input type="checkbox" name="useOpen" checked/> Usar como partitura la canción abierta, «${esc(current!.title)}»</label>` : ''}
+    ${canUseOpen ? `<label class="check"><input type="checkbox" name="useOpen" ${yaMezcla ? '' : 'checked'}/> Usar como partitura la canción abierta, «${esc(current!.title)}»</label>` : ''}
+    ${canUseOpen && yaMezcla ? '<small class="hint-s">La canción abierta ya es una mezcla con una grabación: para volver a mezclar, elige el archivo de la partitura original.</small>' : ''}
     <label class="field col">Tonalidad<select name="key">
       <option value="audio" selected>La de la grabación (como se canta)</option>
       <option value="score">La de la partitura</option>
     </select></label>
     <label class="field col">Duración<select name="span">
-      <option value="match" selected>Solo lo que se canta en la grabación</option>
-      <option value="score">Toda la partitura</option>
-      <option value="audio">Toda la grabación (respetando sus segundos)</option>
-    </select><small class="hint-s">«Toda la grabación» deja cada nota en el segundo del archivo en que suena, con los silencios y las otras tomas.</small></label>
+      <option value="audio" selected>Toda la grabación</option>
+      <option value="match">Una vuelta: el trozo que mejor encaja</option>
+      <option value="score">Toda la partitura, una vez</option>
+    </select><small class="hint-s">Con «Toda la grabación», si cantáis la partitura más de una vez (repeticiones que no están escritas, otra toma…), cada vuelta se coloca donde suena.</small></label>
     <label class="check"><input type="checkbox" name="sung" checked/> Añadir una voz con lo que se canta de verdad</label>
     <label class="check"><input type="checkbox" name="track" checked/> Oír la grabación junto a las voces</label>
     <small class="hint-s" data-track-hint>La grabación se guarda en este dispositivo (no se sube al grupo) y se puede silenciar como una voz más.</small>
@@ -149,7 +154,15 @@ export async function mix(
       const n = Math.abs(r.transpose);
       notes.push(`se canta ${n} semitono${n === 1 ? '' : 's'} más ${r.transpose < 0 ? 'baja' : 'alta'} que la partitura`);
     }
-    for (const o of r.octaves) notes.push(`«${o.name}» una octava más ${o.semis < 0 ? 'baja' : 'alta'} de lo escrito`);
+    if (r.laps > 1) notes.push(`la partitura se canta ${r.laps} veces a lo largo de la grabación`);
+    if (r.passes.length > r.laps) notes.push('se repite o se salta algún trozo de la partitura');
+    // Voces con el mismo nombre: se distinguen por su posición.
+    const repe = (o: { name: string }) => r.octaves.filter((x) => x.name === o.name).length > 1;
+    for (const o of r.octaves) {
+      if (!o.semis) continue;
+      const cuanto = Math.abs(o.semis) === 12 ? 'una octava' : `${Math.abs(o.semis) / 12} octavas`;
+      notes.push(`«${o.name}»${repe(o) ? ` (voz ${o.index + 1})` : ''} ${cuanto} más ${o.semis < 0 ? 'baja' : 'alta'} de lo escrito`);
+    }
     if (r.sung) notes.push(r.sung.matches ? `la voz que se oye es la de «${r.sung.matches}»` : 'añadida la voz que se oye');
 
     if (values.track) {

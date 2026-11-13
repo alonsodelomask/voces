@@ -6,6 +6,7 @@
 import { makeSong, makeVoice, songDuration, uid, VOICE_COLORS, type Note, type Song, type Voice } from '../model';
 import { computeChords, transposeSong } from '../music';
 import { basicPitchOutputs, cleanNotes, decodeAudio, notesFromOutputs, type BpOutputs, type RawNote } from './audio';
+import { isSung } from '../ai/fusion';
 
 const SR = 22050;
 /** Resolución del alineamiento, en segundos. */
@@ -26,6 +27,25 @@ export const ALIGN = {
   /** La curva de corrección: tamaño del tramo, en segundos de partitura, y anclas mínimas para fiarse de él. */
   bin: 0.5,
   minBin: 3,
+  /**
+   * «Toda la grabación»: lo que cuesta entrar en la partitura o saltar de compás (repetir o saltarse un trozo), y la
+   * pasada más corta que vale. Tiene que ser alto: en una grabación de verdad un compás se parece a otros muchos, y
+   * con un salto barato el camino iba de trocito en trocito en vez de seguir la toma entera.
+   */
+  jump: 10,
+  minPass: 1.5,
+  /**
+   * Coste por fotograma de estar «fuera de la partitura» (charla, diapasón, silencio entre tomas) oyéndose algo: lo
+   * que cuesta de media un fotograma cantado de esta misma grabación más `skipMargin`, sin bajar de `skip` ni pasar de
+   * `skipMax`. Una grabación limpia se parece mucho a su partitura; una de verdad, bastante menos, y con un coste fijo
+   * le salía más barato saltarse media toma. En silencio, `skipSilent`.
+   */
+  skip: 0.5,
+  skipMargin: 0.25,
+  skipMax: 0.75,
+  skipSilent: 0.05,
+  /** Cuánto peor que la pasada principal puede parecerse una pasada a la grabación para darla por buena. */
+  passCost: 0.3,
 };
 
 export interface AlignOptions {
@@ -44,6 +64,8 @@ export interface AlignOptions {
   /** Añadir una voz con las notas que de verdad se cantan (sacadas del audio). */
   addSung?: boolean;
   onProgress?: (fase: string, fraccion: number) => void;
+  /** Solo para las pruebas: lo que oye el modelo en todo el archivo, ya calculado (se salta el paso lento). */
+  outputs?: { out: BpOutputs; seconds: number };
 }
 
 export interface AlignResult {
@@ -60,14 +82,18 @@ export interface AlignResult {
   toAudio: (t: number) => number;
   /** 0..1: cuánto se parecen (1 = perfecto). */
   match: number;
-  /** Voces que se cantan una octava por encima (+12) o por debajo (−12) de como están escritas. */
-  octaves: { name: string; semis: number }[];
+  /** Voces que se cantan una octava por encima (+12) o por debajo (−12) de como están escritas (`index`: su posición). */
+  octaves: { name: string; index: number; semis: number }[];
   /** Segundo del archivo de audio que corresponde al instante 0 de la canción (para oír la grabación encima). */
   audioOffset: number;
   /** Si se pidió: la voz con lo que se canta de verdad, y a qué línea de la partitura corresponde. */
   sung?: { voice: Voice; matches: string; agreement: number };
   /** Notas que se han podido clavar en un ataque de la grabación (las demás van interpoladas entre ellas). */
   anchors: number;
+  /** Cada tramo de la grabación en que se recorre la partitura de seguido (con «toda la grabación» puede haber varios). */
+  passes: { from: number; to: number; audioFrom: number; audioTo: number }[];
+  /** Vueltas enteras a la partitura (o tomas): los trozos repetidos o saltados dentro de una vuelta no cuentan. */
+  laps: number;
 }
 
 type Chroma = Float32Array; // 12 valores normalizados; todo ceros = silencio
@@ -219,8 +245,166 @@ function dtw(S: Chroma[], A: Chroma[], path: boolean): { cost: number; path?: [n
   return { cost: bestAvg, path: p };
 }
 
+/**
+ * DTW con saltos («toda la grabación»): la grabación entera (eje j) recorre la partitura (eje i) una o varias veces.
+ * Además de los pasos normales:
+ * - al acabar un compás (`ends`) se puede saltar a cualquier sitio donde se pueda entrar (`starts`: principios de
+ *   compás y ataques, para las anacrusas) pagando `ALIGN.jump`: repeticiones que no están escritas, un trozo que
+ *   se salta, otra toma seguida;
+ * - en cualquier momento se puede salir **fuera de la partitura** (charla, diapasón, silencio entre tomas, una
+ *   introducción…) pagando `skip` por fotograma, y volver a entrar por un `starts` pagando el salto. Sin este
+ *   estado, al DTW le salía más barato «cantar» encima un trozo de partitura que esperar, y se inventaba notas.
+ * Entrar en la partitura cuesta lo mismo al principio de la grabación que después: si al principio fuera gratis,
+ * con charla antes de cantar le salía más barato quedarse en la primera nota que salir y volver a entrar.
+ * Devuelve el camino solo con los puntos dentro de la partitura.
+ */
+function dtwJumps(S: Chroma[], A: Chroma[], starts: Uint8Array, endsSet: Uint8Array, skip: number): [number, number][] {
+  const n = S.length;
+  const m = A.length;
+  const ends: number[] = [];
+  for (let i = 0; i < n; i++) if (endsSet[i] || i === n - 1) ends.push(i);
+  let prev = new Float32Array(n);
+  let cur = new Float32Array(n);
+  // 0 diagonal, 1 avanza la partitura, 2 avanza la grabación, 3 inicio, 4 salto, 5 vuelve de «fuera».
+  const dir = new Uint8Array(n * m);
+  const jumpFrom = new Int32Array(m); // por columna: el final de compás desde el que se salta
+  // skipFrom[j]: -2 empieza fuera, -1 seguía fuera, i ≥ 0 sale de la partitura desde el fotograma i (columna j - 1).
+  const skipFrom = new Int32Array(m);
+  let skipPrev = Infinity;
+  for (let j = 0; j < m; j++) {
+    const ks = A[j].some((x) => x > 0) ? skip : ALIGN.skipSilent;
+    let bestEnd = Infinity;
+    let bestK = -1;
+    let skipCur: number;
+    if (j > 0) {
+      for (const k of ends) {
+        if (prev[k] < bestEnd) {
+          bestEnd = prev[k];
+          bestK = k;
+        }
+      }
+      // Se puede dejar la partitura en cualquier sitio: a veces se paran a mitad de compás.
+      let b = skipPrev;
+      let from = -1;
+      for (let i = 0; i < n; i++) {
+        if (prev[i] < b) {
+          b = prev[i];
+          from = i;
+        }
+      }
+      skipCur = b + ks;
+      skipFrom[j] = from;
+    } else {
+      skipCur = ks;
+      skipFrom[j] = -2;
+    }
+    jumpFrom[j] = bestK;
+    for (let i = 0; i < n; i++) {
+      const c = cost(S[i], A[j]);
+      let best: number;
+      let d: number;
+      if (j === 0) {
+        best = c + ALIGN.jump;
+        d = 3;
+        if (i > 0 && cur[i - 1] + c + ALIGN.stall < best) {
+          best = cur[i - 1] + c + ALIGN.stall;
+          d = 1;
+        }
+      } else {
+        best = prev[i] + c + ALIGN.stall;
+        d = 2;
+        if (i > 0) {
+          const diag = prev[i - 1] + c;
+          if (diag <= best) {
+            best = diag;
+            d = 0;
+          }
+          const up = cur[i - 1] + c + ALIGN.stall;
+          if (up < best) {
+            best = up;
+            d = 1;
+          }
+        }
+        if (starts[i]) {
+          if (bestK >= 0) {
+            const salto = bestEnd + c + ALIGN.jump;
+            if (salto < best) {
+              best = salto;
+              d = 4;
+            }
+          }
+          const vuelve = skipPrev + c + ALIGN.jump;
+          if (vuelve < best) {
+            best = vuelve;
+            d = 5;
+          }
+        }
+      }
+      cur[i] = best;
+      dir[i * m + j] = d;
+    }
+    [prev, cur] = [cur, prev];
+    skipPrev = skipCur;
+  }
+  // Se acaba donde menos cuesta: en la partitura (a mitad, si la grabación se corta) o fuera de ella.
+  let i = 0;
+  for (let k = 1; k < n; k++) if (prev[k] < prev[i]) i = k;
+  let fuera = skipPrev < prev[i];
+  let j = m - 1;
+  const path: [number, number][] = [];
+  for (;;) {
+    if (fuera) {
+      const f = skipFrom[j];
+      if (f === -2) break;
+      j--;
+      if (j < 0) break;
+      if (f >= 0) {
+        fuera = false;
+        i = f;
+      }
+      continue;
+    }
+    path.push([i, j]);
+    const d = dir[i * m + j];
+    if (d === 3) break;
+    if (d === 0) {
+      i--;
+      j--;
+    } else if (d === 1) i--;
+    else if (d === 2) j--;
+    else if (d === 4) {
+      i = jumpFrom[j];
+      j--;
+    } else {
+      fuera = true;
+      j--;
+    }
+    if (i < 0 || j < 0) break;
+  }
+  return path.reverse();
+}
+
+/** Parte un camino con saltos en pasadas: tramos en los que la partitura avanza de seguido. */
+function splitPasses(path: [number, number][]): [number, number][][] {
+  const out: [number, number][][] = [];
+  let cur: [number, number][] = [];
+  for (const p of path) {
+    const last = cur[cur.length - 1];
+    // También se corta donde la grabación da un salto (lo de en medio quedó fuera de la partitura).
+    if (last && (p[0] < last[0] || p[0] > last[0] + 1 || p[1] > last[1] + 1)) {
+      out.push(cur);
+      cur = [];
+    }
+    cur.push(p);
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+type Warp = { f: (t: number) => number; from: number; to: number };
+
 /** Función creciente partitura (s) → grabación (s) a partir del camino, suavizada. */
-function warpFromPath(path: [number, number][]): { f: (t: number) => number; from: number; to: number } {
+function warpFromPath(path: [number, number][]): Warp {
   // Para cada paso de la partitura, el punto medio de la grabación que le corresponde.
   const byI = new Map<number, number[]>();
   for (const [i, j] of path) {
@@ -240,16 +424,12 @@ function warpFromPath(path: [number, number][]): { f: (t: number) => number; fro
   // Suaviza los dientes de sierra del DTW (media móvil de ±3 pasos) y garantiza que siempre avanza.
   const W = ALIGN.smooth;
   ys = ys.map((_, k) => {
+    // Ventana simétrica que se estrecha en los extremos: cortada por un lado, la media se iría hacia dentro y cada
+    // pasada empezaría unas décimas tarde y acabaría antes de tiempo.
+    const w = Math.min(W, k, ys.length - 1 - k);
     let s = 0;
-    let c = 0;
-    for (let d = -W; d <= W; d++) {
-      const y = ys[k + d];
-      if (y !== undefined) {
-        s += y;
-        c++;
-      }
-    }
-    return s / c;
+    for (let d = -w; d <= w; d++) s += ys[k + d];
+    return s / (2 * w + 1);
   });
   for (let k = 1; k < ys.length; k++) if (ys[k] < ys[k - 1] + 0.001) ys[k] = ys[k - 1] + 0.001;
   if (xs.length === 1) {
@@ -367,6 +547,42 @@ function buildCorrection(anchors: Anchor[]): ((x: number) => number) | null {
   };
 }
 
+/** Sube o baja una voz entera (de octava en octava), con sus nombres de nota. */
+function moveOctave(v: Voice, semis: number) {
+  for (const n of v.notes) {
+    n.midi += semis;
+    if (n.name) n.name = n.name.replace(/-?\d+$/, (d) => String(Number(d) + semis / 12));
+  }
+}
+
+/**
+ * Como `heard`, pero sin contar los instantes en que otra voz canta esa misma nota: eso no dice nada de esta voz
+ * (sin esto, una voz que dobla a otra parecería oírse en cualquier octava).
+ */
+function heardOwn(v: Voice, voices: Voice[], semis: number, tr: number, frames: number[][], fps: number): number {
+  const BIN = 0.05;
+  const ocupado = new Set<number>();
+  for (const o of voices) {
+    if (o === v) continue;
+    for (const n of o.notes) for (let t = n.start; t < n.start + n.dur; t += BIN) ocupado.add(Math.floor(t / BIN) * 128 + n.midi);
+  }
+  let on = 0;
+  let tot = 0;
+  for (const n of v.notes) {
+    const midi = n.midi + semis;
+    const row = midi + tr - MIDI0;
+    if (row < 0 || row >= 88) continue;
+    for (let t = n.start + 0.05; t < n.start + n.dur - 0.05; t += 0.05) {
+      if (ocupado.has(Math.floor(t / BIN) * 128 + midi)) continue;
+      const f = Math.round(t * fps);
+      if (f < 0 || f >= frames.length) continue;
+      tot++;
+      on += frames[f][row];
+    }
+  }
+  return tot >= 20 ? on / tot : 0;
+}
+
 /** Cuánto se oye una voz (media de la «probabilidad de nota» del modelo durante sus notas), subida o bajada `semis`. */
 function heard(notes: Note[], semis: number, frames: number[][], fps: number): number {
   let on = 0;
@@ -450,18 +666,28 @@ function agreement(line: Note[], ref: Note[]): number {
 }
 
 /** Coloca las notas de `score` donde suenan en la grabación `data`. */
-export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: string, opts: AlignOptions): Promise<AlignResult> {
+export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title: string, opts: AlignOptions): Promise<AlignResult> {
   const progress = opts.onProgress ?? (() => {});
+  // Las voces «🎙» (sacadas de una grabación en una mezcla anterior) no son líneas de la partitura: fuera. Si se pide,
+  // se vuelven a sacar de esta grabación. Si no, al volver a mezclar una mezcla entrarían como una voz escrita más.
+  const score: Song = { ...scoreIn, voices: scoreIn.voices.filter((v) => !isSung(v)) };
   const all = score.voices.flatMap((v) => v.notes);
   if (!all.length) throw new Error('La partitura no tiene notas.');
-  progress('Leyendo el audio…', 0);
-  const { samples } = await decodeAudio(data);
-  const a = Math.max(0, Math.floor(opts.start * SR));
-  const b = opts.end > opts.start ? Math.min(samples.length, Math.floor(opts.end * SR)) : samples.length;
-  if (b - a < SR * 2) throw new Error('El tramo elegido es demasiado corto.');
-  progress('Escuchando la grabación…', 0.02);
-  const out = await basicPitchOutputs(samples.subarray(a, b), (p) => progress('Escuchando la grabación…', 0.02 + p * 0.85));
-  const fps = out.frames.length / ((b - a) / SR);
+  let out: BpOutputs;
+  let seconds: number;
+  if (opts.outputs) {
+    ({ out, seconds } = opts.outputs);
+  } else {
+    progress('Leyendo el audio…', 0);
+    const { samples } = await decodeAudio(data);
+    const a = Math.max(0, Math.floor(opts.start * SR));
+    const b = opts.end > opts.start ? Math.min(samples.length, Math.floor(opts.end * SR)) : samples.length;
+    if (b - a < SR * 2) throw new Error('El tramo elegido es demasiado corto.');
+    progress('Escuchando la grabación…', 0.02);
+    out = await basicPitchOutputs(samples.subarray(a, b), (p) => progress('Escuchando la grabación…', 0.02 + p * 0.85));
+    seconds = (b - a) / SR;
+  }
+  const fps = out.frames.length / seconds;
 
   progress('Buscando cada compás en la grabación…', 0.88);
   await new Promise((r) => setTimeout(r));
@@ -504,14 +730,111 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
   if (!path || path.length < 10) throw new Error('No he conseguido emparejar la grabación con la partitura.');
   const match = Math.max(0, Math.min(1, 1 - best.cost / 0.7));
   if (match < 0.35) throw new Error('La grabación y la partitura no se parecen lo suficiente. ¿Son la misma canción? Prueba a elegir el tramo que se canta.');
-  const warp = warpFromPath(path);
   const offset = j0 * STEP; // segundos recortados al principio de la grabación
+
+  // Compases de la partitura: los de verdad si se saben (MusicXML y MIDI los traen: anacrusa, cambios de compás o
+  // de tempo, 7/8…) o, si no, una rejilla regular desde el principio.
+  const barLen = (score.beatsPerBar * 60) / score.bpm;
+  const barTimes = (score.barStarts ?? []).filter((t) => t < scoreEnd);
+  if (!barTimes.length) for (let t = 0; t < scoreEnd; t += barLen) barTimes.push(t);
+  /** Compás (desde 1) en que cae un segundo de la partitura. */
+  const barOf = (t: number) => {
+    let lo = 0;
+    let hi = barTimes.length - 1;
+    if (t < barTimes[0]) return 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (barTimes[mid] <= t + 1e-6) lo = mid;
+      else hi = mid;
+    }
+    return (barTimes[hi] <= t + 1e-6 ? hi : lo) + 1;
+  };
+  // Donde puede empezar o acabar de verdad una pasada: rayas de compás y ataques (las frases que entran en anacrusa).
+  const puntos = [...new Set([...barTimes, ...all.map((n) => n.start)])].sort((x, y) => x - y);
+  // El camino va de décima en décima: cada borde se lleva a la raya o al ataque que le toca.
+  // - Principio: el más cercano entre medio fotograma antes y el final del primer fotograma.
+  // - Final: el primero que caiga en el último fotograma o justo después. Si una nota empieza dentro del último
+  //   fotograma, es que ahí se paró: si se hubiera cantado, el camino seguiría unos fotogramas más.
+  const entre = (a: number, b: number) => puntos.filter((t) => t >= a - 1e-6 && t <= b + 1e-6);
+  const inicio = (from: number) => entre(from - STEP / 2, from + STEP).sort((x, y) => Math.abs(x - from) - Math.abs(y - from))[0];
+  const fin = (to: number) => entre(to - STEP, to + STEP / 2)[0];
+  /** Una pasada: su warp, y las notas que empiezan en [lo, hi) van con ella. */
+  type Pasada = { w: Warp; lo: number; hi: number };
+  const pasadaDe = (w: Warp): Pasada => {
+    const lo = inicio(w.from);
+    const hi = fin(w.to);
+    // Si el borde no cae en una raya ni en un ataque, lo que vio el DTW: el centro del fotograma.
+    return { w, lo: lo ?? w.from - STEP / 2, hi: hi ?? w.to - STEP / 2 };
+  };
+
+  // Pasadas por la partitura. Lo normal es una. Con «toda la grabación», la partitura puede cantarse más veces
+  // (repeticiones que no están escritas, otra toma…): se busca con saltos y cada pasada coloca su copia de las notas.
+  let pasadas: Pasada[] = [{ w: warpFromPath(path), lo: -Infinity, hi: Infinity }];
+  if (opts.span === 'audio') {
+    const n = S.length;
+    const frame = (t: number) => Math.round(t / STEP) - s0;
+    const starts = new Uint8Array(n);
+    const ends = new Uint8Array(n);
+    starts[0] = 1;
+    for (const t of barTimes) {
+      const b = frame(t);
+      if (b > 0 && b < n) {
+        starts[b] = 1;
+        ends[b - 1] = 1;
+      }
+    }
+    for (const nt of all) {
+      const a = frame(nt.start);
+      if (a >= 0 && a < n) starts[a] = 1;
+    }
+    // Lo que cuesta de media un fotograma cantado de esta grabación, con el mejor emparejamiento de la partitura entera.
+    const cantados = path.filter(([, j]) => A[j].some((x) => x > 0));
+    const tipico = cantados.length ? cantados.reduce((acc, [i, j]) => acc + cost(S[i - s0], A[j]), 0) / cantados.length : 0;
+    const fuera = Math.min(ALIGN.skipMax, Math.max(ALIGN.skip, tipico + ALIGN.skipMargin));
+    const conSaltos = dtwJumps(S, A, starts, ends, fuera).map(([i, j]) => [i + s0, j] as [number, number]);
+    // Cada pasada se recorta por los extremos donde la partitura calla (el silencio entre tomas) y donde el camino
+    // sube recto (la partitura avanza sin que avance la grabación: lo que no se llegó a cantar al cortar).
+    const suena = (i: number) => S[i - s0]?.some((x) => x > 0) ?? false;
+    const recorta = (p: [number, number][]) => {
+      let a = 0;
+      let b = p.length - 1;
+      while (a < b && !suena(p[a][0])) a++;
+      while (b > a && !suena(p[b][0])) b--;
+      while (a < b && p[a + 1][1] === p[a][1]) a++;
+      while (b > a && p[b - 1][1] === p[b][1]) b--;
+      return p.slice(a, b + 1);
+    };
+    const media = (p: [number, number][]) => p.reduce((acc, [i, j]) => acc + cost(S[i - s0], A[j]), 0) / p.length;
+    const largo = (p: [number, number][]) => (p[p.length - 1][0] - p[0][0] + 1) * STEP; // segundos de partitura
+    const tramos = splitPasses(conSaltos)
+      .map(recorta)
+      .filter((p) => p.length > 1);
+    if (tramos.length) {
+      const principal = media(tramos.reduce((x, p) => (largo(p) > largo(x) ? p : x)));
+      // Solo valen las que abarcan casi un compás de partitura y se parecen casi tanto como la principal: lo demás
+      // era el diapasón, charla o una introducción que no está escrita.
+      const buenas = tramos.filter((p) => largo(p) >= Math.min(barLen * 0.9, 4) && media(p) <= principal + ALIGN.passCost);
+      if (buenas.length) pasadas = buenas.map((p) => pasadaDe(warpFromPath(p)));
+    }
+  }
+  pasadas.sort((x, y) => x.w.f(x.w.from) - y.w.f(y.w.from));
+  const multi = pasadas.length > 1;
+  const larga = pasadas.reduce((a, p) => (p.w.to - p.w.from > a.w.to - a.w.from ? p : a)); // la más larga
+  const warp = larga.w;
   const toAudio = (t: number) => warp.f(t) + offset;
 
   progress('Colocando las notas…', 0.96);
-  // Notas que caen dentro del tramo emparejado (con un poco de margen); con `score`, toda la partitura.
+  // Qué notas van con cada pasada: con una sola, las que caen en el tramo emparejado (con `score`, todas); con
+  // varias, las que empiezan en su [lo, hi), y además las que siguen sonando al empezarla (ligadas sobre la barra).
   const whole = opts.span === 'score';
-  const inRange = (n: Note) => whole || (n.start + n.dur > warp.from - 0.05 && n.start < warp.to + 0.05);
+  // La raya de compás por la que se entra en una pasada: la primera desde su principio (si se entra en anacrusa,
+  // la del compás siguiente). Una nota que empezó antes solo se canta en la pasada si la cruza (ligada).
+  const rayaDeEntrada = (lo: number) => barTimes.find((t) => t >= lo - 1e-6) ?? Infinity;
+  const dentro = (n: Note, p: Pasada) =>
+    whole ||
+    (multi
+      ? (n.start >= p.lo - 1e-3 || n.start + n.dur > rayaDeEntrada(p.lo) + 0.1) && n.start < p.hi - 1e-3
+      : n.start + n.dur > p.w.from - 0.05 && n.start < p.w.to + 0.05);
   const song: Song = makeSong({
     title,
     beatsPerBar: score.beatsPerBar,
@@ -522,20 +845,24 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
   let anclas = 0;
   const lanes = score.voices.map((v) => ({
     v,
-    placed: v.notes
-      .filter(inRange)
-      .sort((x, y) => x.start - y.start)
-      .map((n): Placed => ({ n, s: toAudio(n.start), e: toAudio(n.start + n.dur) })),
+    placed: pasadas
+      .flatMap((p) =>
+        v.notes
+          .filter((n) => dentro(n, p))
+          .map((n): Placed => ({ n, s: p.w.f(multi ? Math.max(n.start, p.lo) : n.start) + offset, e: p.w.f(n.start + n.dur) + offset })),
+      )
+      .sort((x, y) => x.s - y.s),
   }));
   // Donde se reconoce el ataque de la nota, se clava ahí. Donde no (voces tapadas, notas ligadas), se corrige con
   // la desviación de las que sí: el grupo canta junto, así que esa desviación es una sola curva para toda la canción.
   if (ALIGN.refine) {
-    const cands = lanes.map((l) => anchorsOf(l.placed, out, fps, best.tr));
+    const candidatos = lanes.map((l) => anchorsOf(l.placed, out, fps, best.tr));
     const todas: Anchor[] = [];
     lanes.forEach((l, i) => {
       l.placed.forEach((p, k) => {
-        const t = cands[i][k];
-        if (t !== null) todas.push({ x: p.n.start, r: t - p.s });
+        const t = candidatos[i][k];
+        // Por el segundo de la grabación (no de la partitura): con varias pasadas, el mismo compás suena varias veces.
+        if (t !== null) todas.push({ x: p.s, r: t - p.s });
       });
     });
     anclas = todas.length;
@@ -543,8 +870,8 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
     lanes.forEach((l, i) => {
       for (let k = 0; k < l.placed.length; k++) {
         const p = l.placed[k];
-        const t = cands[i][k];
-        const suave = corr ? corr(p.n.start) : 0;
+        const t = candidatos[i][k];
+        const suave = corr ? corr(p.s) : 0;
         // Un ataque que se aparta mucho de lo que hacen las demás voces en ese momento no es de fiar.
         const d = t !== null && (!corr || Math.abs(t - p.s - suave) < 0.2) ? t - p.s : suave;
         p.s += d;
@@ -569,15 +896,23 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
       const legato = next && Math.abs(p.n.start + p.n.dur - next.n.start) < 1e-3;
       let e = legato ? next.s : p.e;
       if (next && e > next.s) e = next.s;
-      const note: Note = { midi: p.n.midi, start: p.s, dur: Math.max(0.06, e - p.s) };
+      const note: Note = { midi: p.n.midi, start: p.s, dur: Math.max(0.06, e - p.s), bar: barOf(p.n.start) };
       if (p.n.name) note.name = p.n.name;
       first = Math.min(first, p.s);
       return note;
     });
     return { ...v, id: uid(), notes };
   });
+
   // Octava de cada voz: un grupo de voces graves canta a menudo una octava por debajo de lo escrito en clave de sol.
-  const octaves: { name: string; semis: number }[] = [];
+  const mediana = (notes: Note[]) => {
+    const m = notes.map((n) => n.midi).sort((a, b) => a - b);
+    return m.length ? m[Math.floor(m.length / 2)] : null;
+  };
+  // El orden de lo colocado tal como está escrito (antes de mover nada).
+  const escrito = song.voices.map((v) => mediana(v.notes)).filter((m): m is number => m !== null);
+  const descendente = escrito.every((m, k) => k === 0 || m <= escrito[k - 1] + 2);
+  const movida = new Map<Voice, number>(); // semitonos que se ha movido cada voz
   for (const v of song.voices) {
     const base = heard(v.notes, best.tr, out.frames, fps);
     let semis = 0;
@@ -586,25 +921,66 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
       if (h > 0.2 && h > base * 2 && h > heard(v.notes, best.tr + semis, out.frames, fps)) semis = o;
     }
     if (semis) {
-      for (const n of v.notes) {
-        n.midi += semis;
-        if (n.name) n.name = n.name.replace(/-?\d+$/, (d) => String(Number(d) + semis / 12));
-      }
-      octaves.push({ name: v.name, semis });
+      moveOctave(v, semis);
+      movida.set(v, semis);
     }
   }
-  // El tiempo de la canción empieza con la primera nota (como en la partitura si empezaba con silencio, a escala).
-  // Con `audio` no se mueve nada: cada nota se queda en el segundo del archivo en que suena.
-  const span = Math.max(0.5, toAudio(warp.to) - toAudio(warp.from));
+  // Las partes de la partitura van de aguda a grave. Si al bajar una voz las de debajo se quedan por encima de ella,
+  // probablemente también se cantan una octava abajo (p. ej. voces de hombre escritas en clave de sol, de las que
+  // solo se distingue bien la melodía). Se bajan, salvo que se oigan claramente donde están: a veces las voces se
+  // cruzan de verdad (una contralto por encima de una melodía que canta un hombre).
+  if (descendente && [...movida.values()].some((s) => s < 0)) {
+    let arriba: number | null = null;
+    for (const v of song.voices) {
+      const m = mediana(v.notes);
+      if (m === null) continue;
+      if (arriba !== null && m > arriba + 2 && !movida.has(v)) {
+        const aqui = heardOwn(v, song.voices, 0, best.tr, out.frames, fps);
+        const abajo = heardOwn(v, song.voices, -12, best.tr, out.frames, fps);
+        if (!(aqui > 0.2 && aqui > 2 * abajo)) {
+          moveOctave(v, -12);
+          movida.set(v, -12);
+          arriba = m - 12;
+          continue;
+        }
+      }
+      arriba = m;
+    }
+  }
+  const octaves = song.voices.flatMap((v, index) => {
+    const semis = movida.get(v) ?? 0;
+    return semis ? [{ name: v.name, index, semis }] : [];
+  });
+
+  // Tempo: el de la pasada más larga. Y el 0 de la canción: con una pasada, la primera nota (como en la partitura si
+  // empezaba con silencio, a escala); con «toda la grabación», una raya de compás de la primera pasada, para que la
+  // rejilla, el metrónomo y el ensayo caigan en su sitio sin perder el principio de la grabación (como mucho un compás).
+  const span = Math.max(0.5, warp.f(warp.to) - warp.f(warp.from));
   const ratio = (warp.to - warp.from) / span; // > 1: se canta más rápido que la partitura
-  const firstScore = Math.min(...score.voices.flatMap((v) => v.notes.filter(inRange).map((n) => n.start)));
-  const lead = Math.max(0, (firstScore - warp.from) / ratio);
-  const shift = opts.span === 'audio' ? 0 : first - lead;
-  for (const v of song.voices) for (const n of v.notes) n.start = Math.max(0, n.start - shift);
   song.bpm = Math.max(30, Math.min(260, Math.round(score.bpm * ratio)));
+  let shift: number;
+  if (opts.span === 'audio') {
+    const p0 = pasadas[0];
+    const desde = Math.max(p0.lo, p0.w.from);
+    const raya = barTimes[barOf(desde) - 1] ?? desde;
+    const t0 = p0.w.f(raya) + offset;
+    const compas = (song.beatsPerBar * 60) / song.bpm;
+    shift = ((t0 % compas) + compas) % compas;
+  } else {
+    const firstScore = Math.min(...score.voices.flatMap((v) => v.notes.filter((n) => dentro(n, pasadas[0])).map((n) => n.start)));
+    const lead = Math.max(0, (firstScore - warp.from) / ratio);
+    shift = first - lead;
+  }
+  for (const v of song.voices) for (const n of v.notes) n.start = Math.max(0, n.start - shift);
   song.chords = score.chordsAuto
     ? []
-    : score.chords.filter((c) => c.time >= warp.from - 0.05 && c.time <= warp.to + 0.05).map((c) => ({ ...c, time: Math.max(0, toAudio(c.time) - shift) }));
+    : pasadas
+        .flatMap((p) =>
+          score.chords
+            .filter((c) => (multi ? c.time >= p.lo - 1e-3 && c.time < p.hi - 1e-3 : c.time >= p.w.from - 0.05 && c.time <= p.w.to + 0.05))
+            .map((c) => ({ ...c, time: Math.max(0, p.w.f(c.time) + offset - shift) })),
+        )
+        .sort((x, y) => x.time - y.time);
   if (!opts.keepKey && best.tr) transposeSong(song, best.tr);
 
   // Una voz más con lo que de verdad se canta, y a qué línea de la partitura corresponde.
@@ -612,8 +988,8 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
   if (opts.addSung) {
     progress('Oyendo cómo se canta…', 0.98);
     await new Promise((r) => setTimeout(r));
-    const a0 = toAudio(warp.from) - 0.3;
-    const a1 = toAudio(warp.to) + 0.3;
+    const a0 = Math.min(...pasadas.map((p) => p.w.f(p.w.from))) + offset - 0.3;
+    const a1 = Math.max(...pasadas.map((p) => p.w.f(p.w.to))) + offset + 0.3;
     const heardNotes = cleanNotes(await notesFromOutputs(out, 0.5)).filter((n) => n.start + n.dur > a0 && n.start < a1);
     // Las voces de la canción ya están en su tonalidad final: para comparar con el audio hay que
     // devolverlas a la tonalidad en que se canta si se ha dejado la de la partitura.
@@ -630,8 +1006,10 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
     const line = ref ? sungLine(heardNotes, ref) : rough;
     if (line.length >= 4) {
       const notes = line.map((n) => ({ midi: n.midi - cmp, start: Math.max(0, n.start - shift), dur: n.dur }));
-      const name = ref ? `Como se canta (${pick!.v.name})` : 'Como se canta';
+      // «🎙 Tenor»: la voz Tenor tal como se oye en la grabación (el micro es el mismo que el de la pista).
+      const name = ref ? `🎙 ${pick!.v.name}` : '🎙 Grabación';
       const voice = makeVoice(name, song.voices.length, notes);
+      voice.sungOf = ref ? pick!.v.id : '';
       const used = new Set(song.voices.map((v) => v.color));
       voice.color = VOICE_COLORS.find((c) => !used.has(c)) ?? '#ffffff';
       const at = ref ? song.voices.indexOf(pick!.v) + 1 : song.voices.length;
@@ -640,16 +1018,27 @@ export async function alignScoreToAudio(score: Song, data: ArrayBuffer, title: s
     }
   }
 
+  // Vueltas enteras (o tomas): una pasada empieza otra si arranca en el mismo sitio de la partitura que la anterior
+  // o antes. Los trozos que se repiten o se saltan dentro de una vuelta no cuentan como otra.
+  const laps = pasadas.reduce((k, p, i) => k + (i > 0 && p.lo <= pasadas[i - 1].lo + 0.05 ? 1 : 0), 1);
+
   if (song.chordsAuto) song.chords = computeChords(song);
   progress('Listo', 1);
   return {
     song,
     transpose: best.tr,
-    from: Math.max(0, warp.from),
-    to: warp.to,
-    audioFrom: opts.start + toAudio(warp.from),
-    audioTo: opts.start + toAudio(warp.to),
+    from: Math.max(0, Math.min(...pasadas.map((p) => Math.max(p.lo, p.w.from)))),
+    to: Math.max(...pasadas.map((p) => Math.min(p.hi, p.w.to))),
+    audioFrom: opts.start + Math.min(...pasadas.map((p) => p.w.f(p.w.from))) + offset,
+    audioTo: opts.start + Math.max(...pasadas.map((p) => p.w.f(p.w.to))) + offset,
     toAudio: (t) => opts.start + toAudio(t),
+    passes: pasadas.map((p) => ({
+      from: Math.max(p.lo, p.w.from),
+      to: Math.min(p.hi, p.w.to),
+      audioFrom: opts.start + p.w.f(p.w.from) + offset,
+      audioTo: opts.start + p.w.f(p.w.to) + offset,
+    })),
+    laps,
     audioOffset: opts.start + shift,
     match,
     octaves,

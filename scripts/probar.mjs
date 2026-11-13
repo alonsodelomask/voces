@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE = process.env.VOCES_URL ?? 'http://localhost:5173/';
 const DIR = join(dirname(fileURLToPath(import.meta.url)), process.env.PRUEBAS_DIR ?? 'pruebas');
-const PORT = 9334;
+const PORT = Number(process.env.PORT ?? 9334); // otro puerto para lanzar dos tandas a la vez
 const filtro = process.argv[2] ?? '';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -73,9 +73,16 @@ for (const archivo of readdirSync(DIR).filter((f) => f.endsWith('.js') && f.incl
   await sleep(1500);
   const codigo = readFileSync(join(DIR, archivo), 'utf8');
   try {
-    const r = await send('Runtime.evaluate', { expression: `(${codigo})()`, awaitPromise: true, returnByValue: true, timeout: Number(process.env.TIMEOUT ?? 60_000) });
+    // El resultado se deja en la página como texto y se trae a trozos: un mensaje de más de unos pocos MB
+    // (el volcado de una grabación entera) se queda colgado y la prueba no termina nunca.
+    const expression = `(async () => { const v = await (${codigo})(); window.__resultado = JSON.stringify(v ?? null); return window.__resultado.length; })()`;
+    const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: Number(process.env.TIMEOUT ?? 60_000) });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    const valor = r.result.value;
+    let texto = '';
+    for (let i = 0; i < r.result.value; i += 500_000) {
+      texto += (await send('Runtime.evaluate', { expression: `window.__resultado.slice(${i}, ${i + 500_000})`, returnByValue: true })).result.value;
+    }
+    const valor = JSON.parse(texto);
     const ok = valor && valor.ok !== false && errores.length === 0;
     if (!ok) fallos++;
     console.log(`${ok ? '✓' : '✖'} ${archivo}`, JSON.stringify(valor));

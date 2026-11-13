@@ -6,6 +6,7 @@ import { download, exportMidi, exportProject, safeName } from './export';
 import { ACCEPTED, importFile, isAudioFile } from './import';
 import { importAudio } from './import/audioDialog';
 import { openMix } from './import/mixDialog';
+import { isSung, migrateSungVoices, sungSource } from './ai/fusion';
 import { delTrack, getTrack, trackIds } from './audio/track';
 import { makeSong, makeVoice, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, midiToName, plainAccidentals, prettyAccidentals, transposeSong, typeInName, voiceType } from './music';
@@ -35,6 +36,8 @@ let saveTimer: number | undefined;
 
 function setSong(s: Song, save = false) {
   engine.pause();
+  // Canciones mezcladas con una versión anterior: «Como se canta (Tenor)» pasa a «🎙 Tenor».
+  if (migrateSungVoices(s)) save = true;
   song = s;
   if (engine.range) setRange(null);
   undoStack.length = 0;
@@ -250,7 +253,11 @@ function fmt(t: number) {
 
 // ---------------- Panel de voces ----------------
 
+/** Para refrescar el nombre y la descripción de una fila del panel sin rehacerla (por id de voz). */
+const rowRefresh = new Map<string, () => void>();
+
 function renderPanel() {
+  rowRefresh.clear();
   const title = $<HTMLInputElement>('#song-title');
   title.value = song.title;
   const list = $('#voice-list');
@@ -336,6 +343,16 @@ function voiceRow(v: Voice): HTMLElement {
   // Si el nombre ya lo dice («Tenor 2»), no se repite.
   const meta = row.querySelector<HTMLElement>('.n')!;
   const updateMeta = () => {
+    // La voz sacada de la grabación no es una cuerda más: es cómo suena otra voz al cantarla.
+    if (isSung(v)) {
+      const de = sungSource(song, v);
+      meta.textContent = `en la grabación · ${v.notes.length} notas`;
+      meta.title = de
+        ? `Lo que se oye de «${de.name}» en la grabación, sacado del audio. Compárala con «${de.name}», que es la partitura.`
+        : 'Lo que se oye en la grabación, sacado del audio.';
+      name.title = meta.title;
+      return;
+    }
     const tipo = voiceType(v.notes);
     meta.textContent = `${tipo && !typeInName(v.name) ? tipo + ' · ' : ''}${v.notes.length} notas`;
     if (v.notes.length) {
@@ -346,6 +363,10 @@ function voiceRow(v: Voice): HTMLElement {
     }
   };
   updateMeta();
+  rowRefresh.set(v.id, () => {
+    name.value = v.name;
+    updateMeta();
+  });
   const refresh = () => {
     row.querySelector('[data-k=m]')!.classList.toggle('on-m', v.muted);
     row.querySelector('[data-k=s]')!.classList.toggle('on-s', v.solo);
@@ -357,7 +378,15 @@ function voiceRow(v: Voice): HTMLElement {
     dirty = true;
   };
   name.onchange = () => {
+    const antes = v.name;
     v.name = name.value.trim() || v.name;
+    // Su voz de la grabación («🎙 Tenor») se llama como ella. Esa fila se actualiza en su sitio: rehacer el panel
+    // aquí (el change salta al pulsar en otra parte) se comería ese clic.
+    for (const x of song.voices) {
+      if (x.sungOf !== v.id) continue;
+      if (x.name === `🎙 ${antes}`) x.name = `🎙 ${v.name}`;
+      rowRefresh.get(x.id)?.();
+    }
     updateMeta();
     renderEditorControls();
     persist();
@@ -456,7 +485,7 @@ function renderEditorControls() {
   for (const v of song.voices) {
     const o = document.createElement('option');
     o.value = v.id;
-    const tipo = voiceType(v.notes);
+    const tipo = isSung(v) ? 'grabación' : voiceType(v.notes);
     o.textContent = tipo && !typeInName(v.name) ? `${v.name} · ${tipo}` : v.name;
     sel.appendChild(o);
   }

@@ -6,6 +6,8 @@ export interface Note {
   dur: number;
   /** Nombre ya escrito con su alteración correcta (p. ej. "F#4"), si se conoce. */
   name?: string;
+  /** Si salió de mezclar partitura y grabación: el compás de la partitura (desde 1) del que viene. */
+  bar?: number;
 }
 
 export interface Voice {
@@ -17,6 +19,11 @@ export interface Voice {
   solo: boolean;
   hidden: boolean;
   volume: number; // 0..1
+  /**
+   * Si es lo que se oye en la grabación (sacado del audio al mezclar): el id de la voz de la partitura a la que
+   * corresponde, o '' si no se parecía a ninguna.
+   */
+  sungOf?: string;
 }
 
 export interface ChordMark {
@@ -61,6 +68,8 @@ export interface Song {
   audioPhase?: number;
   /** Grabación que suena junto a las voces (el audio está guardado en este dispositivo). */
   audioTrack?: AudioTrack;
+  /** Segundo en que empieza cada compás de la partitura (repeticiones desarrolladas), si se sabe. */
+  barStarts?: number[];
 }
 
 // Colores neón, ordenados de la voz más aguda a la más grave.

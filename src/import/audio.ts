@@ -76,9 +76,22 @@ export async function basicPitchOutputs(samples: Float32Array, onProgress?: (f: 
   }
 }
 
+// Las cuentas de Basic Pitch (las mismas que su `evaluateModel`): ventanas de 2 s que se solapan 30 fotogramas.
+const HOP = 256; // muestras por fotograma
+const FPS = Math.floor(SR / HOP); // 86 fotogramas por segundo
+const WIN = SR * 2 - HOP; // 43 844 muestras por ventana
+const OVERLAP = 30; // fotogramas que comparten dos ventanas seguidas (se tira la mitad por cada lado)
+const STEP = WIN - OVERLAP * HOP; // 36 164 muestras entre una ventana y la siguiente
+const LEAD = (OVERLAP * HOP) / 2; // ceros que se ponen delante del audio
+const OUTPUTS = ['Identity_1', 'Identity_2', 'Identity']; // fotogramas, ataques y contornos
+
+/**
+ * Pasa el audio por el modelo ventana a ventana. Da lo mismo que `BasicPitch.evaluateModel`, pero esa función sube
+ * todo el audio de golpe a la tarjeta gráfica y no libera nada; con más de un minuto de grabación cada ventana tarda
+ * unas cuarenta veces más (0,2 s → 7-11 s en una gráfica integrada) y una canción entera se va a horas.
+ */
 async function basicPitchOnce(samples: Float32Array, onProgress?: (f: number) => void): Promise<BpOutputs> {
   const tf = await import('@tensorflow/tfjs');
-  const bp = await import('@spotify/basic-pitch');
   await tf.ready();
   if (!modelPromise) {
     modelPromise = (async () => {
@@ -96,19 +109,40 @@ async function basicPitchOnce(samples: Float32Array, onProgress?: (f: number) =>
       );
     })();
   }
-  const basic = new bp.BasicPitch(modelPromise as Promise<import('@tensorflow/tfjs').GraphModel>);
-  let frames: number[][] = [];
-  let onsets: number[][] = [];
-  let contours: number[][] = [];
-  await basic.evaluateModel(
-    samples,
-    (f, o, c) => {
-      frames = frames.concat(f);
-      onsets = onsets.concat(o);
-      contours = contours.concat(c);
-    },
-    (p) => onProgress?.(p),
-  );
+  const model = (await modelPromise) as import('@tensorflow/tfjs').GraphModel;
+  // Dónde empieza cada ventana, contando los ceros de delante; las últimas se completan con ceros.
+  const total = LEAD + samples.length;
+  const starts: number[] = [];
+  for (let s = 0; s < total; s += STEP) starts.push(s);
+  const want = Math.floor(samples.length * (FPS / SR)); // fotogramas que corresponden al audio
+  const frames: number[][] = [];
+  const onsets: number[][] = [];
+  const contours: number[][] = [];
+  const win = new Float32Array(WIN);
+  for (let i = 0; i < starts.length && frames.length < want; i++) {
+    onProgress?.(i / starts.length);
+    const a = starts[i] - LEAD; // primera muestra de la ventana (negativa: ceros de delante)
+    win.fill(0);
+    const from = Math.max(0, a);
+    const to = Math.min(samples.length, a + WIN);
+    if (to > from) win.set(samples.subarray(from, to), from - a);
+    const outs = tf.tidy(() =>
+      (model.execute(tf.tensor3d(win, [1, WIN, 1]), OUTPUTS) as import('@tensorflow/tfjs').Tensor[]).map((t) => {
+        const keep = t.shape[1]! - OVERLAP;
+        return t.slice([0, OVERLAP / 2, 0], [-1, keep, -1]).reshape([keep, t.shape[2]!]);
+      }),
+    );
+    try {
+      const [f, o, c] = (await Promise.all(outs.map((t) => t.array()))) as number[][][];
+      const n = want - frames.length;
+      frames.push(...f.slice(0, n));
+      onsets.push(...o.slice(0, n));
+      contours.push(...c.slice(0, n));
+    } finally {
+      outs.forEach((t) => t.dispose());
+    }
+  }
+  onProgress?.(1);
   return { frames, onsets, contours };
 }
 

@@ -27,8 +27,10 @@ async () => {
   const tarde = 4; // la 5.ª nota de la aguda entra 0,15 s tarde
   const SR = 22050;
   // `hasta`: cuántas notas se cantan (para probar una grabación que se corta a la mitad).
-  async function wav(nombre, hasta) {
-    const fin = t[hasta] + 1;
+  // `tomas`/`pausa`: la canción entera varias veces, con un silencio entre toma y toma.
+  async function wav(nombre, hasta, tomas = 1, pausa = 0) {
+    const vuelta = t[hasta] - t[0] + pausa;
+    const fin = t[hasta] + 1 + (tomas - 1) * vuelta;
     const ctx = new OfflineAudioContext(1, Math.ceil(fin * SR), SR);
     const toca = (m, a, b, vol) => {
       const o = ctx.createOscillator(); const g = ctx.createGain();
@@ -37,9 +39,12 @@ async () => {
       g.gain.setValueAtTime(vol, b - 0.06); g.gain.linearRampToValueAtTime(0, b - 0.02);
       o.connect(g).connect(ctx.destination); o.start(a); o.stop(b);
     };
-    // La aguda suena más fuerte: es la que se oye y la que debe salir en «Como se canta».
-    alta.slice(0, hasta).forEach((m, i) => toca(m - 2, t[i] + (i === tarde ? 0.15 : 0), t[i + 1], 0.34));
-    baja.slice(0, hasta).forEach((m, i) => toca(m - 2 - 12, t[i], t[i + 1], 0.2));
+    // La aguda suena más fuerte: es la que se oye y la que debe salir en «🎙 Alta».
+    for (let k = 0; k < tomas; k++) {
+      const d = k * vuelta;
+      alta.slice(0, hasta).forEach((m, i) => toca(m - 2, d + t[i] + (i === tarde ? 0.15 : 0), d + t[i + 1], 0.34));
+      baja.slice(0, hasta).forEach((m, i) => toca(m - 2 - 12, d + t[i], d + t[i + 1], 0.2));
+    }
     const pcm = (await ctx.startRendering()).getChannelData(0);
     const w = new DataView(new ArrayBuffer(44 + pcm.length * 2));
     const str = (o, s) => [...s].forEach((c, i) => w.setUint8(o + i, c.charCodeAt(0)));
@@ -97,8 +102,9 @@ async () => {
   res.desfaseEntreVoces = +Math.abs(rA.off - rB.off).toFixed(3);
   res.tarde = va ? +(va.notes[tarde].start - vb.notes[tarde].start).toFixed(3) : null;
 
-  // «Como se canta»: la voz sacada del audio, pegada a la línea de la partitura que le corresponde.
-  const cantada = s.voices.find((v) => v.name.startsWith('Como se canta'));
+  // «🎙 Alta»: la voz sacada del audio, pegada a la línea de la partitura que le corresponde (y enlazada a ella).
+  const cantada = s.voices.find((v) => v.sungOf);
+  res.enlazada = cantada?.sungOf === va?.id;
   res.cantada = cantada?.name;
   res.cantadaJuntoAAlta = cantada ? s.voices.indexOf(cantada) === s.voices.indexOf(va) + 1 : false;
   res.cantadaNotas = cantada?.notes.length ?? 0;
@@ -123,6 +129,27 @@ async () => {
   campo.value = 'Tenor 2';
   campo.dispatchEvent(new Event('change'));
   res.noRepite = filaDe('Tenor 2')?.querySelector('.n')?.textContent;
+  // La voz de la grabación se explica sola en el panel.
+  res.filaCantada = filaDe('🎙 Tenor 2')?.querySelector('.n')?.textContent;
+  // Renombrar una voz renombra su «🎙» (en su sitio, sin rehacer el panel).
+  res.renombrada = s.voices.find((v) => v.sungOf === va.id)?.name === '🎙 Tenor 2' && !filaDe('🎙 Alta');
+  // Las canciones mezcladas antes («Como se canta (X)») se ponen al día al abrirlas.
+  const { migrateSungVoices } = await import('/src/ai/fusion.ts');
+  const vieja = { voices: [{ id: 'a', name: 'Alta', notes: [] }, { id: 'b', name: 'Como se canta (Alta)', notes: [] }] };
+  res.migrada = migrateSungVoices(vieja) && vieja.voices[1].name === '🎙 Alta' && vieja.voices[1].sungOf === 'a';
+  // «Como se canta» a secas no se parecía a ninguna voz: no se engancha a la de delante.
+  const sinPareja = { voices: [{ id: 's', name: 'Soprano', notes: [] }, { id: 'b', name: 'Bajo', notes: [] }, { id: 'x', name: 'Como se canta', notes: [] }] };
+  migrateSungVoices(sinPareja);
+  res.migradaSinPareja = sinPareja.voices[2].name === '🎙 Grabación' && sinPareja.voices[2].sungOf === '';
+  // La voz se renombró después: se reconoce la de delante si canta en la misma zona.
+  const nota = (midi) => ({ midi, start: 0, dur: 1 });
+  const renombrada = { voices: [{ id: 'a', name: 'Tenor 2', notes: [nota(60), nota(62)] }, { id: 'b', name: 'Como se canta (Alta)', notes: [nota(61), nota(62)] }] };
+  migrateSungVoices(renombrada);
+  res.migradaRenombrada = renombrada.voices[1].name === '🎙 Tenor 2' && renombrada.voices[1].sungOf === 'a';
+  // Y si la voz se borró, la de delante es otra: no se engancha.
+  const borrada = { voices: [{ id: 's', name: 'Soprano', notes: [nota(76)] }, { id: 'b', name: 'Como se canta (Alta)', notes: [nota(60)] }] };
+  migrateSungVoices(borrada);
+  res.migradaBorrada = borrada.voices[1].name === '🎙 Alta' && borrada.voices[1].sungOf === '';
   // Silenciar y volver: el motor obedece.
   fila[0].querySelector('[data-k=m]').click();
   res.silenciada = s.audioTrack.muted;
@@ -141,11 +168,28 @@ async () => {
   const corta = await mix(partitura, await wav('Media.wav', 6), { keepKey: false, span: 'match', sung: false, track: false });
   res.soloLoCantado = corta?.song.voices.find((v) => v.name === 'Alta')?.notes.length ?? 0;
 
-  res.ok = res.multiple && res.trompeta && res.usaLaAbierta && res.opciones === 'match,score,audio' && res.fusion && res.fusionCerrada &&
+  // «Toda la grabación» con la canción cantada dos veces y 1,5 s de silencio entre las dos tomas: dos vueltas,
+  // cada nota dos veces y ninguna en el silencio.
+  const dos = await mix(partitura, await wav('Dos tomas.wav', 12, 2, 1.5), { keepKey: false, span: 'audio', sung: false, track: false });
+  const dv = dos?.song.voices.find((v) => v.name === 'Alta');
+  res.dosTomas = { notas: dv?.notes.length, avisos: dos?.notes.join('; ') };
+  res.dosVueltas = !!dos?.notes.some((x) => x.includes('se canta 2 veces'));
+  res.huecoEntreTomas = dv && dv.notes.length === 24 ? +(dv.notes[12].start - (dv.notes[11].start + dv.notes[11].dur)).toFixed(2) : null;
+  res.segundaToma = dv && dv.notes.length === 24 ? dv.notes.slice(12).map((n) => n.midi).join(',') === alta.map((m) => m - 2).join(',') : false;
+
+  // Volver a mezclar usando como partitura una mezcla: su «🎙» no entra como voz escrita y no quedan enlaces rotos.
+  const otra = await mix(s, await wav('Ensayo martes.wav', 12), { keepKey: false, span: 'match', sung: true, track: false });
+  const conEnlace = otra?.song.voices.filter((v) => v.sungOf !== undefined) ?? [];
+  res.remezcla = { voces: otra?.song.voices.map((v) => v.name).join(' / '), grabacion: conEnlace.length };
+  res.remezclaBien = conEnlace.length === 1 && (conEnlace[0].sungOf === '' || otra.song.voices.some((v) => v.id === conEnlace[0].sungOf && v.sungOf === undefined));
+
+  res.ok = res.multiple && res.trompeta && res.usaLaAbierta && res.opciones === 'audio,match,score' && res.fusion && res.fusionCerrada &&
     res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.desfaseEntreVoces < 0.05 && res.tarde > 0.08 &&
-    res.cantada === 'Como se canta (Alta)' && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
+    res.cantada === '🎙 Alta' && res.enlazada && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
     !!res.pista && res.pistaCargada && res.filaPista === 'grabación' && res.silenciada && res.sonando &&
     res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8 &&
+    /^en la grabación · \d+ notas$/.test(res.filaCantada ?? '') && res.renombrada && res.migrada && res.migradaSinPareja && res.migradaRenombrada && res.migradaBorrada &&
+    res.dosTomas.notas === 24 && res.dosVueltas && res.huecoEntreTomas >= 1.2 && res.segundaToma && res.remezclaBien &&
     res.cuerdaAlta === 'Soprano · 12 notas' && res.cuerdaBaja === 'Bajo · 12 notas' && res.noRepite === '12 notas' &&
     /Alta · Soprano/.test(res.enEditor) && /Baja · Bajo/.test(res.enEditor);
   return res;

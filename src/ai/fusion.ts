@@ -1,5 +1,5 @@
 // Limpieza de una canción que ha salido de mezclar partitura y grabación.
-// La voz «Como se canta (X)» es lo que el detector oyó en la grabación, y la voz X es la partitura ya colocada.
+// La voz «🎙 X» es lo que el detector oyó de X en la grabación, y la voz X es la partitura ya colocada.
 // Aquí se comparan: lo que es claramente del detector se quita a mano, y lo dudoso (¿cantáis otra nota o se ha
 // equivocado el detector?) es una pregunta musical, y esa se la hacemos a la IA.
 import type { Note, Song, Voice } from '../model';
@@ -12,16 +12,63 @@ export interface FusionPair {
   score: Voice;
 }
 
-const PREFIJO = 'Como se canta';
+/** Nombre que tenían antes estas voces («Como se canta (Tenor)»): las canciones ya hechas lo siguen llevando. */
+const ANTIGUO = /^Como se canta(?: \((.+)\))?$/;
 
-/** Busca en la canción la pareja «lo que se canta» / «lo que pone la partitura». */
+/** ¿Es una voz sacada de la grabación al mezclar (corresponda o no a una voz de la partitura)? */
+export const isSung = (v: Voice) => v.sungOf !== undefined || ANTIGUO.test(v.name);
+
+const mediana = (v: Voice) => {
+  const m = v.notes.map((n) => n.midi).sort((a, b) => a - b);
+  return m.length ? m[m.length >> 1] : NaN;
+};
+
+/** La voz de la partitura a la que corresponde una voz sacada de la grabación (o null si no corresponde a ninguna). */
+export function sungSource(song: Song, v: Voice): Voice | null {
+  if (v.sungOf !== undefined) return (v.sungOf && song.voices.find((x) => x !== v && x.id === v.sungOf)) || null;
+  const m = v.name.match(ANTIGUO);
+  if (!m?.[1]) return null; // «Como se canta» a secas: en la versión anterior no se parecía a ninguna voz
+  const porNombre = song.voices.find((x) => x !== v && !isSung(x) && x.name === m[1]);
+  if (porNombre) return porNombre;
+  // Solo si esa voz se renombró: la versión anterior la ponía justo detrás de ella, y cantan en la misma zona.
+  // Si se borró, la de delante es otra y no hay que enlazarla.
+  const prev = song.voices[song.voices.indexOf(v) - 1];
+  return prev && !isSung(prev) && prev.notes.length && v.notes.length && Math.abs(mediana(prev) - mediana(v)) <= 5 ? prev : null;
+}
+
+/**
+ * Pone al día una canción mezclada con una versión anterior: «Como se canta (Tenor)» pasa a «🎙 Tenor» y queda
+ * enlazada a «Tenor» (o suelta, si no se sabe con seguridad cuál era). También arregla los enlaces que apunten a una
+ * voz que ya no existe. Devuelve true si ha cambiado algo.
+ */
+export function migrateSungVoices(song: Song): boolean {
+  let cambia = false;
+  for (const v of song.voices) {
+    if (v.sungOf !== undefined) {
+      if (v.sungOf && !song.voices.some((x) => x !== v && x.id === v.sungOf)) {
+        const x = song.voices.find((o) => !isSung(o) && `🎙 ${o.name}` === v.name);
+        v.sungOf = x ? x.id : '';
+        cambia = true;
+      }
+      continue;
+    }
+    const m = v.name.match(ANTIGUO);
+    if (!m) continue;
+    const src = sungSource(song, v);
+    v.sungOf = src?.id ?? '';
+    v.name = src ? `🎙 ${src.name}` : m[1] ? `🎙 ${m[1]}` : '🎙 Grabación';
+    cambia = true;
+  }
+  return cambia;
+}
+
+/** Busca en la canción la pareja «lo que se oye» / «lo que pone la partitura». */
 export function findFusion(song: Song): FusionPair | null {
-  const i = song.voices.findIndex((v) => v.name.startsWith(PREFIJO));
-  if (i < 0) return null;
-  const sung = song.voices[i];
-  const entre = sung.name.match(/\(([^)]+)\)/)?.[1];
-  const score = (entre && song.voices.find((v) => v.name === entre)) || song.voices[i - 1];
-  return score && score !== sung && score.notes.length ? { sung, score } : null;
+  for (const sung of song.voices) {
+    const score = sungSource(song, sung);
+    if (score && score !== sung && score.notes.length) return { sung, score };
+  }
+  return null;
 }
 
 export interface Diff {
@@ -42,7 +89,8 @@ export function diffSungVsScore(song: Song, pair: FusionPair): Diff[] {
   return pair.sung.notes.map((n) => {
     const mid = n.start + Math.min(0.05, n.dur / 2);
     const score = pair.score.notes.find((x) => x.start <= mid && x.start + x.dur > mid) ?? null;
-    return { sung: n, score, semis: score ? n.midi - score.midi : 0, bar: bar(n.start) };
+    // Si viene de una mezcla, el compás de la partitura (el mismo en cada vuelta); si no, el de la canción.
+    return { sung: n, score, semis: score ? n.midi - score.midi : 0, bar: score?.bar ?? bar(n.start) };
   });
 }
 
