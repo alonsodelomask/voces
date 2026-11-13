@@ -10,7 +10,7 @@ async () => {
   const VENTANA = 60;
   const { samples } = await A.decodeAudio(wav.slice(0));
   const out = await A.basicPitchOutputs(samples.subarray(0, Math.floor(VENTANA * 22050)));
-  const fps = out.frames.length / VENTANA;
+  const fps = A.FRAME_RATE; // el fotograma f es el segundo f / FRAME_RATE
   const res = {};
   // Referencia: sin anclas es solo el DTW; con anclas, lo que hace la app.
   const CFGS = window.__cfgs ?? [{ refine: false }, {}];

@@ -5,7 +5,7 @@
 // 4) Cada nota se mueve a su sitio y se afina el ataque con los ataques que se oyen en la grabación.
 import { makeSong, makeVoice, songDuration, uid, VOICE_COLORS, type Note, type Song, type Voice } from '../model';
 import { computeChords, transposeSong } from '../music';
-import { basicPitchOutputs, cleanNotes, decodeAudio, notesFromOutputs, type BpOutputs, type RawNote } from './audio';
+import { basicPitchOutputs, cleanNotes, decodeAudio, FRAME_RATE, notesFromOutputs, type BpOutputs, type RawNote } from './audio';
 import { isSung } from '../ai/fusion';
 
 const SR = 22050;
@@ -64,8 +64,11 @@ export interface AlignOptions {
   /** Añadir una voz con las notas que de verdad se cantan (sacadas del audio). */
   addSung?: boolean;
   onProgress?: (fase: string, fraccion: number) => void;
-  /** Solo para las pruebas: lo que oye el modelo en todo el archivo, ya calculado (se salta el paso lento). */
-  outputs?: { out: BpOutputs; seconds: number };
+  /**
+   * Solo para las pruebas: lo que oye el modelo en todo el archivo, ya calculado con `basicPitchOutputs` (se salta el
+   * paso lento). `seconds` es la duración del archivo (solo informativa: el reloj es `FRAME_RATE`).
+   */
+  outputs?: { out: BpOutputs; seconds?: number };
 }
 
 export interface AlignResult {
@@ -88,7 +91,10 @@ export interface AlignResult {
   audioOffset: number;
   /** Si se pidió: la voz con lo que se canta de verdad, y a qué línea de la partitura corresponde. */
   sung?: { voice: Voice; matches: string; agreement: number };
-  /** Notas que se han podido clavar en un ataque de la grabación (las demás van interpoladas entre ellas). */
+  /**
+   * Golpes (momentos de la partitura en que empieza alguna nota, en cada pasada) que se han podido clavar en un ataque
+   * de la grabación; los demás van con la curva de corrección. Todas las voces de un golpe se mueven juntas.
+   */
   anchors: number;
   /** Cada tramo de la grabación en que se recorre la partitura de seguido (con «toda la grabación» puede haber varios). */
   passes: { from: number; to: number; audioFrom: number; audioTo: number }[];
@@ -455,7 +461,8 @@ function warpFromPath(path: [number, number][]): Warp {
   return { f, from: xs[0] - STEP / 2, to: xs[xs.length - 1] + STEP / 2 };
 }
 
-type Placed = { n: Note; s: number; e: number };
+/** Una nota de la partitura colocada en la grabación: `p` es su pasada y `ts`, el segundo de partitura en que empieza. */
+type Placed = { n: Note; s: number; e: number; p: number; ts: number };
 
 /** Fuerza del ataque de esa altura (contando las octavas, que el modelo confunde a menudo). */
 function onsetAt(t: number, midi: number, out: BpOutputs, fps: number): number {
@@ -488,7 +495,7 @@ type Anchor = { x: number; r: number };
  * otra voz no vale). El DTW coloca por tramos de una décima de segundo y suavizados, así que nota a nota se
  * queda corto; estas anclas dicen cuánto se desvía.
  */
-function anchorsOf(placed: Placed[], out: BpOutputs, fps: number, tr: number): (number | null)[] {
+function anchorsOf(placed: Placed[], out: BpOutputs, fps: number, tr: number): ({ t: number; w: number } | null)[] {
   const step = 1 / fps;
   return placed.map((p, k) => {
     // Nunca más de medio hueco hasta las notas vecinas: si no, dos notas iguales seguidas se quedarían con el
@@ -503,7 +510,10 @@ function anchorsOf(placed: Placed[], out: BpOutputs, fps: number, tr: number): (
       const x = onsetAt(t, p.n.midi + tr, out, fps) * Math.exp(-(d * d) / (2 * 0.22 ** 2));
       if (x > best.x) best = { t, x };
     }
-    return best.x > ALIGN.onset && heardAfter(best.t, p.n.midi + tr, out, fps) > ALIGN.heard ? best.t : null;
+    if (best.x <= ALIGN.onset) return null;
+    const oido = heardAfter(best.t, p.n.midi + tr, out, fps);
+    // `w`: cuánto se fía (ataque claro y la nota se oye después). Sirve para elegir entre voces del mismo golpe.
+    return oido > ALIGN.heard ? { t: best.t, w: best.x * oido } : null;
   });
 }
 
@@ -674,9 +684,8 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
   const all = score.voices.flatMap((v) => v.notes);
   if (!all.length) throw new Error('La partitura no tiene notas.');
   let out: BpOutputs;
-  let seconds: number;
   if (opts.outputs) {
-    ({ out, seconds } = opts.outputs);
+    out = opts.outputs.out;
   } else {
     progress('Leyendo el audio…', 0);
     const { samples } = await decodeAudio(data);
@@ -685,9 +694,10 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
     if (b - a < SR * 2) throw new Error('El tramo elegido es demasiado corto.');
     progress('Escuchando la grabación…', 0.02);
     out = await basicPitchOutputs(samples.subarray(a, b), (p) => progress('Escuchando la grabación…', 0.02 + p * 0.85));
-    seconds = (b - a) / SR;
   }
-  const fps = out.frames.length / seconds;
+  // El fotograma f es el segundo f / FRAME_RATE del tramo. No vale contar fotogramas y dividir por la duración: con
+  // las ventanas de la librería, el reloj del modelo adelantaba y las notas quedaban cada vez más tarde.
+  const fps = FRAME_RATE;
 
   progress('Buscando cada compás en la grabación…', 0.88);
   await new Promise((r) => setTimeout(r));
@@ -800,7 +810,11 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
       let b = p.length - 1;
       while (a < b && !suena(p[a][0])) a++;
       while (b > a && !suena(p[b][0])) b--;
-      while (a < b && p[a + 1][1] === p[a][1]) a++;
+      // Al principio, un solo paso recto es que la toma va más deprisa que la partitura (el camino va de décima en
+      // décima) y la primera nota sí se canta; si se quitara, la pasada empezaría una décima tarde y la perdería.
+      let r = a;
+      while (r < b && p[r + 1][1] === p[r][1]) r++;
+      if (r - a > 1) a = r;
       while (b > a && p[b - 1][1] === p[b][1]) b--;
       return p.slice(a, b + 1);
     };
@@ -819,6 +833,23 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
   }
   pasadas.sort((x, y) => x.w.f(x.w.from) - y.w.f(y.w.from));
   const multi = pasadas.length > 1;
+  // La anacrusa del principio: si una pasada entra en la partitura menos de un compás después de su primera nota, esas
+  // primeras notas sí se cantan, pero el DTW no las ha reconocido (van flojas, arrastradas o algo desafinadas: en «La
+  // vida es una copa de licor», «A cer-» se oye como Fa♯ y Sol, y la mezcla empezaba en «-quen»). Se añaden con el
+  // tempo de la pasada si caben antes de ella sin pisar la anterior y si ahí suena algo (no en un silencio).
+  const primera = Math.min(...all.map((n) => n.start));
+  pasadas = pasadas.map((p, k) => {
+    const ini = Math.max(p.lo, p.w.from);
+    if (!(ini - primera > 1e-3 && ini - primera <= barLen + 1e-6)) return p;
+    const a = p.w.f(primera) + offset;
+    const b = p.w.f(ini) + offset;
+    const prev = pasadas[k - 1];
+    const libre = prev ? prev.w.f(Math.min(prev.hi, prev.w.to)) + offset + 0.1 : 0;
+    if (a < libre) return p;
+    let suena = false;
+    for (let q = Math.max(0, Math.floor(a / STEP)); q <= Math.floor(b / STEP) && !suena; q++) suena = (energy[q] ?? 0) >= 0.3;
+    return suena ? { w: { ...p.w, from: primera }, lo: Number.isFinite(p.lo) ? primera : p.lo, hi: p.hi } : p;
+  });
   const larga = pasadas.reduce((a, p) => (p.w.to - p.w.from > a.w.to - a.w.from ? p : a)); // la más larga
   const warp = larga.w;
   const toAudio = (t: number) => warp.f(t) + offset;
@@ -846,54 +877,146 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
   const lanes = score.voices.map((v) => ({
     v,
     placed: pasadas
-      .flatMap((p) =>
+      .flatMap((p, pi) =>
         v.notes
           .filter((n) => dentro(n, p))
-          .map((n): Placed => ({ n, s: p.w.f(multi ? Math.max(n.start, p.lo) : n.start) + offset, e: p.w.f(n.start + n.dur) + offset })),
+          .map((n): Placed => {
+            const ts = multi ? Math.max(n.start, p.lo) : n.start;
+            return { n, s: p.w.f(ts) + offset, e: p.w.f(n.start + n.dur) + offset, p: pi, ts };
+          }),
       )
       .sort((x, y) => x.s - y.s),
   }));
-  // Donde se reconoce el ataque de la nota, se clava ahí. Donde no (voces tapadas, notas ligadas), se corrige con
-  // la desviación de las que sí: el grupo canta junto, así que esa desviación es una sola curva para toda la canción.
+  // Afinar con los ataques que se oyen, sin romper la partitura: cada momento en que empieza alguna nota (en cada
+  // pasada) es un «golpe», y todas las voces que atacan en él se mueven juntas. Si el ataque se reconoce en alguna
+  // (casi siempre la melodía, que es lo que el modelo oye mejor), el golpe va ahí; si no, con la curva de corrección,
+  // que es una sola para toda la canción porque el grupo canta junto. Antes se clavaba cada nota en su propio ataque,
+  // voz por voz, y las que en la partitura empiezan a la vez quedaban desperdigadas.
+  /** Cuánto se ha movido al afinar un segundo cualquiera de la partitura en la pasada `pi` (0 si no se afina). */
+  let mueve: (pi: number, ts: number) => number = () => 0;
   if (ALIGN.refine) {
     const candidatos = lanes.map((l) => anchorsOf(l.placed, out, fps, best.tr));
-    const todas: Anchor[] = [];
-    lanes.forEach((l, i) => {
-      l.placed.forEach((p, k) => {
-        const t = candidatos[i][k];
-        // Por el segundo de la grabación (no de la partitura): con varias pasadas, el mismo compás suena varias veces.
-        if (t !== null) todas.push({ x: p.s, r: t - p.s });
-      });
-    });
+    // Un golpe son las notas de una pasada que en la partitura empiezan a la vez o casi (a menos de 25 ms: un MIDI
+    // tocado a mano, un tresillo redondeado a la rejilla del archivo). Se mueven todas lo mismo.
+    type Golpe = { p: number; ts: number; s: number; rs: { r: number; w: number }[]; d: number };
+    const notas = lanes.flatMap((l, i) => l.placed.map((q, k) => ({ q, c: candidatos[i][k] })));
+    notas.sort((a, b) => a.q.p - b.q.p || a.q.ts - b.q.ts);
+    const lista: Golpe[] = [];
+    const golpeDe = new Map<Placed, Golpe>();
+    for (const { q, c } of notas) {
+      let g = lista[lista.length - 1];
+      if (!g || g.p !== q.p || q.ts - g.ts > 0.025) lista.push((g = { p: q.p, ts: q.ts, s: q.s, rs: [], d: 0 }));
+      golpeDe.set(q, g);
+      if (c) g.rs.push({ r: c.t - q.s, w: c.w });
+    }
+    // Si varias voces del golpe dan su ataque, manda el que más claro se oye (la mediana pesada por lo que se fía):
+    // la melodía, normalmente. Con la mediana a secas, las voces que apenas se oyen la apartaban de su ataque.
+    const pesada = (xs: { r: number; w: number }[]) => {
+      const s = [...xs].sort((a, b) => a.r - b.r);
+      const total = s.reduce((acc, x) => acc + x.w, 0);
+      let acc = 0;
+      for (let k = 0; k < s.length; k++) {
+        acc += s[k].w;
+        if (Math.abs(acc - total / 2) < 1e-9 && k + 1 < s.length) return (s[k].r + s[k + 1].r) / 2;
+        if (acc > total / 2) return s[k].r;
+      }
+      return s[s.length - 1].r;
+    };
+    // Por el segundo de la grabación (no de la partitura): con varias pasadas, el mismo compás suena varias veces.
+    const todas: Anchor[] = lista.filter((g) => g.rs.length).map((g) => ({ x: g.s, r: pesada(g.rs) }));
     anclas = todas.length;
     const corr = buildCorrection(todas);
-    lanes.forEach((l, i) => {
-      for (let k = 0; k < l.placed.length; k++) {
-        const p = l.placed[k];
-        const t = candidatos[i][k];
-        const suave = corr ? corr(p.s) : 0;
-        // Un ataque que se aparta mucho de lo que hacen las demás voces en ese momento no es de fiar.
-        const d = t !== null && (!corr || Math.abs(t - p.s - suave) < 0.2) ? t - p.s : suave;
-        p.s += d;
-        p.e += d;
-      }
-      // Que no se crucen: una nota nunca empieza antes que la anterior de su voz.
-      for (let k = 1; k < l.placed.length; k++) {
-        const prev = l.placed[k - 1];
-        const p = l.placed[k];
-        if (p.s < prev.s + 0.03) {
-          const d = prev.s + 0.03 - p.s;
-          p.s += d;
-          p.e += d;
+    const fuerza = (g: Golpe) => g.rs.reduce((acc, x) => acc + x.w, 0);
+    const clavado = new Set<Golpe>();
+    for (const g of lista) {
+      const suave = corr ? corr(g.s) : 0;
+      const r = g.rs.length ? pesada(g.rs) : null;
+      // Un ataque que se aparta mucho de lo que hace el resto de la canción en ese momento no es de fiar.
+      if (r !== null && (!corr || Math.abs(r - suave) < 0.2)) {
+        g.d = r;
+        clavado.add(g);
+      } else g.d = suave;
+    }
+    // Dos golpes seguidos que se acercan a menos del 40 % de lo que los separa la partitura se están disputando el
+    // mismo ataque (uno desde cada lado): se lo queda el que más claro se oye y el otro va con la curva.
+    for (let k = 1; k < lista.length; k++) {
+      const a = lista[k - 1];
+      const b = lista[k];
+      if (a.p !== b.p || b.s + b.d - (a.s + a.d) >= 0.4 * (b.s - a.s)) continue;
+      const cede = !clavado.has(b) || (clavado.has(a) && fuerza(a) < fuerza(b)) ? a : b;
+      if (!clavado.has(cede)) continue;
+      cede.d = corr ? corr(cede.s) : 0;
+      clavado.delete(cede);
+    }
+    // Que no se crucen: cada golpe, al menos 30 ms después del anterior de su pasada (o lo que ya los separaba, si era
+    // menos: no se separa lo que en la partitura va casi junto).
+    for (let k = 1; k < lista.length; k++) {
+      const a = lista[k - 1];
+      const b = lista[k];
+      const hueco = Math.min(0.03, Math.max(0, b.s - a.s));
+      if (a.p === b.p && b.s + b.d < a.s + a.d + hueco) b.d = a.s + a.d + hueco - b.s;
+    }
+    const porPasada = pasadas.map((_, pi) => lista.filter((g) => g.p === pi));
+    // Tramos apretados: con notas repetidas el sonido no cambia y el camino las atraviesa de golpe (en «La vida», las
+    // cuatro Re del compás 23 quedaban a 50 ms). Si entre golpes queda menos del 40 % de lo que les toca por la
+    // partitura, se busca alrededor un tramo con tiempo suficiente y sus golpes se reparten como en la partitura.
+    porPasada.forEach((gs, pi) => {
+      const w = pasadas[pi].w;
+      const ritmo = (w.f(w.to) - w.f(w.from)) / Math.max(1e-6, w.to - w.from); // segundos de grabación por segundo de partitura
+      const T = (g: Golpe) => g.s + g.d;
+      const toca = (a: Golpe, b: Golpe) => (b.ts - a.ts) * ritmo;
+      for (let k = 0; k + 1 < gs.length; k++) {
+        if (T(gs[k + 1]) - T(gs[k]) >= 0.4 * toca(gs[k], gs[k + 1])) continue;
+        let a = k;
+        let b = k + 1;
+        while (b + 1 < gs.length && T(gs[b + 1]) - T(gs[b]) < 0.4 * toca(gs[b], gs[b + 1])) b++;
+        // Se ensancha hasta que el tramo tiene al menos el 60 % de lo que pide la partitura (como mucho 6 golpes por
+        // lado). Un golpe clavado en su ataque hace de borde fijo: se ensancha por el otro lado.
+        for (let n = 0; n < 12 && T(gs[b]) - T(gs[a]) < 0.6 * toca(gs[a], gs[b]); n++) {
+          const fijoA = a === 0 || clavado.has(gs[a]);
+          const fijoB = b + 1 >= gs.length || clavado.has(gs[b]);
+          if (fijoA && fijoB && (a === 0 || b + 1 >= gs.length)) break;
+          if ((!fijoA || fijoB) && a > 0 && k - a < 6) a--;
+          if ((!fijoB || fijoA) && b + 1 < gs.length && b - k < 7) b++;
         }
+        if (T(gs[b]) - T(gs[a]) >= 0.6 * toca(gs[a], gs[b])) {
+          const ta = T(gs[a]);
+          const tb = T(gs[b]);
+          for (let q = a + 1; q < b; q++) gs[q].d = ta + ((gs[q].ts - gs[a].ts) / (gs[b].ts - gs[a].ts)) * (tb - ta) - gs[q].s;
+        }
+        k = b - 1;
       }
     });
+    // Cuánto se mueve cualquier segundo de la partitura: lo de su golpe, o entre los dos de alrededor (para los
+    // finales de nota que no coinciden con ningún ataque, y para los cifrados).
+    mueve = (pi: number, ts: number) => {
+      const gs = porPasada[pi];
+      if (!gs.length) return 0;
+      if (ts <= gs[0].ts) return gs[0].d;
+      const L = gs.length - 1;
+      if (ts >= gs[L].ts) return gs[L].d;
+      let lo = 0;
+      let hi = L;
+      while (hi - lo > 1) {
+        const m = (lo + hi) >> 1;
+        if (gs[m].ts <= ts) lo = m;
+        else hi = m;
+      }
+      return gs[lo].d + ((ts - gs[lo].ts) / (gs[hi].ts - gs[lo].ts)) * (gs[hi].d - gs[lo].d);
+    };
+    for (const l of lanes) {
+      for (const q of l.placed) {
+        q.s += golpeDe.get(q)!.d;
+        q.e += mueve(q.p, q.n.start + q.n.dur);
+      }
+    }
   }
   song.voices = lanes.map(({ v, placed }) => {
     const notes: Note[] = placed.map((p, k) => {
       const next = placed[k + 1];
-      // Si en la partitura la nota enlaza con la siguiente, aquí también.
-      const legato = next && Math.abs(p.n.start + p.n.dur - next.n.start) < 1e-3;
+      // Si en la partitura la nota enlaza con la siguiente, aquí también; pero no de una pasada a otra: si se paran y
+      // siguen, la nota acaba donde se paró, no tapando el silencio hasta que se vuelve a cantar.
+      const legato = next && next.p === p.p && Math.abs(p.n.start + p.n.dur - next.n.start) < 1e-3;
       let e = legato ? next.s : p.e;
       if (next && e > next.s) e = next.s;
       const note: Note = { midi: p.n.midi, start: p.s, dur: Math.max(0.06, e - p.s), bar: barOf(p.n.start) };
@@ -966,6 +1089,9 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
     const t0 = p0.w.f(raya) + offset;
     const compas = (song.beatsPerBar * 60) / song.bpm;
     shift = ((t0 % compas) + compas) % compas;
+    // Si esa raya cae antes de empezar la grabación (una anacrusa al principio del archivo), el 0 va un compás antes:
+    // si no, las primeras notas se quedarían aplastadas en el 0. La grabación espera ese rato antes de sonar.
+    if (shift > first + 1e-6) shift -= compas;
   } else {
     const firstScore = Math.min(...score.voices.flatMap((v) => v.notes.filter((n) => dentro(n, pasadas[0])).map((n) => n.start)));
     const lead = Math.max(0, (firstScore - warp.from) / ratio);
@@ -975,10 +1101,11 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
   song.chords = score.chordsAuto
     ? []
     : pasadas
-        .flatMap((p) =>
+        .flatMap((p, pi) =>
           score.chords
             .filter((c) => (multi ? c.time >= p.lo - 1e-3 && c.time < p.hi - 1e-3 : c.time >= p.w.from - 0.05 && c.time <= p.w.to + 0.05))
-            .map((c) => ({ ...c, time: Math.max(0, p.w.f(c.time) + offset - shift) })),
+            // Con el mismo afinado que las notas: el cifrado va con las voces que atacan con él.
+            .map((c) => ({ ...c, time: Math.max(0, p.w.f(c.time) + offset + mueve(pi, c.time) - shift) })),
         )
         .sort((x, y) => x.time - y.time);
   if (!opts.keepKey && best.tr) transposeSong(song, best.tr);

@@ -76,19 +76,26 @@ export async function basicPitchOutputs(samples: Float32Array, onProgress?: (f: 
   }
 }
 
-// Las cuentas de Basic Pitch (las mismas que su `evaluateModel`): ventanas de 2 s que se solapan 30 fotogramas.
+// El modelo escucha ventanas de 2 s y da un fotograma cada 256 muestras. De cada ventana se tiran 15 fotogramas por
+// cada lado (le falta contexto) y se quedan 142.
 const HOP = 256; // muestras por fotograma
-const FPS = Math.floor(SR / HOP); // 86 fotogramas por segundo
-const WIN = SR * 2 - HOP; // 43 844 muestras por ventana
-const OVERLAP = 30; // fotogramas que comparten dos ventanas seguidas (se tira la mitad por cada lado)
-const STEP = WIN - OVERLAP * HOP; // 36 164 muestras entre una ventana y la siguiente
-const LEAD = (OVERLAP * HOP) / 2; // ceros que se ponen delante del audio
+/** Fotogramas por segundo de `basicPitchOutputs`: el fotograma f es el segundo f / FRAME_RATE del audio, siempre. */
+export const FRAME_RATE = SR / HOP; // 86,13
+const WIN = SR * 2 - HOP; // 43 844 muestras por ventana (172 fotogramas)
+const EDGE = 15; // fotogramas que se tiran a cada lado
+const KEEP = 142; // fotogramas que se quedan de cada ventana
+const STEP = KEEP * HOP; // 36 352 muestras de una ventana a la siguiente: justo lo que se queda
+const LEAD = EDGE * HOP; // ceros delante del audio, para que la primera ventana empiece en el segundo 0
 const OUTPUTS = ['Identity_1', 'Identity_2', 'Identity']; // fotogramas, ataques y contornos
 
 /**
- * Pasa el audio por el modelo ventana a ventana. Da lo mismo que `BasicPitch.evaluateModel`, pero esa función sube
- * todo el audio de golpe a la tarjeta gráfica y no libera nada; con más de un minuto de grabación cada ventana tarda
- * unas cuarenta veces más (0,2 s → 7-11 s en una gráfica integrada) y una canción entera se va a horas.
+ * Pasa el audio por el modelo ventana a ventana. No se usa `BasicPitch.evaluateModel`:
+ * - sube todo el audio de golpe a la tarjeta gráfica y no libera nada; con más de un minuto de grabación cada ventana
+ *   tarda unas cuarenta veces más (0,2 s → 7-11 s en una gráfica integrada) y una canción entera se va a horas;
+ * - avanza 36 164 muestras por ventana (141,27 fotogramas) pero deja 142: su reloj adelanta un 0,5 % y la librería
+ *   lo corrige después a ojo (`modelFrameToTime`, con un «número mágico»). Quien contaba fotogramas a 86 por segundo
+ *   colocaba las notas cada vez más tarde: +0,2 s a los 30 s, +1,15 s a los 3 minutos (medido con tonos).
+ * Aquí cada ventana avanza exactamente lo que se queda, y el fotograma f cae en la muestra f·256 sin corregir nada.
  */
 async function basicPitchOnce(samples: Float32Array, onProgress?: (f: number) => void): Promise<BpOutputs> {
   const tf = await import('@tensorflow/tfjs');
@@ -110,31 +117,28 @@ async function basicPitchOnce(samples: Float32Array, onProgress?: (f: number) =>
     })();
   }
   const model = (await modelPromise) as import('@tensorflow/tfjs').GraphModel;
-  // Dónde empieza cada ventana, contando los ceros de delante; las últimas se completan con ceros.
-  const total = LEAD + samples.length;
-  const starts: number[] = [];
-  for (let s = 0; s < total; s += STEP) starts.push(s);
-  const want = Math.floor(samples.length * (FPS / SR)); // fotogramas que corresponden al audio
+  const want = Math.ceil(samples.length / HOP); // un fotograma por cada 256 muestras, hasta el final
+  const windows = Math.ceil(want / KEEP);
   const frames: number[][] = [];
   const onsets: number[][] = [];
   const contours: number[][] = [];
   const win = new Float32Array(WIN);
-  for (let i = 0; i < starts.length && frames.length < want; i++) {
-    onProgress?.(i / starts.length);
-    const a = starts[i] - LEAD; // primera muestra de la ventana (negativa: ceros de delante)
+  for (let k = 0; k < windows; k++) {
+    onProgress?.(k / windows);
+    // La ventana k empieza 15 fotogramas antes del primero que se queda (k·142): lo de fuera del audio, ceros.
+    const a = k * STEP - LEAD;
     win.fill(0);
     const from = Math.max(0, a);
     const to = Math.min(samples.length, a + WIN);
     if (to > from) win.set(samples.subarray(from, to), from - a);
     const outs = tf.tidy(() =>
-      (model.execute(tf.tensor3d(win, [1, WIN, 1]), OUTPUTS) as import('@tensorflow/tfjs').Tensor[]).map((t) => {
-        const keep = t.shape[1]! - OVERLAP;
-        return t.slice([0, OVERLAP / 2, 0], [-1, keep, -1]).reshape([keep, t.shape[2]!]);
-      }),
+      (model.execute(tf.tensor3d(win, [1, WIN, 1]), OUTPUTS) as import('@tensorflow/tfjs').Tensor[]).map((t) =>
+        t.slice([0, EDGE, 0], [-1, KEEP, -1]).reshape([KEEP, t.shape[2]!]),
+      ),
     );
     try {
       const [f, o, c] = (await Promise.all(outs.map((t) => t.array()))) as number[][][];
-      const n = want - frames.length;
+      const n = Math.min(KEEP, want - frames.length);
       frames.push(...f.slice(0, n));
       onsets.push(...o.slice(0, n));
       contours.push(...c.slice(0, n));
@@ -152,8 +156,9 @@ export async function notesFromOutputs(out: BpOutputs, sensitivity: number, minN
   // Umbrales: con más sensibilidad se aceptan notas más débiles.
   const onsetThresh = 0.6 - sensitivity * 0.4;
   const frameThresh = 0.4 - sensitivity * 0.25;
-  const notes = bp.noteFramesToTime(bp.outputToNotesPoly(out.frames, out.onsets, onsetThresh, frameThresh, minNoteFrames, true, null, null, true));
-  return notes.map((n) => ({ start: n.startTimeSeconds, dur: n.durationSeconds, midi: n.pitchMidi, amp: n.amplitude }));
+  // Fotogramas → segundos con el reloj de `basicPitchOutputs` (no con `noteFramesToTime`, que corrige el de la librería).
+  const notes = bp.outputToNotesPoly(out.frames, out.onsets, onsetThresh, frameThresh, minNoteFrames, true, null, null, true);
+  return notes.map((n) => ({ start: n.startFrame / FRAME_RATE, dur: n.durationFrames / FRAME_RATE, midi: n.pitchMidi, amp: n.amplitude }));
 }
 
 /** Quita notas fantasma: armónicos (octava, quinta+octava) de otra nota más fuerte y notas muy débiles o cortas. */

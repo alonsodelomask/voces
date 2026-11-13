@@ -9,7 +9,7 @@ async () => {
   // Lo que se oye: la «probabilidad de nota» de Basic Pitch por fila y fotograma.
   const { samples } = await A.decodeAudio(wav.slice(0));
   const out = await A.basicPitchOutputs(samples.subarray(0, END * 22050));
-  const fps = out.frames.length / END;
+  const fps = A.FRAME_RATE; // el fotograma f es el segundo f / FRAME_RATE
   // Con el desplazamiento que mejor encaja (la canción empieza en la primera nota, la grabación no).
   const oye = (notes, off) => {
     let on = 0, tot = 0;

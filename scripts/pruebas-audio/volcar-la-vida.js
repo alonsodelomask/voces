@@ -11,7 +11,7 @@ async () => {
   const tm = performance.now();
   const out = await A.basicPitchOutputs(samples);
   const segundosModelo = (performance.now() - tm) / 1000;
-  const fps = out.frames.length / (samples.length / 22050);
+  const fps = A.FRAME_RATE; // el fotograma f es el segundo f / FRAME_RATE
   const b64 = (m) => {
     const u = new Uint16Array(m.length * 88);
     m.forEach((row, f) => row.forEach((v, i) => (u[f * 88 + i] = Math.round(Math.min(1, Math.max(0, v)) * 65535))));
@@ -22,7 +22,7 @@ async () => {
   };
   const voces = (s) => s.voices.map((v) => ({ name: v.name, notes: v.notes.map((n) => [n.midi, +n.start.toFixed(3), +n.dur.toFixed(3)]) }));
   return {
-    info: { duracion: duration, fps, frames: out.frames.length, segundosModelo, nota: 'frames/onsets: Uint16 little-endian en base64, 88 por fotograma (MIDI 21-108), valor/65535; fotograma f = segundo f/fps del archivo' },
+    info: { duracion: duration, fps, frames: out.frames.length, segundosModelo, nota: "frames/onsets: Uint16 little-endian en base64, 88 por fotograma (MIDI 21-108), valor/65535; fotograma f = segundo f/fps del archivo (fps = 22050/256)" },
     score: { bpm: score.bpm, beatsPerBar: score.beatsPerBar, keyFifths: score.keyFifths, voices: voces(score) },
     frames: b64(out.frames),
     onsets: b64(out.onsets),

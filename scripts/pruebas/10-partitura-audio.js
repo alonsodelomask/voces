@@ -88,19 +88,22 @@ async () => {
   res.notasAlta = va?.notes.map((n) => n.midi).join(',') === alta.map((m) => m - 2).join(',');
   res.notasBaja = vb?.notes.map((n) => n.midi).join(',') === baja.map((m) => m - 14).join(',');
   // Ritmo de cada voz: cuánto se aparta cada ataque, quitado el desplazamiento común (la canción empieza en 0).
-  const real = alta.map((_, i) => t[i] + (i === tarde ? 0.15 : 0));
+  // La 5.ª nota no cuenta: ahí la grabación no va junta (la aguda entra tarde) y la mezcla no puede seguir a las dos.
   const ritmo = (v, reales) => {
     if (!v) return { max: 9, off: 0 };
-    const d = v.notes.map((n, i) => n.start - reales[i]);
+    const d = v.notes.map((n, i) => n.start - reales[i]).filter((_, i) => i !== tarde);
     const med = [...d].sort((a, b) => a - b)[Math.floor(d.length / 2)];
     return { max: +Math.max(...d.map((x) => Math.abs(x - med))).toFixed(3), off: med };
   };
-  const rA = ritmo(va, real), rB = ritmo(vb, t);
+  const rA = ritmo(va, t), rB = ritmo(vb, t);
   res.errorMaxAlta = rA.max;
   res.errorMaxBaja = rB.max;
   // Y las dos voces tienen que seguir cuadrando entre sí.
   res.desfaseEntreVoces = +Math.abs(rA.off - rB.off).toFixed(3);
-  res.tarde = va ? +(va.notes[tarde].start - vb.notes[tarde].start).toFixed(3) : null;
+  // Lo que en la partitura empieza a la vez empieza a la vez en la mezcla, en todas las notas. También en la 5.ª,
+  // aunque en la grabación la aguda entre tarde: va entre los dos ataques, y lo que de verdad se canta se ve en «🎙 Alta».
+  res.vocesJuntas = va && vb && va.notes.length === vb.notes.length ? +Math.max(...va.notes.map((n, i) => Math.abs(n.start - vb.notes[i].start))).toFixed(3) : 9;
+  res.golpeTarde = va ? +(va.notes[tarde].start - rA.off - t[tarde]).toFixed(3) : null;
 
   // «🎙 Alta»: la voz sacada del audio, pegada a la línea de la partitura que le corresponde (y enlazada a ella).
   const cantada = s.voices.find((v) => v.sungOf);
@@ -163,7 +166,7 @@ async () => {
   const mv = media?.song.voices.find((v) => v.name === 'Alta');
   res.todaLaPartitura = mv?.notes.length ?? 0;
   res.ordenadas = !!mv && mv.notes.every((n, i) => i === 0 || n.start > mv.notes[i - 1].start);
-  res.mitadCantada = mv ? ritmo({ notes: mv.notes.slice(0, 6) }, real).max : 9;
+  res.mitadCantada = mv ? ritmo({ notes: mv.notes.slice(0, 6) }, t).max : 9;
   // Y «solo lo que se canta» con la misma grabación corta se queda en las 6 primeras.
   const corta = await mix(partitura, await wav('Media.wav', 6), { keepKey: false, span: 'match', sung: false, track: false });
   res.soloLoCantado = corta?.song.voices.find((v) => v.name === 'Alta')?.notes.length ?? 0;
@@ -173,6 +176,8 @@ async () => {
   const dos = await mix(partitura, await wav('Dos tomas.wav', 12, 2, 1.5), { keepKey: false, span: 'audio', sung: false, track: false });
   const dv = dos?.song.voices.find((v) => v.name === 'Alta');
   res.dosTomas = { notas: dv?.notes.length, avisos: dos?.notes.join('; ') };
+  const dbaja = dos?.song.voices.find((v) => v.name === 'Baja');
+  res.dosTomasJuntas = dv && dbaja && dv.notes.length === dbaja.notes.length ? +Math.max(...dv.notes.map((n, i) => Math.abs(n.start - dbaja.notes[i].start))).toFixed(3) : 9;
   res.dosVueltas = !!dos?.notes.some((x) => x.includes('se canta 2 veces'));
   res.huecoEntreTomas = dv && dv.notes.length === 24 ? +(dv.notes[12].start - (dv.notes[11].start + dv.notes[11].dur)).toFixed(2) : null;
   res.segundaToma = dv && dv.notes.length === 24 ? dv.notes.slice(12).map((n) => n.midi).join(',') === alta.map((m) => m - 2).join(',') : false;
@@ -184,7 +189,8 @@ async () => {
   res.remezclaBien = conEnlace.length === 1 && (conEnlace[0].sungOf === '' || otra.song.voices.some((v) => v.id === conEnlace[0].sungOf && v.sungOf === undefined));
 
   res.ok = res.multiple && res.trompeta && res.usaLaAbierta && res.opciones === 'audio,match,score' && res.fusion && res.fusionCerrada &&
-    res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.desfaseEntreVoces < 0.05 && res.tarde > 0.08 &&
+    res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.desfaseEntreVoces < 0.05 &&
+    res.vocesJuntas < 0.005 && res.golpeTarde > -0.03 && res.golpeTarde < 0.18 && res.dosTomasJuntas < 0.005 &&
     res.cantada === '🎙 Alta' && res.enlazada && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
     !!res.pista && res.pistaCargada && res.filaPista === 'grabación' && res.silenciada && res.sonando &&
     res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8 &&
