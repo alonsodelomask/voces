@@ -29,6 +29,56 @@ export function nameToMidi(name: string): number {
   return m;
 }
 
+// ---------- Cuerda de cada voz ----------
+
+/** Cuerdas, de aguda a grave, con la nota más baja de su tesitura (en MIDI, altura real). */
+const TESITURAS: [string, number][] = [
+  ['Soprano', 72], // do5
+  ['Mezzosoprano', 67], // sol4
+  ['Contralto', 62], // re4
+  ['Tenor', 55], // sol3
+  ['Barítono', 50], // re3
+  ['Bajo', -Infinity],
+];
+
+/** Palabras que ya dicen la cuerda (en el nombre que haya puesto la persona o la partitura). */
+const ALIAS: Record<string, string> = {
+  soprano: 'Soprano',
+  sopran: 'Soprano',
+  tiple: 'Soprano',
+  mezzo: 'Mezzosoprano',
+  mezzosoprano: 'Mezzosoprano',
+  contralto: 'Contralto',
+  alto: 'Contralto',
+  contratenor: 'Contralto',
+  countertenor: 'Contralto',
+  tenor: 'Tenor',
+  baritono: 'Barítono',
+  baritone: 'Barítono',
+  bajo: 'Bajo',
+  bass: 'Bajo',
+  basso: 'Bajo',
+};
+
+const sinTildes = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/**
+ * La cuerda de una voz por su tesitura: la altura del medio de lo que canta (así una nota suelta muy
+ * aguda o muy grave no la cambia). `null` si tiene muy pocas notas para decirlo.
+ */
+export function voiceType(notes: Note[]): string | null {
+  if (notes.length < 3) return null;
+  const midis = notes.map((n) => n.midi).sort((a, b) => a - b);
+  const mid = midis[Math.floor(midis.length / 2)];
+  return TESITURAS.find(([, lo]) => mid >= lo)![0];
+}
+
+/** La cuerda que ya dice el nombre de la voz («Tenor 2», «Bass»…), o null si es un nombre cualquiera. */
+export function typeInName(name: string): string | null {
+  for (const w of sinTildes(name).split(/[^a-z]+/)) if (w && ALIAS[w]) return ALIAS[w];
+  return null;
+}
+
 function pitchClassName(n: Note, keyFifths: number): string {
   if (n.name) return n.name.replace(/-?\d+$/, '');
   const pc = ((n.midi % 12) + 12) % 12;

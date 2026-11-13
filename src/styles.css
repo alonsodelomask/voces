@@ -84,7 +84,8 @@ main { position: relative; overflow: hidden; display: flex; min-height: 0; }
 .voice .vmic { width: 22px; text-align: center; font-size: 15px; }
 .voice .vname[readonly] { color: var(--muted); }
 .voice .vrange { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
-.voice .vrange input { flex: 1; }
+.voice .vrange input { flex: 1; min-width: 40px; }
+.voice .vrange .n { white-space: nowrap; }
 .panel-section { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 input[type='range'] { accent-color: var(--accent); }

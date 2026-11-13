@@ -8,7 +8,7 @@ import { importAudio } from './import/audioDialog';
 import { openMix } from './import/mixDialog';
 import { delTrack, getTrack, trackIds } from './audio/track';
 import { makeSong, makeVoice, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
-import { adaptNotesToChord, computeChords, isValidChord, plainAccidentals, prettyAccidentals, transposeSong } from './music';
+import { adaptNotesToChord, computeChords, isValidChord, midiToName, plainAccidentals, prettyAccidentals, transposeSong, typeInName, voiceType } from './music';
 import { confirmDialog, form } from './ui/dialog';
 import { showAuthScreen } from './ui/authScreen';
 import { openHumPanel } from './hum/humPanel';
@@ -332,7 +332,20 @@ function voiceRow(v: Voice): HTMLElement {
   const vol = row.querySelector<HTMLInputElement>('input[type=range]')!;
   name.value = v.name;
   vol.value = String(v.volume);
-  row.querySelector('.n')!.textContent = `${v.notes.length} notas`;
+  // La cuerda sale de la tesitura: aunque la voz se llame como quien la canta, se sabe si es tenor o bajo.
+  // Si el nombre ya lo dice («Tenor 2»), no se repite.
+  const meta = row.querySelector<HTMLElement>('.n')!;
+  const updateMeta = () => {
+    const tipo = voiceType(v.notes);
+    meta.textContent = `${tipo && !typeInName(v.name) ? tipo + ' · ' : ''}${v.notes.length} notas`;
+    if (v.notes.length) {
+      const lo = Math.min(...v.notes.map((x) => x.midi));
+      const hi = Math.max(...v.notes.map((x) => x.midi));
+      const rango = `${prettyAccidentals(midiToName(lo, song.keyFifths))}–${prettyAccidentals(midiToName(hi, song.keyFifths))}`;
+      meta.title = tipo ? `${tipo} (${rango})` : rango;
+    }
+  };
+  updateMeta();
   const refresh = () => {
     row.querySelector('[data-k=m]')!.classList.toggle('on-m', v.muted);
     row.querySelector('[data-k=s]')!.classList.toggle('on-s', v.solo);
@@ -345,6 +358,7 @@ function voiceRow(v: Voice): HTMLElement {
   };
   name.onchange = () => {
     v.name = name.value.trim() || v.name;
+    updateMeta();
     renderEditorControls();
     persist();
   };
@@ -442,7 +456,8 @@ function renderEditorControls() {
   for (const v of song.voices) {
     const o = document.createElement('option');
     o.value = v.id;
-    o.textContent = v.name;
+    const tipo = voiceType(v.notes);
+    o.textContent = tipo && !typeInName(v.name) ? `${v.name} · ${tipo}` : v.name;
     sel.appendChild(o);
   }
   if (roll.activeVoice) sel.value = roll.activeVoice.id;

@@ -17,6 +17,7 @@ Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Androi
 - **Diagramas de acordes** opcionales para guitarra, ukelele y piano.
 - **Visualizador** tipo sintetizador: transiciones suaves entre notas, nombre de cada nota, acorde actual y chispas.
 - **Audio** sintetizado (4 sonidos), velocidad de 0.5× a 1.25× y silencio/solo/volumen por voz para ensayar.
+- **Cuerda de cada voz** (soprano, mezzosoprano, contralto, tenor, barítono, bajo) a partir de su tesitura, aunque la voz se llame como quien la canta (`voiceType` en `music.ts`).
 - **Editor**: rejilla de notas, fila de acordes editable (con «ajustar las voces al acorde»), transposición y deshacer/rehacer.
 - **Tararear**: cantas y se convierte en notas (detección de tono YIN en el dispositivo), con metrónomo, cuenta atrás y la opción de oír las otras voces mientras grabas.
 - **Asistente**: revisión de voces (paralelas, cruces, saltos, registros), propuesta de acordes para una melodía y armonización automática.

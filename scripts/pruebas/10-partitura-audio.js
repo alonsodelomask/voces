@@ -104,6 +104,18 @@ async () => {
   res.pistaCargada = !!V.engine.audioBuffer;
   const fila = [...document.querySelectorAll('#voice-list .voice.track')];
   res.filaPista = fila.length === 1 && fila[0].querySelector('.n')?.textContent;
+
+  // La cuerda sale de la tesitura, aunque la voz se llame de otra manera.
+  const filaDe = (n) => [...document.querySelectorAll('#voice-list .voice')].find((r) => r.querySelector('.vname')?.value === n);
+  res.cuerdaAlta = filaDe('Alta')?.querySelector('.n')?.textContent;
+  res.cuerdaBaja = filaDe('Baja')?.querySelector('.n')?.textContent;
+  res.rangoBaja = filaDe('Baja')?.querySelector('.n')?.title;
+  res.enEditor = [...document.querySelectorAll('#ed-voice option')].map((o) => o.textContent).join(' / ');
+  // Si el nombre ya dice la cuerda, no se repite.
+  const campo = filaDe('Alta').querySelector('.vname');
+  campo.value = 'Tenor 2';
+  campo.dispatchEvent(new Event('change'));
+  res.noRepite = filaDe('Tenor 2')?.querySelector('.n')?.textContent;
   // Silenciar y volver: el motor obedece.
   fila[0].querySelector('[data-k=m]').click();
   res.silenciada = s.audioTrack.muted;
@@ -126,6 +138,8 @@ async () => {
     res.notasAlta && res.notasBaja && res.errorMaxAlta < 0.08 && res.errorMaxBaja < 0.08 && res.tarde > 0.08 &&
     res.cantada === 'Como se canta (Alta)' && res.cantadaJuntoAAlta && res.cantadaNotas >= 8 && res.cantadaParecido >= 0.6 &&
     !!res.pista && res.pistaCargada && res.filaPista === 'grabación' && res.silenciada && res.sonando &&
-    res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8;
+    res.todaLaPartitura === 12 && res.ordenadas && res.mitadCantada < 0.08 && res.soloLoCantado <= 8 &&
+    res.cuerdaAlta === 'Soprano · 12 notas' && res.cuerdaBaja === 'Bajo · 12 notas' && res.noRepite === '12 notas' &&
+    /Alta · Soprano/.test(res.enEditor) && /Baja · Bajo/.test(res.enEditor);
   return res;
 }
