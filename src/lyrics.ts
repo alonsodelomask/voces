@@ -1,10 +1,12 @@
 // Letra de una canción → sílabas que se cantan, una por nota y en orden.
 //
-//   splitSyllables("Acérquense a mi mesa, por favor")
-//   → ["A-", "cér-", "quen-", "se‿a", "mi", "me-", "sa,", "por", "fa-", "vor"]
+//   splitSyllables("Asómate a la calle, por favor")
+//   → ["A-", "só-", "ma-", "te‿a", "la", "ca-", "lle,", "por", "fa-", "vor"]
 //
-// - La sílaba que no cierra su palabra lleva un guion al final («cér-»); la última, no.
-// - Si la persona parte una palabra con guiones («a-cer-quen-se»), se respeta tal cual.
+// - La sílaba que no cierra su palabra lleva un guion al final («só-»); la última, no.
+// - Si la persona parte una palabra con guiones («a-so-ma-te»), se respeta tal cual. Un guion suelto entre
+//   espacios la parte tras una sílaba suelta («Can - ta»); tras una palabra entera es una pausa («hola - adiós») y al
+//   empezar una línea, una raya de diálogo: no parte nada.
 // - Si no, se separa con las reglas del castellano: diptongos juntos, hiatos aparte,
 //   «pr», «bl»… con la vocal siguiente y «ch», «ll», «rr», «tx», «qu», «gu» (ante e, i) sin partir.
 // - Sinalefa: si una palabra acaba en vocal y la siguiente empieza por vocal (o por h y vocal),
@@ -27,6 +29,8 @@ const APERTURA = /[¿¡«“‘‹(\[{]/u;
 const SOLO_APERTURA = /^[¿¡«“‘‹(\[{]+$/u;
 /** Guiones con los que la persona parte una palabra (también el guion blando). */
 const GUION = /[-‐‑­]/u;
+/** Un guion suelto, entre espacios. */
+const SOLO_GUION = /^[-‐‑­]+$/u;
 
 interface Silaba {
   tipo: "silaba";
@@ -91,6 +95,91 @@ function seUnen(a: Silaba, b: Silaba, conSinalefa: boolean): boolean {
     !a.corteDespues &&
     !b.corteAntes
   );
+}
+
+/** Una sílaba de la letra con lo que hace falta para casarla con las notas de una grabación. */
+export interface SilabaConRasgos {
+  /** La sílaba tal como se escribe, con sus signos y sin guion: «A», «cér», «sa,». */
+  texto: string;
+  /** Es la primera sílaba de su palabra. */
+  abrePalabra: boolean;
+  /** Es la última sílaba de su palabra. */
+  cierraPalabra: boolean;
+  /** Puede ir en la misma nota que la sílaba siguiente por sinalefa («se a» → «se‿a»), o la persona las unió con «‿». */
+  sinalefa: boolean;
+  /** Hace hiato con la sílaba anterior de su palabra («po-e-ta», «pa-ís», «le-er»): cantando deprisa, las dos pueden
+   *  ir en una nota (sinéresis). */
+  hiato: boolean;
+  /** Empieza por sonido de vocal (la h no cuenta): «a», «hí», «e». En la primera de la palabra, igual que para la
+   *  sinalefa: «hielo» y «huevo», no; la conjunción «y», sí. */
+  vocalAlEmpezar: boolean;
+  /** Melismas que la persona ha marcado detrás con «_»: en cuántas notas más sigue sonando («lu» en «A-le-lu-_-_-ya»: 2). */
+  melismas: number;
+  /** Es la sílaba tónica de su palabra: la de la tilde o, si no hay, la penúltima si la palabra acaba en vocal, «n» o
+   *  «s», y si no la última («can-CIÓN», «CAN-ta», «a-MOR»). De los monosílabos, solo los que no son palabras átonas
+   *  («mar», «sol», sí; «el», «de», «y», «mi», no). */
+  tonica: boolean;
+}
+
+/** Monosílabos que se dicen sin acento (artículos, preposiciones, conjunciones, posesivos y pronombres átonos). */
+const ATONAS = new Set(
+  "el la lo los las un del al a de en con por sin so tras y e o u ni que si mas pues tan me te se le les nos os mi mis tu tus su sus".split(" "),
+);
+
+/**
+ * Las sílabas de la letra una a una, SIN unir la sinalefa, con sus rasgos: si abren o cierran palabra, si admiten
+ * sinalefa con la siguiente, si hacen hiato con la anterior de su palabra, si empiezan por vocal y cuántos melismas
+ * («_») lleva detrás.
+ *
+ *   silabasConRasgos("Asómate a la calle") → A · só · ma · te (sinalefa) · a · la · ca · lle
+ *
+ * Las sílabas son las mismas que da `splitSyllables(texto, { sinalefa: false })`, sin el guion. Los melismas («_») no
+ * salen como sílabas (se cuentan en la anterior), y cortan la sinalefa igual que allí.
+ */
+export function silabasConRasgos(text: string): SilabaConRasgos[] {
+  const elementos = leer(typeof text === "string" ? text : "");
+  const letras = (s: Silaba): Rasgos[] => letrasDe(s.texto).map((l) => rasgos(l.texto));
+  const salida: SilabaConRasgos[] = [];
+  let anterior: Silaba | undefined;
+  elementos.forEach((e, k) => {
+    if (e.tipo !== "silaba") {
+      // un «_» alarga la última sílaba (los que van antes de la primera no tienen a quién alargar)
+      const ultima = salida[salida.length - 1];
+      if (ultima) ultima.melismas++;
+      return;
+    }
+    const sig = elementos[k + 1];
+    // de la primera sílaba ya se sabe (la palabra entera); de las demás, por sus letras
+    const vocalAlEmpezar = e.inicio ? e.vocalAlEmpezar : empiezaPorVocal(letras(e));
+    salida.push({
+      texto: e.texto,
+      abrePalabra: e.inicio,
+      cierraPalabra: e.fin,
+      sinalefa: sig?.tipo === "silaba" && seUnen(e, sig, true),
+      hiato: !e.inicio && !!anterior && vocalAlEmpezar && acabaEnVocal(letras(anterior)),
+      vocalAlEmpezar,
+      melismas: 0,
+      tonica: false,
+    });
+    anterior = e;
+  });
+  // La tónica de cada palabra (de abrePalabra a cierraPalabra).
+  for (let k = 0; k < salida.length; ) {
+    let f = k + 1;
+    while (f < salida.length && !salida[f - 1]!.cierraPalabra && !salida[f]!.abrePalabra) f++;
+    const rs = salida.slice(k, f).map((s) => letrasDe(s.texto).map((l) => rasgos(l.texto)));
+    const conTilde = rs.findIndex((r) => r.some((x) => esVocal(x.base) && x.tilde));
+    let t: number;
+    if (conTilde >= 0) t = conTilde;
+    else if (f - k === 1) t = ATONAS.has(rs[0]!.map((x) => x.base).join("")) ? -1 : 0;
+    else {
+      const ultima = rs[rs.length - 1]!.at(-1)?.base ?? "";
+      t = esVocal(ultima) || ultima === "n" || ultima === "s" ? f - k - 2 : f - k - 1;
+    }
+    if (t >= 0) salida[k + t]!.tonica = true;
+    k = f;
+  }
+  return salida;
 }
 
 /** Recorre el texto y saca sílabas y melismas, con lo necesario para decidir la sinalefa. */
@@ -168,38 +257,48 @@ function leer(text: string, auto = true): Elemento[] {
     .replace(/(\p{L}[,.;:?!…—–/]+)(?=[\p{L}¿¡«“"‘(])/gu, "$1 ")
     .replace(/(\p{L})([¿¡])/gu, "$1 $2");
 
-  // Saltos de línea y espacios repetidos cuentan como un espacio.
-  for (const bloque of limpio.split(/\s+/u)) {
-    let huboLetras = false; // ya salió alguna sílaba de este bloque
-    let melismaDentro = false; // «Glo_ria»: el «_» queda entre dos trozos de la misma palabra
-    for (const parte of bloque.split(/([_‿])/u)) {
-      if (parte === MELISMA) {
-        elementos.push({ tipo: "melisma" });
-        if (huboLetras) melismaDentro = true;
-        continue;
-      }
-      if (parte === SINALEFA) {
-        const u = ultimaSilaba();
-        if (u) u.unida = true;
-        huboLetras = false;
+  // Saltos de línea y espacios repetidos cuentan como un espacio. Un guion suelto, entre espacios, parte una palabra
+  // tras una sílaba suelta («Can - ta», como se copia de una partitura); tras una palabra de más de una sílaba es una
+  // pausa («hola - adiós»: dos palabras), y al empezar una línea, una raya de diálogo: se salta. (Como `palabrasDeTexto`
+  // en lyricsAlign.ts.)
+  for (const linea of limpio.split(/\r\n|[\n\r\p{Zl}\p{Zp}]/u)) {
+    let silabasAntes = -1; // sílabas del último bloque con letras de la línea (−1: aún no ha salido ninguno)
+    for (const bloque of linea.split(/\s+/u)) {
+      if (SOLO_GUION.test(bloque) && (silabasAntes < 0 || silabasAntes > 1)) continue;
+      let desde = elementos.length; // tras un «‿», cuenta solo la palabra que sigue («por - que‿a - mor»)
+      let huboLetras = false; // ya salió alguna sílaba de este bloque
+      let melismaDentro = false; // «Glo_ria»: el «_» queda entre dos trozos de la misma palabra
+      for (const parte of bloque.split(/([_‿])/u)) {
+        if (parte === MELISMA) {
+          elementos.push({ tipo: "melisma" });
+          if (huboLetras) melismaDentro = true;
+          continue;
+        }
+        if (parte === SINALEFA) {
+          const u = ultimaSilaba();
+          if (u) u.unida = true;
+          desde = elementos.length;
+          huboLetras = false;
+          melismaDentro = false;
+          continue;
+        }
+        if (!parte) continue;
+        const conLetras = /[\p{L}\p{N}]/u.test(parte);
+        if (melismaDentro && conLetras) seguirPalabra();
         melismaDentro = false;
-        continue;
+        const trozos = parte.split(GUION);
+        if (trozos.length === 1) {
+          anadir(parte, auto);
+        } else {
+          // La persona manda: cada trozo entre guiones es una sílaba.
+          trozos.forEach((trozo, k) => {
+            if (trozo) anadir(trozo, false);
+            if (k < trozos.length - 1) seguirPalabra();
+          });
+        }
+        if (conLetras) huboLetras = true;
       }
-      if (!parte) continue;
-      const conLetras = /[\p{L}\p{N}]/u.test(parte);
-      if (melismaDentro && conLetras) seguirPalabra();
-      melismaDentro = false;
-      const trozos = parte.split(GUION);
-      if (trozos.length === 1) {
-        anadir(parte, auto);
-      } else {
-        // La persona manda: cada trozo entre guiones es una sílaba.
-        trozos.forEach((trozo, k) => {
-          if (trozo) anadir(trozo, false);
-          if (k < trozos.length - 1) seguirPalabra();
-        });
-      }
-      if (conLetras) huboLetras = true;
+      if (/[\p{L}\p{N}]/u.test(bloque)) silabasAntes = elementos.slice(desde).filter((e) => e.tipo === "silaba").length;
     }
   }
   // Un signo de apertura al final del texto se queda con la última sílaba.

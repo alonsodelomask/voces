@@ -75,11 +75,24 @@ export function form(opts: FormOptions): Promise<FormResult | null> {
     if (opts.body) f.appendChild(opts.body);
     const row = document.createElement('div');
     row.className = 'row end';
+    // Solo «Aceptar» envía el formulario. Intro (en un campo o en una casilla) pulsa el primer botón de envío, así que
+    // si lo fueran también los extra («Quitar la letra», «Eliminar») o «Cancelar», Intro haría eso en vez de aceptar.
+    const boton = (value: string, label: string, clase: string) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.value = value;
+      b.className = clase;
+      b.textContent = label;
+      b.onclick = () => dlg.close(value);
+      return b;
+    };
     for (const x of opts.extra ?? []) {
-      row.innerHTML += `<button value="${x.action}" class="btn ${x.danger ? 'danger' : ''}" style="margin-right:auto" formnovalidate>${esc(x.label)}</button>`;
+      const b = boton(x.action, x.label, x.danger ? 'btn danger' : 'btn');
+      b.style.marginRight = 'auto';
+      row.appendChild(b);
     }
-    row.innerHTML += `<button value="cancel" class="btn" formnovalidate>${esc(opts.cancelLabel ?? 'Cancelar')}</button>`;
-    if (opts.okLabel !== '') row.innerHTML += `<button value="ok" class="btn primary">${esc(opts.okLabel ?? 'Aceptar')}</button>`;
+    row.appendChild(boton('cancel', opts.cancelLabel ?? 'Cancelar', 'btn'));
+    if (opts.okLabel !== '') row.insertAdjacentHTML('beforeend', `<button value="ok" class="btn primary">${esc(opts.okLabel ?? 'Aceptar')}</button>`);
     f.appendChild(row);
     dlg.appendChild(f);
     document.body.appendChild(dlg);

@@ -1,4 +1,4 @@
-import type { Note, Song, Voice } from '../model';
+import { lyricsVoice, type Note, type Song, type Voice } from '../model';
 import { midiToName, noteLabel, prettyAccidentals } from '../music';
 import { fretShape, pianoVoicing, type Instrument } from './chordShapes';
 
@@ -19,6 +19,8 @@ export interface VizOptions {
   showTitle: boolean;
   showChord: boolean;
   showNames: boolean;
+  /** Mostrar la letra: la sílaba junto al nombre de la nota y la línea tipo karaoke. */
+  showLyrics: boolean;
   watermark: string;
   /** Diagrama del acorde actual abajo (opcional). */
   chordDiagram?: Instrument;
@@ -55,7 +57,7 @@ export class Visualizer {
   private lastFrame = performance.now();
   private flash = new Map<string, number>();
   song: Song | null = null;
-  opts: VizOptions = { zoom: 1, showTitle: true, showChord: true, showNames: true, watermark: '' };
+  opts: VizOptions = { zoom: 1, showTitle: true, showChord: true, showNames: true, showLyrics: true, watermark: '' };
   /** Si se fija, el lienzo no se adapta a la ventana (para grabar en 1080x1920). */
   fixedSize: { w: number; h: number } | null = null;
   /** Tramo de ensayo: se marcan su principio y su final. */
@@ -237,7 +239,7 @@ export class Visualizer {
         ctx.fill();
         ctx.restore();
         if (st.sounding && st.note)
-          labels.push({ y: st.y, text: noteLabel(st.note, song.keyFifths) + (st.note.lyric ? ` · ${st.note.lyric}` : ''), color: v.color, dim });
+          labels.push({ y: st.y, text: noteLabel(st.note, song.keyFifths) + (st.note.lyric && this.opts.showLyrics ? ` · ${st.note.lyric}` : ''), color: v.color, dim });
       }
     }
 
@@ -266,17 +268,17 @@ export class Visualizer {
       ctx.fillStyle = 'rgba(255,255,255,0.62)';
       ctx.fillText(caption, w / 2, yTop - 78 * u);
     }
-    this.drawLyrics(visible, time, w / 2, yTop - 46 * u, u);
+    if (this.opts.showLyrics) this.drawLyrics(song, visible, time, w / 2, yTop - 46 * u, u);
 
     this.lastTime = time;
   }
 
   /**
    * La letra como en un karaoke: el trozo de frase que se está cantando, con la sílaba de ahora resaltada. Sale de la
-   * primera voz visible que tenga letra (la melodía, normalmente).
+   * voz visible que lleva la letra (`lyricsVoice`: la melodía, no una que solo la copia en algunas frases).
    */
-  private drawLyrics(visible: Voice[], time: number, cx: number, y: number, u: number) {
-    const v = visible.find((x) => x.sungOf === undefined && x.notes.some((n) => n.lyric));
+  private drawLyrics(song: Song, visible: Voice[], time: number, cx: number, y: number, u: number) {
+    const v = lyricsVoice(song, visible);
     if (!v) return;
     let k = -1;
     for (let i = 0; i < v.notes.length && v.notes[i].start <= time + 0.02; i++) if (v.notes[i].lyric) k = i;

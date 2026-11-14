@@ -53,6 +53,8 @@ export class PianoRoll {
   playTime = 0;
   /** Tramo de ensayo (segundos), si lo hay: se sombrea. */
   range: { start: number; end: number } | null = null;
+  /** Mostrar la letra (cada sílaba bajo su nota) o solo las notas. */
+  showLyrics = true;
   private drag: Drag | null = null;
   private dpr = 1;
   private w = 0;
@@ -515,7 +517,7 @@ export class PianoRoll {
     ctx.globalAlpha = 1;
 
     // Letra de la voz activa: cada sílaba debajo de su nota (al final, para que ninguna nota la tape).
-    if (active?.notes.some((n) => n.lyric)) {
+    if (this.showLyrics && active?.notes.some((n) => n.lyric || n.lyricDoubt)) {
       ctx.font = '600 11px system-ui, sans-serif';
       ctx.textBaseline = 'top';
       ctx.lineJoin = 'round';
@@ -523,13 +525,17 @@ export class PianoRoll {
       ctx.strokeStyle = 'rgba(20,0,25,0.9)';
       ctx.fillStyle = '#fff';
       for (const n of active.notes) {
-        if (!n.lyric) continue;
+        // Una nota dudosa sin sílaba lleva un «?»: quizá le falta una.
+        const l = n.lyric || (n.lyricDoubt ? '?' : '');
+        if (!l) continue;
         const x = this.beatToX(n.start / spb);
         if (x < KEYS_W - 30 || x > w) continue;
         const y = this.midiToY(n.midi) + this.rowH + 1;
         if (y < TOP || y > h) continue;
-        ctx.strokeText(n.lyric, x + 2, y);
-        ctx.fillText(n.lyric, x + 2, y);
+        // En ámbar, las que se colocaron solas y no están claras.
+        ctx.fillStyle = n.lyricDoubt ? '#ffb020' : '#fff';
+        ctx.strokeText(l, x + 2, y);
+        ctx.fillText(l, x + 2, y);
       }
     }
 

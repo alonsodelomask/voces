@@ -88,6 +88,7 @@ main { position: relative; overflow: hidden; display: flex; min-height: 0; }
 .voice .vrange .n { white-space: nowrap; }
 .panel-section { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.check[hidden] { display: none; }
 input[type='range'] { accent-color: var(--accent); }
 
 /* ---- Transporte ---- */
@@ -146,6 +147,8 @@ kbd { background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px; f
 .dlg .intro { margin: -4px 0 4px; color: var(--muted); }
 .dlg textarea { background: rgba(255,255,255,0.06); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; color: var(--text); font: inherit; resize: vertical; }
 .hint-s { color: var(--muted); font-size: 12px; }
+/* Las sílabas que conviene revisar, del mismo ámbar que en el editor. */
+.ambar { color: #ffb020; }
 .btn.danger { border-color: #ff4d6d; color: #ff8fa3; }
 .btn.hum { border-color: rgba(31,214,242,0.5); }
 .btn.hum.rec { background: #ff2d6f; color: #fff; animation: pulse 1s infinite; }

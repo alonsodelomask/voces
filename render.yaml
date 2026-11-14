@@ -77,6 +77,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 24.14.1
+      # Transformers.js (la letra) trae onnxruntime-node, que en Linux descarga cientos de MB de CUDA al instalarse.
+      # La web no lo usa: se salta esa descarga.
+      - key: ONNXRUNTIME_NODE_INSTALL
+        value: skip
       # Públicas por diseño (van dentro de la web): la URL y la clave «publishable» de Supabase y la URL de voces-api.
       - key: VITE_SUPABASE_URL
         value: https://jmkzsrqygurhlukqswes.supabase.co

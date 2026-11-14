@@ -86,7 +86,7 @@ export function showAuthScreen(opts: AuthOptions): void {
   // ---- Fondo animado ----
   const canvas = root.querySelector('canvas')!;
   const viz = new Visualizer(canvas);
-  viz.opts = { zoom: 0.9, showTitle: false, showChord: true, showNames: false, watermark: '' };
+  viz.opts = { zoom: 0.9, showTitle: false, showChord: true, showNames: false, showLyrics: false, watermark: '' };
   const song = demoSong();
   viz.setSong(song);
   const dur = song.voices.reduce((e, v) => Math.max(e, ...v.notes.map((n) => n.start + n.dur)), 0) || 1;

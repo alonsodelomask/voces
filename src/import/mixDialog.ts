@@ -8,6 +8,7 @@ import { openFusion } from '../ui/fusion';
 import type { Song } from '../model';
 import { isSung } from '../ai/fusion';
 import { AUDIO_EXT, importFile } from './index';
+import type { PalabraOida } from './transcribe';
 
 export interface MixResult {
   song: Song;
@@ -51,6 +52,8 @@ export async function openMix(current: Song | null, preset: { score?: File; audi
       <option value="score">Toda la partitura, una vez</option>
     </select><small class="hint-s">Con «Toda la grabación», si cantáis la partitura más de una vez (repeticiones que no están escritas, otra toma…), cada vuelta se coloca donde suena.</small></label>
     <label class="check"><input type="checkbox" name="sung" checked/> Añadir una voz con lo que se canta de verdad</label>
+    <label class="check"><input type="checkbox" name="lyrics"/> Poner la letra: la app la escucha en la grabación y pone cada sílaba en su nota</label>
+    <small class="hint-s">La primera vez descarga unos 80 MB. El audio no sale de este dispositivo. Si la partitura ya trae letra, se queda la suya.</small>
     <label class="check"><input type="checkbox" name="track" checked/> Oír la grabación junto a las voces</label>
     <small class="hint-s" data-track-hint>La grabación se guarda en este dispositivo (no se sube al grupo) y se puede silenciar como una voz más.</small>
     <p class="hint-s" data-error hidden></p>
@@ -64,6 +67,13 @@ export async function openMix(current: Song | null, preset: { score?: File; audi
   dlg.appendChild(input);
   const err = dlg.querySelector<HTMLElement>('[data-error]')!;
   const useOpen = dlg.querySelector<HTMLInputElement>('[name=useOpen]');
+  // Poner la letra o no: se recuerda en este dispositivo.
+  const lyricsBox = dlg.querySelector<HTMLInputElement>('[name=lyrics]')!;
+  try {
+    lyricsBox.checked = localStorage.getItem('voces.mezcla.letra') === 'si';
+  } catch {
+    /* nada */
+  }
   const slot = (k: string) => dlg.querySelector<HTMLElement>(`[data-pick=${k}]`)!;
   const setName = (k: string, f: File | null, fallback: string) => {
     slot(k).querySelector('[data-name]')!.textContent = f ? f.name : fallback;
@@ -120,7 +130,13 @@ export async function openMix(current: Song | null, preset: { score?: File; audi
     sung: dlg.querySelector<HTMLInputElement>('[name=sung]')!.checked,
     track: dlg.querySelector<HTMLInputElement>('[name=track]')!.checked,
     useOpen: !!useOpen?.checked,
+    lyrics: lyricsBox.checked,
   };
+  try {
+    localStorage.setItem('voces.mezcla.letra', values.lyrics ? 'si' : 'no');
+  } catch {
+    /* nada */
+  }
   if (dlg.open) dlg.close();
   dlg.remove();
   if (!answer || !audioFile) return null;
@@ -129,11 +145,29 @@ export async function openMix(current: Song | null, preset: { score?: File; audi
   return mix(score, audioFile, values);
 }
 
+/**
+ * Por qué no se ha podido poner la letra, como una parte más del aviso final de la mezcla (en minúscula y sin punto), y
+ * cómo volver a intentarlo: con el botón Letra, que puede escuchar la grabación si se ha guardado.
+ */
+function sinLetra(e: unknown, conGrabacion: boolean): string {
+  const err = e as Error | undefined;
+  const motivo =
+    err?.name === 'NetworkError'
+      ? 'sin conexión para descargar el modelo que la escucha'
+      : // En la web, sin conexión, la parte de la app que escucha puede no estar guardada aún (el navegador da su
+        // mensaje en inglés: «Failed to fetch dynamically imported module…», «Importing a module script failed»).
+        /dynamically imported module|importing a module script failed|failed to fetch/i.test(err?.message ?? '')
+        ? 'sin conexión para cargar la parte de la app que escucha la letra'
+        : (err?.message || 'error desconocido').replace(/^No se ha podido sacar la letra:\s*/i, '').replace(/[.\s]+$/, '');
+  const reintento = conGrabacion ? '; puedes volver a intentarlo con el botón Letra' : '';
+  return `no se ha podido poner la letra (${motivo.charAt(0).toLowerCase()}${motivo.slice(1)})${reintento}`;
+}
+
 /** Hace la fusión (con su animación) de una partitura ya leída y un archivo de audio. */
 export async function mix(
   score: Song,
   audioFile: File,
-  values: { keepKey: boolean; span: 'match' | 'score' | 'audio'; sung: boolean; track: boolean },
+  values: { keepKey: boolean; span: 'match' | 'score' | 'audio'; sung: boolean; track: boolean; lyrics?: boolean },
 ): Promise<MixResult | null> {
   const fusion = openFusion({ scoreName: score.title, audioName: audioFile.name });
   try {
@@ -145,7 +179,7 @@ export async function mix(
       keepKey: values.keepKey,
       span: values.span,
       addSung: values.sung,
-      onProgress: (f, p) => fusion.progress(f, p * 0.95),
+      onProgress: (f, p) => fusion.progress(f, p * (values.lyrics ? 0.8 : 0.95)),
     });
     if (fusion.cancelled) return null;
     const song = r.song;
@@ -165,10 +199,63 @@ export async function mix(
     }
     if (r.sung) notes.push(r.sung.matches ? `la voz que se oye es la de «${r.sung.matches}»` : 'añadida la voz que se oye');
 
+    // La letra: se escucha en la grabación y cada sílaba va a la nota de la melodía en que se oye (y a las de las voces
+    // que van a su ritmo). Si falla, la mezcla sigue sin letra.
+    let oidas: PalabraOida[] | null = null;
+    if (values.lyrics) {
+      const partitura = song.voices.filter((v) => !isSung(v) && v.notes.length);
+      // La melodía: la voz de la partitura que más se oye en la grabación; si no se sabe, la primera (la de arriba).
+      const melodia = partitura.find((v) => v.id === r.sung?.voice.sungOf) ?? partitura[0];
+      // Si la partitura ya trae la letra de la melodía (no unas sílabas sueltas), se queda la suya.
+      if (melodia && melodia.notes.filter((n) => n.lyric).length >= 0.25 * melodia.notes.length) notes.push('la letra es la de la partitura');
+      else if (melodia) {
+        // Cancelar la fusión también deja de escuchar: para la descarga del modelo y Whisper.
+        const corta = new AbortController();
+        const vigila = window.setInterval(() => {
+          if (fusion.cancelled) corta.abort();
+        }, 150);
+        try {
+          fusion.progress('Preparando la grabación para escuchar la letra…', 0.8);
+          const { hearSong, SR_LETRA } = await import('./transcribe');
+          const audio16 = await decodeMono(data.slice(0), SR_LETRA);
+          if (fusion.cancelled) return null;
+          oidas = await hearSong(song, audio16, r.audioOffset, (f, p) => fusion.progress(f, 0.8 + 0.15 * p), corta.signal);
+          if (fusion.cancelled) return null;
+          if (!oidas.length) notes.push('no se ha oído letra en la grabación');
+          else {
+            const { copyNotices, placeHeard } = await import('../editor/lyricsPlace');
+            const res = placeHeard(song, melodia, oidas, null, 0, true);
+            // Las copias llevan la marca ámbar de su sílaba: también hay que revisarlas.
+            const ambar = partitura.reduce((s, v) => s + v.notes.filter((n) => n.lyricDoubt).length, 0);
+            const enOtras = ambar - res.dudosas;
+            notes.push(
+              `letra puesta en «${melodia.name}» (${res.puestas} ${res.puestas === 1 ? 'sílaba' : 'sílabas'})${res.otras ? ' y en las voces que van a su ritmo' : ''}`,
+              ...copyNotices(res),
+            );
+            if (ambar)
+              notes.push(
+                `${ambar} ${ambar === 1 ? 'nota' : 'notas'} en ámbar para revisar con el botón Letra` +
+                  (enOtras > 0 ? ` (${enOtras} en las otras voces)` : ''),
+              );
+          }
+        } catch (e) {
+          // Cancelada: no se avisa de nada (la escucha se ha parado a propósito).
+          if (fusion.cancelled) return null;
+          console.warn('[voces] no se ha podido poner la letra', e);
+          notes.push(sinLetra(e, values.track));
+        } finally {
+          window.clearInterval(vigila);
+        }
+      }
+    }
+    // Si se ha cancelado mientras tanto, no se guarda la grabación de una canción que no se va a abrir.
+    if (fusion.cancelled) return null;
+
     if (values.track) {
       fusion.progress('Guardando la grabación…', 0.97);
       try {
         const mono = await decodeMono(data.slice(0));
+        if (fusion.cancelled) return null;
         // Solo se guarda lo que hace falta: del principio de la canción al final, con un segundo de margen.
         const cut0 = values.span === 'audio' ? 0 : Math.max(0, r.audioOffset - 1);
         const end = values.span === 'audio' ? mono.length / TRACK_SR : Math.min(mono.length / TRACK_SR, r.audioTo + 1.5);
@@ -184,6 +271,8 @@ export async function mix(
             solo: false,
           };
           notes.push('la grabación suena junto a las voces');
+          // Lo oído se recuerda: el diálogo Letra no tiene que volver a escuchar la grabación.
+          if (oidas) (await import('./transcribe')).rememberHeard(song, oidas);
         }
       } catch (e) {
         console.warn('[voces] no se ha podido guardar la grabación', e);

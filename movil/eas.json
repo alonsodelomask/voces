@@ -9,16 +9,25 @@
       "distribution": "internal",
       "ios": {
         "simulator": false
+      },
+      "env": {
+        "ONNXRUNTIME_NODE_INSTALL": "skip"
       }
     },
     "preview": {
       "environment": "preview",
       "distribution": "store",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "ONNXRUNTIME_NODE_INSTALL": "skip"
+      }
     },
     "production": {
       "environment": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "ONNXRUNTIME_NODE_INSTALL": "skip"
+      }
     }
   },
   "submit": {

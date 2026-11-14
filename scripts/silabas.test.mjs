@@ -16,8 +16,8 @@ function tabla(casos, opts) {
 }
 
 const EJEMPLOS = [
-  ["Acérquense a mi mesa, por favor", ["A-", "cér-", "quen-", "se‿a", "mi", "me-", "sa,", "por", "fa-", "vor"]],
-  ["La vida es una copa de licor", ["La", "vi-", "da‿es", "u-", "na", "co-", "pa", "de", "li-", "cor"]],
+  ["Asómate a la calle, por favor", ["A-", "só-", "ma-", "te‿a", "la", "ca-", "lle,", "por", "fa-", "vor"]],
+  ["La noche es una barca de cristal", ["La", "no-", "che‿es", "u-", "na", "bar-", "ca", "de", "cris-", "tal"]],
   ["camión", ["ca-", "mión"]],
   ["país", ["pa-", "ís"]],
   ["poeta", ["po-", "e-", "ta"]],
@@ -35,8 +35,8 @@ const EJEMPLOS = [
   ["búho", ["bú-", "ho"]],
   ["ahí", ["a-", "hí"]],
   ["construir", ["cons-", "truir"]],
-  ["a-cer-quen-se", ["a-", "cer-", "quen-", "se"]],
-  ["a-cer-quen-se a", ["a-", "cer-", "quen-", "se‿a"]],
+  ["a-so-ma-te", ["a-", "so-", "ma-", "te"]],
+  ["a-so-ma-te a", ["a-", "so-", "ma-", "te‿a"]],
   ["de un año", ["de‿un", "a-", "ño"]],
   ["la y o", ["la‿y‿o"]],
   ["obstáculo", ["obs-", "tá-", "cu-", "lo"]],
@@ -56,11 +56,11 @@ describe("ejemplos del encargo", () => {
     assert.deepEqual(splitSyllables("se a", { sinalefa: false }), ["se", "a"]);
   });
 
-  test("la letra del usuario da 10 sílabas: A cer quen sea mi me sa por fa vor", () => {
-    const silabas = splitSyllables("Acérquense a mi mesa, por favor");
+  test("una frase de 10 sílabas: A so ma tea la ca lle por fa vor", () => {
+    const silabas = splitSyllables("Asómate a la calle, por favor");
     assert.equal(silabas.length, 10);
     const limpias = silabas.map((s) => s.replace(/[-,]/g, "").replace("‿", "").toLowerCase());
-    assert.deepEqual(limpias, ["a", "cér", "quen", "sea", "mi", "me", "sa", "por", "fa", "vor"]);
+    assert.deepEqual(limpias, ["a", "só", "ma", "tea", "la", "ca", "lle", "por", "fa", "vor"]);
   });
 });
 
@@ -168,8 +168,8 @@ describe("palabras sueltas", () => {
 
 describe("frases y sinalefa", () => {
   tabla([
-    ["Ojalá que llueva café en el campo", ["O-", "ja-", "lá", "que", "llue-", "va", "ca-", "fé‿en", "el", "cam-", "po"]],
-    ["Bésame, bésame mucho", ["Bé-", "sa-", "me,", "bé-", "sa-", "me", "mu-", "cho"]],
+    ["Ojalá que vuelva papá en el barco", ["O-", "ja-", "lá", "que", "vuel-", "va", "pa-", "pá‿en", "el", "bar-", "co"]],
+    ["Mírame, mírame pronto", ["Mí-", "ra-", "me,", "mí-", "ra-", "me", "pron-", "to"]],
     ["Cielito lindo", ["Cie-", "li-", "to", "lin-", "do"]],
     ["Te quiero, amor", ["Te", "quie-", "ro,", "a-", "mor"]],
     ["¿Qué es la vida?", ["¿Qué‿es", "la", "vi-", "da?"]],
@@ -202,10 +202,37 @@ describe("guiones: la persona manda", () => {
     ["Glo-ri-a", ["Glo-", "ri-", "a"]],
     ["mi a-mor", ["mi‿a-", "mor"]],
     ["fe-liz, a-mor", ["fe-", "liz,", "a-", "mor"]],
-    ["a- cer- quen- se", ["a-", "cer-", "quen-", "se"]],
-    ["a -- cer -- quen -- se a", ["a-", "cer-", "quen-", "se‿a"]],
+    ["a- so- ma- te", ["a-", "so-", "ma-", "te"]],
+    ["a -- so -- ma -- te a", ["a-", "so-", "ma-", "te‿a"]],
     ["can-", ["can-"]],
   ]);
+});
+
+describe("guion suelto: parte tras una sílaba suelta, tras una palabra entera es una pausa y al empezar una línea se salta", () => {
+  tabla([
+    // tras una sílaba suelta, como se copia de una partitura: la parte
+    ["Can - ta la no - che", ["Can-", "ta", "la", "no-", "che"]],
+    ["A - le - lu - ya", ["A-", "le-", "lu-", "ya"]],
+    ["Can -\nta", ["Can-", "ta"]],
+    // tras una sinalefa escrita dentro de una sílaba, cuenta solo la palabra que sigue: «a - mor» sigue partida
+    ["por - que‿a - mor de - ma - dre", ["por-", "que‿a-", "mor", "de-", "ma-", "dre"]],
+    // tras una palabra de más de una sílaba: dos palabras, como con un espacio
+    ["hola - adiós", ["ho-", "la‿a-", "diós"]],
+    ["hola -- adiós", ["ho-", "la‿a-", "diós"]],
+    ["hola ‐ adiós ­ amigo", ["ho-", "la‿a-", "diós", "a-", "mi-", "go"]],
+    ["hola , - adiós", ["ho-", "la,", "a-", "diós"]],
+    ["amigo -\ny tú", ["a-", "mi-", "go‿y", "tú"]],
+    ["Glo_ria - a Dios", ["Glo-", "_", "ria‿a", "Dios"]],
+    // al empezar una línea, raya de diálogo: no parte nada
+    ["- hola amigo\n- adiós amigo", ["ho-", "la‿a-", "mi-", "go‿a-", "diós", "a-", "mi-", "go"]],
+    ["-- hola", ["ho-", "la"]],
+    ["canta\n-\nalegre", ["can-", "ta‿a-", "le-", "gre"]],
+  ]);
+
+  test("sin sinalefa: «hola - adiós» → ho- · la · a- · diós (antes salía «ho- la- a- diós»: «holaadiós» en el karaoke)", () => {
+    assert.deepEqual(splitSyllables("hola - adiós", { sinalefa: false }), ["ho-", "la", "a-", "diós"]);
+    assert.deepEqual(splitSyllables("- hola\n- adiós", { sinalefa: false }), ["ho-", "la", "a-", "diós"]);
+  });
 });
 
 describe("melismas", () => {
@@ -226,7 +253,7 @@ describe("signos, espacios y texto vacío", () => {
   tabla([
     ["", []],
     ["   \n\t  ", []],
-    ["  Acérquense   a\n\nmi mesa  ", ["A-", "cér-", "quen-", "se‿a", "mi", "me-", "sa"]],
+    ["  Asómate   a\n\nla calle  ", ["A-", "só-", "ma-", "te‿a", "la", "ca-", "lle"]],
     ["canta\nalegre", ["can-", "ta‿a-", "le-", "gre"]],
     ["hola... adiós", ["ho-", "la...", "a-", "diós"]],
     ["hola,adiós", ["ho-", "la,", "a-", "diós"]],
@@ -247,8 +274,8 @@ describe("signos, espacios y texto vacío", () => {
 describe("sin sinalefa", () => {
   tabla(
     [
-      ["La vida es una copa de licor", ["La", "vi-", "da", "es", "u-", "na", "co-", "pa", "de", "li-", "cor"]],
-      ["Acérquense a mi mesa", ["A-", "cér-", "quen-", "se", "a", "mi", "me-", "sa"]],
+      ["La noche es una barca de cristal", ["La", "no-", "che", "es", "u-", "na", "bar-", "ca", "de", "cris-", "tal"]],
+      ["Asómate a la calle", ["A-", "só-", "ma-", "te", "a", "la", "ca-", "lle"]],
       ["la y o", ["la", "y", "o"]],
       // «‿» escrito a mano une igualmente
       ["se‿a mi", ["se‿a", "mi"]],
@@ -344,9 +371,9 @@ describe("no se pierde nada", () => {
   const frases = [
     "amor/odio y/o noche/día",
     "Arantxa subraya el friísimo",
-    "Acérquense a mi mesa, por favor",
-    "La vida es una copa de licor",
-    "Ojalá que llueva café en el campo",
+    "Asómate a la calle, por favor",
+    "La noche es una barca de cristal",
+    "Ojalá que vuelva papá en el barco",
     "¿Qué es la vida? ¡Ay, amor!",
     "«Hola», dijo; pa' allá... y ya",
     "Ana y Eva, padre e hijo",
@@ -361,7 +388,7 @@ describe("no se pierde nada", () => {
   }
 
   test("cada elemento es una sílaba o un melisma, nunca vacío", () => {
-    for (const s of splitSyllables("Acérquense a mi mesa _ por fa-vor, ¿sí?")) {
+    for (const s of splitSyllables("Asómate a la calle _ por fa-vor, ¿sí?")) {
       assert.ok(s.length > 0);
       assert.ok(!/\s/.test(s));
     }

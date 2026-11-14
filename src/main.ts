@@ -7,7 +7,7 @@ import { ACCEPTED, importFile, isAudioFile } from './import';
 import { importAudio } from './import/audioDialog';
 import { openMix } from './import/mixDialog';
 import { isSung, migrateSungVoices, sungSource } from './ai/fusion';
-import { delTrack, getTrack, trackIds } from './audio/track';
+import { delTrack, getTrack, putTrack, trackIds } from './audio/track';
 import { makeSong, makeVoice, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, midiToName, plainAccidentals, prettyAccidentals, transposeSong, typeInName, voiceType } from './music';
 import { confirmDialog, form } from './ui/dialog';
@@ -469,6 +469,28 @@ $<HTMLInputElement>('#opt-chords-auto').onchange = (e) => {
   };
 }
 $<HTMLInputElement>('#opt-names').onchange = (e) => (viz.opts.showNames = (e.target as HTMLInputElement).checked);
+// Con letra o solo las notas (se recuerda en este dispositivo).
+{
+  const box = $<HTMLInputElement>('#opt-lyrics');
+  const aplica = (on: boolean) => {
+    viz.opts.showLyrics = on;
+    roll.showLyrics = on;
+  };
+  try {
+    box.checked = localStorage.getItem('voces.letra') !== 'no';
+  } catch {
+    /* nada */
+  }
+  aplica(box.checked);
+  box.onchange = () => {
+    aplica(box.checked);
+    try {
+      localStorage.setItem('voces.letra', box.checked ? 'si' : 'no');
+    } catch {
+      /* nada */
+    }
+  };
+}
 $<HTMLInputElement>('#opt-loop').onchange = (e) => (engine.loop = (e.target as HTMLInputElement).checked);
 $<HTMLInputElement>('#opt-watermark').oninput = (e) => (viz.opts.watermark = (e.target as HTMLInputElement).value);
 
@@ -539,15 +561,33 @@ roll.onChordClick = (time, index) => editChord(time, index);
 $('#ed-undo').onclick = undo;
 $('#ed-redo').onclick = redo;
 $('#ed-transpose').onclick = openTranspose;
-// La letra (y su separador de sílabas) se carga al pulsar el botón.
-$('#ed-lyrics').onclick = async () =>
-  (await import('./editor/lyricsDialog')).openLyrics({
-    song: () => song,
-    voice: () => roll.activeVoice,
-    time: () => engine.time,
-    edit: (fn) => edit(fn, false),
-    toast,
-  });
+// La letra (y su separador de sílabas) se carga al pulsar el botón. Mientras se carga y mientras el diálogo está
+// abierto, otro toque no abre otro encima (el de debajo, al aceptarlo, desharía lo puesto en el de arriba).
+let letraAbierta = false;
+$('#ed-lyrics').onclick = async () => {
+  if (letraAbierta) return;
+  letraAbierta = true;
+  try {
+    // En la web, sin conexión, el trozo de la letra puede no estar guardado aún (no se ha abierto nunca con red).
+    let dialogo: typeof import('./editor/lyricsDialog');
+    try {
+      dialogo = await import('./editor/lyricsDialog');
+    } catch (e) {
+      console.warn('[voces] no se ha podido cargar la letra', e);
+      toast('No se ha podido abrir la letra: hace falta conexión la primera vez.');
+      return;
+    }
+    await dialogo.openLyrics({
+      song: () => song,
+      voice: () => roll.activeVoice,
+      time: () => engine.time,
+      edit: (fn) => edit(fn, false),
+      toast,
+    });
+  } finally {
+    letraAbierta = false;
+  }
+};
 const assistDeps = {
   song: () => song,
   activeVoiceId: () => roll.activeVoice?.id ?? null,
@@ -1089,14 +1129,34 @@ function openLibrary() {
         }
       }
       if (a === 'copy') {
-        const c: Song = JSON.parse(JSON.stringify(s.id === song.id ? song : s));
+        const origen = s.id === song.id ? song : s;
+        const c: Song = JSON.parse(JSON.stringify(origen));
         c.id = uid();
         c.title = `${s.title} (copia)`;
         c.groupId = undefined;
         c.remoteUpdatedAt = undefined;
         c.createdAt = c.updatedAt = Date.now();
+        // La grabación se guarda aparte, con el id de la canción: la copia necesita la suya. Y lo ya oído en ella, para
+        // no tener que volver a escucharla al poner la letra en la copia.
+        let sinGrabacion = '';
+        if (c.audioTrack) {
+          const wav = await getTrack(s.id);
+          try {
+            if (wav) await putTrack(c.id, wav);
+            else sinGrabacion = ' (sin la grabación: no está en este dispositivo)';
+          } catch {
+            sinGrabacion = ' (sin la grabación: no se ha podido guardar)';
+          }
+          try {
+            const { heardBefore, rememberHeard } = await import('./import/transcribe');
+            const oidas = heardBefore(origen);
+            if (oidas) rememberHeard(c, oidas);
+          } catch {
+            /* sin lo oído: se volverá a escuchar */
+          }
+        }
         saveSong(c);
-        toast(`Copia creada: «${c.title}».`);
+        toast(`Copia creada: «${c.title}»${sinGrabacion}.`);
       }
       if (a === 'unshare' && s.groupId) {
         if (!(await confirmDialog('Quitar del grupo', `¿Quitar «${s.title}» del grupo? Desaparecerá para todos los miembros. En este dispositivo se queda como canción tuya.`, 'Quitar'))) return;

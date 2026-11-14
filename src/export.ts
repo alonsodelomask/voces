@@ -1,5 +1,5 @@
 import { Midi } from '@tonejs/midi';
-import type { Song } from './model';
+import { lyricsVoice, type Song } from './model';
 import { saveFile } from './native';
 
 function download(blob: Blob, filename: string) {
@@ -20,7 +20,7 @@ export function exportMidi(song: Song) {
   download(new Blob([songToMidi(song) as BlobPart], { type: 'audio/midi' }), safeName(song.title) + '.mid');
 }
 
-/** La canción como archivo MIDI (con la letra de la primera voz que la tenga, como los MIDI de karaoke). */
+/** La canción como archivo MIDI (con la letra de la voz que la lleva, como los MIDI de karaoke). */
 export function songToMidi(song: Song): Uint8Array {
   const midi = new Midi();
   midi.header.setTempo(song.bpm);
@@ -30,9 +30,10 @@ export function songToMidi(song: Song): Uint8Array {
     t.name = midiText(v.name);
     for (const n of v.notes) t.addNote({ midi: n.midi, time: n.start, duration: n.dur, velocity: 0.8 });
   }
-  // La letra de la primera voz que la tenga, como en los MIDI de karaoke: una sílaba por evento, y la última de cada
-  // palabra con un espacio detrás (así se sabe al volver a abrirlo qué sílabas van juntas).
-  const conLetra = song.voices.find((v) => v.sungOf === undefined && v.notes.some((n) => n.lyric));
+  // La letra de la voz que la lleva (`lyricsVoice`: la melodía, no una de arriba con trozos copiados de ella o con sus
+  // «uh» y «dum»), como en los MIDI de karaoke: una sílaba por evento, y la última de cada palabra con un espacio detrás
+  // (así se sabe al volver a abrirlo qué sílabas van juntas).
+  const conLetra = lyricsVoice(song);
   for (const n of conLetra?.notes ?? []) {
     if (!n.lyric) continue;
     const s = n.lyric.endsWith('-') ? n.lyric.slice(0, -1) : `${n.lyric} `;

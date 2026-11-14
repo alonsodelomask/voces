@@ -11,6 +11,7 @@
     "build:movil": "tsc --noEmit && node scripts/build-movil.mjs"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.3.2",
     "@spotify/basic-pitch": "1.0.1",
     "@supabase/supabase-js": "2.119.0",
     "@tensorflow/tfjs": "3.21.0",

@@ -28,13 +28,13 @@ async () => {
   const letra = (v) => v?.notes.map((n) => n.lyric ?? '·').join(' ');
   const res = {};
 
-  // 1) Partitura con letra: compás 1 con repetición (estrofa 1 «La vi-da es», estrofa 2 «Tu vo-z es»); compás 2 con
-  //    «se‿a» (elisión), una nota que alarga la sílaba y «co-pa»; compás 3, dos notas sin letra. La contralto, al
+  // 1) Partitura con letra: compás 1 con repetición (estrofa 1 «La no-che es», estrofa 2 «Tu vo-z es»); compás 2 con
+  //    «se‿a» (elisión), una nota que alarga la sílaba y «bar-ca»; compás 3, dos notas sin letra. La contralto, al
   //    mismo ritmo y sin letra.
-  const c1 = (con) => nota(72, con ? ly(1, 'La', 'single') + ly(2, 'Tu', 'single') : '') + nota(74, con ? ly(1, 'vi', 'begin') + ly(2, 'vo', 'begin') : '') +
-    nota(76, con ? ly(1, 'da', 'end') + ly(2, 'z', 'end') : '') + nota(77, con ? ly(1, 'es', 'single') + ly(2, 'es', 'single') : '');
+  const c1 = (con) => nota(72, con ? ly(1, 'La', 'single') + ly(2, 'Tu', 'single') : '') + nota(74, con ? ly(1, 'no', 'begin') + ly(2, 'vo', 'begin') : '') +
+    nota(76, con ? ly(1, 'che', 'end') + ly(2, 'z', 'end') : '') + nota(77, con ? ly(1, 'es', 'single') + ly(2, 'es', 'single') : '');
   const c2 = (con) => nota(79, con ? '<lyric number="1"><syllabic>single</syllabic><text>se</text><elision>‿</elision><syllabic>single</syllabic><text>a</text></lyric>' : '') +
-    nota(77, con ? extend(1) : '') + nota(76, con ? ly(1, 'co', 'begin') : '') + nota(74, con ? ly(1, 'pa', 'end') : '');
+    nota(77, con ? extend(1) : '') + nota(76, con ? ly(1, 'bar', 'begin') : '') + nota(74, con ? ly(1, 'ca', 'end') : '');
   const c3 = () => nota(72) + nota(72) + '<note><rest/><duration>2</duration><voice>1</voice></note>';
   const baja = (s) => s.replace(/<octave>5<\/octave>/g, '<octave>4</octave>');
   const s = await abrir(partitura('Letra de prueba', [
@@ -44,7 +44,7 @@ async () => {
   const sop = s.voices.find((v) => v.name === 'Soprano');
   const alto = s.voices.find((v) => v.name === 'Contralto');
   res.letraPartitura = letra(sop);
-  const esperada = 'La vi- da es Tu vo- z es se‿a · co- pa · ·';
+  const esperada = 'La no- che es Tu vo- z es se‿a · bar- ca · ·';
 
   // 2) Letra nueva con el diálogo: se borra la que había (vuelve a separar sola) y se escribe otra.
   const dialogo = async () => {
@@ -63,14 +63,14 @@ async () => {
   res.prerrelleno = d.querySelector('[name=texto]').value;
   res.corrigeSinPartir = !d.querySelector('[name=auto]').checked && !d.querySelector('[name=sinalefa]').checked;
   escribe(d, '');
-  escribe(d, 'Acérquense a mi mesa, por favor');
+  escribe(d, 'Asómate a la calle, por favor');
   res.vista = d.querySelector('[data-vista]')?.textContent;
   d.querySelector('button[value=ok]').click();
   await wait(300);
   res.soprano = letra(sop);
   res.contralto = letra(alto);
   res.toast = document.querySelector('.toast')?.textContent;
-  const puesta = 'A- cér- quen- se‿a mi me- sa, por fa- vor · · · ·';
+  const puesta = 'A- só- ma- te‿a la ca- lle, por fa- vor · · · ·';
 
   // 3) Abrir y aceptar sin tocar nada no mueve ninguna sílaba.
   d = await dialogo();
@@ -84,8 +84,8 @@ async () => {
   const deVuelta = parseMidi(songToMidi(V.song).slice().buffer, 'x');
   res.midi = letra(deVuelta.voices.find((v) => v.notes.some((n) => n.lyric)));
 
-  // 5) Desde el cabezal, parado a mitad de la 6.ª nota: empieza en esa nota, no en la siguiente. La contralto ya
-  //    tiene letra, así que no se toca (la casilla viene sin marcar).
+  // 5) Desde el cabezal, parado a mitad de la 6.ª nota: empieza en esa nota, no en la siguiente. La contralto lleva
+  //    la copia de la soprano, así que la casilla de las otras voces viene marcada y se corrige con ella.
   V.engine.seek(sop.notes[5].start + 0.1);
   await wait(100);
   d = await dialogo();
@@ -93,22 +93,35 @@ async () => {
   desde.value = 'cabezal';
   desde.dispatchEvent(new Event('change'));
   res.rellenoCabezal = d.querySelector('[name=texto]').value;
-  res.otrasSinMarcar = !d.querySelector('[name=otras]').checked;
+  res.otrasMarcada = d.querySelector('[name=otras]').checked;
   escribe(d, 'Uno dos');
   d.querySelector('button[value=ok]').click();
   await wait(300);
   res.cabezal = letra(sop);
-  res.contraltoIntacta = letra(alto) === puesta;
+  res.contraltoCorregida = letra(alto) === res.cabezal;
 
-  // 6) «Quitar la letra» solo quita la de esta voz; y se puede deshacer.
+  // 6) «Quitar la letra»: la casilla de las otras voces viene marcada (la contralto lleva la copia), así que se va
+  //    también la copia, y el aviso lo dice. Se puede deshacer (vuelven las dos). Sin la casilla, solo se quita la de
+  //    esta voz: la contralto se queda con su copia.
+  const voz = (nombre) => V.song.voices.find((v) => v.name === nombre);
   d = await dialogo();
+  res.otrasAlQuitar = d.querySelector('[name=otras]').checked;
   d.querySelector('button[value=quitar]').click();
   await wait(300);
   res.quitada = letra(sop);
-  res.contraltoSigue = letra(alto) === puesta;
+  res.contraltoQuitada = letra(alto);
+  res.toastQuitar = document.querySelector('.toast')?.textContent;
   document.querySelector('#ed-undo').click();
   await wait(200);
-  res.deshecho = letra(V.song.voices.find((v) => v.name === 'Soprano'));
+  res.deshecho = letra(voz('Soprano'));
+  res.contraltoDeshecha = letra(voz('Contralto')) === res.cabezal;
+  d = await dialogo();
+  d.querySelector('[name=otras]').checked = false;
+  d.querySelector('button[value=quitar]').click();
+  await wait(300);
+  res.quitadaSola = letra(voz('Soprano'));
+  res.contraltoSigue = letra(voz('Contralto')) === res.cabezal;
+  res.toastQuitarSola = document.querySelector('.toast')?.textContent;
 
   // 7) Acordes en una sola voz (la sílaba en la nota de abajo, como exporta MuseScore) y dos estrofas con un melisma
   //    en la 1.ª («a-mor» alarga «mor»; la 2.ª canta «ré» en esa nota).
@@ -119,21 +132,24 @@ async () => {
   ]), 'Acordes de prueba');
   res.acordes = s2.voices.map(letra);
 
-  const vista = 'A- (C5) · cér- (D5)';
+  const vista = 'A- (C5) · só- (D5)';
+  const sinLetra = '· · · · · · · · · · · · · ·';
   res.ok =
     res.letraPartitura === esperada &&
     res.dialogo === 'Letra de «Soprano»' &&
-    res.prerrelleno === 'La vi-da es Tu vo-z es se‿a _ co-pa' &&
+    res.prerrelleno === 'La no-che es Tu vo-z es se‿a _ bar-ca' &&
     res.corrigeSinPartir &&
     /^10 sílabas para 14 notas/.test(res.vista ?? '') && (res.vista ?? '').includes(vista) &&
     res.soprano === puesta && res.contralto === puesta &&
     /Letra puesta: 10 sílabas en «Soprano» y en 10 notas de las otras voces/.test(res.toast ?? '') &&
     res.idaYVuelta &&
     res.midi === puesta &&
-    res.rellenoCabezal === 'me-sa, por fa-vor' && res.otrasSinMarcar &&
-    res.cabezal === 'A- cér- quen- se‿a mi Uno dos · · · · · · ·' && res.contraltoIntacta &&
-    res.quitada === '· · · · · · · · · · · · · ·' && res.contraltoSigue &&
-    res.deshecho === res.cabezal &&
+    res.rellenoCabezal === 'ca-lle, por fa-vor' && res.otrasMarcada &&
+    res.cabezal === 'A- só- ma- te‿a la Uno dos · · · · · · ·' && res.contraltoCorregida &&
+    res.otrasAlQuitar && res.quitada === sinLetra && res.contraltoQuitada === sinLetra &&
+    res.toastQuitar === 'Letra quitada de «Soprano» y de 7 notas de las otras voces.' &&
+    res.deshecho === res.cabezal && res.contraltoDeshecha &&
+    res.quitadaSola === sinLetra && res.contraltoSigue && res.toastQuitarSola === 'Letra quitada de «Soprano».' &&
     res.acordes.length === 2 && res.acordes.every((l) => l === 'a- mor · es can- ta- ré hoy');
   return res;
 }

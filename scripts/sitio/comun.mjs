@@ -9,7 +9,7 @@ export const DATOS = {
   titular: null,
   nif: null,
   domicilio: null,
-  actualizado: { es: '13 de noviembre de 2026', en: 'November 13, 2026' },
+  actualizado: { es: '14 de noviembre de 2026', en: 'November 14, 2026' },
 };
 
 export const pendiente = (txt) => `<span class="pendiente">${txt}</span>`;
