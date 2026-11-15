@@ -66,16 +66,17 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 
 ---
 
-## Estado (12/11/2026)
+## Estado (15/11/2026)
 
 - **Supabase: hecho.** Organización **PABLO** (la antigua «Baulify», renombrada: es la única organización y agrupa los proyectos; Baulify sigue dentro, sin cambios). Proyecto **Voces**, ref `jmkzsrqygurhlukqswes`, región *Central EU (Frankfurt)*, plan gratuito.
   - Migraciones `001_init.sql` y `002_servidor.sql` ejecutadas; las 7 tablas tienen RLS activado. Comprobado con la clave pública: sin sesión no se ve nada y las funciones de grupo y de borrado están bloqueadas.
-  - Apple activado con el Client ID `io.github.alonsodelomask.voces`, sin *Secret Key*. **Hay que cambiarlo a `es.vocify.app`** (paso 5), el identificador nuevo.
+  - Apple activado con el Client ID `es.vocify.app` (cambiado el 15/11/2026), sin *Secret Key*.
   - Migración `003_nombre_registro.sql` ejecutada (el perfil toma el nombre del registro).
-  - Site URL `https://alonsodelomask.github.io/voces/` y URL de retorno permitidas: GitHub Pages, `voces-web.onrender.com` y `localhost:5173`. Falta añadir `vocify.es` ([DOMINIO.md](DOMINIO.md), paso 3).
+  - Site URL `https://vocify.es/` y URL de retorno permitidas: `vocify.es`, `www.vocify.es`, GitHub Pages, `voces-web.onrender.com` y `localhost:5173`.
+  - Usuarios: `txapelabrava@gmail.com` invitada el 15/11/2026 (entra con el enlace del correo; para tener contraseña, «¿La has olvidado?»).
   - Correo: sin SMTP propio, Supabase no deja editar las plantillas y manda un **enlace**, no un código. En la web el enlace inicia la sesión. En el iPhone se entra con Apple o con contraseña. Para que llegue un código, configura un SMTP (paso 1.6) y añade `{{ .Token }}` a las plantillas.
-- **Render: hecho.** Blueprint `voces` (desde el repositorio público, sin despliegue automático) con `voces-api` → https://voces-api-0wt8.onrender.com (Fráncfort, gratuito, en **modo espera** hasta que pongas `SUPABASE_SERVICE_ROLE_KEY`) y `voces-web` → https://voces-web.onrender.com. CORS comprobado: solo admite las webs de Voces y la app. `render.yaml` ya añade `vocify.es` y el dominio propio en `voces-web`: se aplican con **Manual sync**.
-- **Pendiente (tuyo):** `SUPABASE_SERVICE_ROLE_KEY` y `ANTHROPIC_API_KEY` en Render, la cuenta de demostración, EAS y la revocación de Apple. Lista corta: [MANANA.md](MANANA.md).
+- **Render: hecho.** Blueprint `voces` (desde el repositorio público, sin despliegue automático) con `voces-api` → https://voces-api-0wt8.onrender.com (Fráncfort, gratuito, en **modo espera** hasta que pongas `SUPABASE_SERVICE_ROLE_KEY`) y `voces-web` → **https://vocify.es** (y https://voces-web.onrender.com; se despliega solo con cada commit que toque la web). 15/11/2026: *Manual sync* aplicado, dominio y `www` (redirige) verificados con HTTPS, DNS en Hostinger (`A @ 216.24.57.1`, `CNAME www voces-web.onrender.com`). CORS comprobado: admite `vocify.es` y la app.
+- **Pendiente (tuyo):** `SUPABASE_SERVICE_ROLE_KEY` y `ANTHROPIC_API_KEY` en Render (sin ellas la API sigue en modo espera: entrar, grupos y canciones compartidas funcionan; la IA y borrar la cuenta, no), el buzón `soporte@vocify.es`, tus datos en las páginas legales, la cuenta de demostración, EAS y la revocación de Apple. Lista corta: [MANANA.md](MANANA.md).
 
 ## Guía paso a paso para ti
 
