@@ -7,6 +7,7 @@ import { makeSong, makeVoice, songDuration, uid, VOICE_COLORS, type Note, type S
 import { computeChords, transposeSong } from '../music';
 import { basicPitchOutputs, cleanNotes, decodeAudio, FRAME_RATE, notesFromOutputs, type BpOutputs, type RawNote } from './audio';
 import { isSung } from '../ai/fusion';
+import { expectedPitch, notesFromPitch, trackPitch } from './pitch';
 
 const SR = 22050;
 /** Resolución del alineamiento, en segundos. */
@@ -21,6 +22,8 @@ export const ALIGN = {
   smooth: 3,
   /** Semitonos que puede apartarse de su línea lo que se oye antes de dar por hecho que es otra voz. */
   sungWindow: 2,
+  /** Probar también a seguir la altura de una voz sola (YIN) para la voz «🎙». */
+  pitch: true,
   /** Para que una nota valga de ancla: fuerza del ataque y cuánto se oye esa altura después (medidos con «La vida es una copa de licor»). */
   onset: 0.12,
   heard: 0.1,
@@ -684,16 +687,21 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
   const all = score.voices.flatMap((v) => v.notes);
   if (!all.length) throw new Error('La partitura no tiene notas.');
   let out: BpOutputs;
+  /** El tramo escuchado (para seguir después la altura de la voz que se oye), si se ha leído el audio. */
+  let tramo: Float32Array | null = null;
+  const corta = (samples: Float32Array) => {
+    const a = Math.max(0, Math.floor(opts.start * SR));
+    const b = opts.end > opts.start ? Math.min(samples.length, Math.floor(opts.end * SR)) : samples.length;
+    return samples.subarray(a, Math.max(a, b));
+  };
   if (opts.outputs) {
     out = opts.outputs.out;
   } else {
     progress('Leyendo el audio…', 0);
-    const { samples } = await decodeAudio(data);
-    const a = Math.max(0, Math.floor(opts.start * SR));
-    const b = opts.end > opts.start ? Math.min(samples.length, Math.floor(opts.end * SR)) : samples.length;
-    if (b - a < SR * 2) throw new Error('El tramo elegido es demasiado corto.');
+    tramo = corta((await decodeAudio(data)).samples);
+    if (tramo.length < SR * 2) throw new Error('El tramo elegido es demasiado corto.');
     progress('Escuchando la grabación…', 0.02);
-    out = await basicPitchOutputs(samples.subarray(a, b), (p) => progress('Escuchando la grabación…', 0.02 + p * 0.85));
+    out = await basicPitchOutputs(tramo, (p) => progress('Escuchando la grabación…', 0.02 + p * 0.85));
   }
   // El fotograma f es el segundo f / FRAME_RATE del tramo. No vale contar fotogramas y dividir por la duración: con
   // las ventanas de la librería, el reloj del modelo adelantaba y las notas quedaban cada vez más tarde.
@@ -1124,14 +1132,30 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
     const cmp = opts.keepKey ? best.tr : 0;
     const inAudio = (v: Voice) => v.notes.map((n) => ({ midi: n.midi + cmp, start: n.start + shift, dur: n.dur }));
     const rough = sungLine(heardNotes, null);
+    // Si en la grabación canta una persona sola, su altura momento a momento (YIN) la sigue mucho mejor que las notas
+    // sueltas del modelo. Se prueban las dos y se queda la que más se parece a su línea de la partitura: con varias
+    // voces a la vez, YIN no sabe a quién seguir y gana el modelo.
+    if (!tramo && data.byteLength) {
+      try {
+        tramo = corta((await decodeAudio(data)).samples);
+      } catch {
+        /* sin audio: solo el modelo */
+      }
+    }
+    const solo = tramo && ALIGN.pitch ? notesFromPitch(trackPitch(tramo, SR, a0, a1)) : null;
     let pick: { v: Voice; a: number } | null = null;
     for (const v of song.voices) {
       if (!v.notes.length) continue;
-      const a = agreement(rough, inAudio(v));
+      const a = Math.max(agreement(rough, inAudio(v)), solo ? agreement(solo, inAudio(v)) : 0);
       if (!pick || a > pick.a) pick = { v, a };
     }
     const ref = pick && pick.a > 0.12 ? inAudio(pick.v) : null;
-    const line = ref ? sungLine(heardNotes, ref) : rough;
+    let line = ref ? sungLine(heardNotes, ref) : rough;
+    if (tramo && solo) {
+      const esperada = ref ? expectedPitch(ref) : undefined;
+      const guiada = ref ? notesFromPitch(trackPitch(tramo, SR, a0, a1, esperada), esperada) : solo;
+      if (ref ? agreement(guiada, ref) > agreement(line, ref) : guiada.length > line.length) line = guiada;
+    }
     if (line.length >= 4) {
       const notes = line.map((n) => ({ midi: n.midi - cmp, start: Math.max(0, n.start - shift), dur: n.dur }));
       // «🎙 Tenor»: la voz Tenor tal como se oye en la grabación (el micro es el mismo que el de la pista).

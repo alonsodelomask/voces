@@ -2,6 +2,8 @@
 // La voz «🎙 X» es lo que el detector oyó de X en la grabación, y la voz X es la partitura ya colocada.
 // Aquí se comparan: lo que es claramente del detector se quita a mano, y lo dudoso (¿cantáis otra nota o se ha
 // equivocado el detector?) es una pregunta musical, y esa se la hacemos a la IA.
+import { decodeMono, getTrack } from '../audio/track';
+import { expectedPitch, notesFromPitch, trackPitch } from '../import/pitch';
 import type { Note, Song, Voice } from '../model';
 import { midiToName, prettyAccidentals } from '../music';
 
@@ -69,6 +71,30 @@ export function findFusion(song: Song): FusionPair | null {
     if (score && score !== sung && score.notes.length) return { sung, score };
   }
   return null;
+}
+
+/**
+ * Vuelve a sacar de la grabación guardada en el dispositivo lo que canta la voz «🎙», siguiendo su altura momento a
+ * momento con su línea de la partitura al lado (`import/pitch.ts`): para una grabación en la que se oye a una persona
+ * sola. null si la grabación no está en este dispositivo o no se oye nada.
+ */
+export async function sungFromTrack(song: Song, pair: FusionPair): Promise<Note[] | null> {
+  const t = song.audioTrack;
+  if (!t || !pair.score.notes.length) return null;
+  const wav = await getTrack(song.id);
+  if (!wav) return null;
+  const SR = 22050;
+  const audio = await decodeMono(wav, SR);
+  // En segundos y en el tono de la grabación (puede sonar más alta o más baja que la canción).
+  const tr = song.audioTranspose ?? 0;
+  const ref = pair.score.notes.map((n) => ({ midi: n.midi + tr, start: n.start + t.offset, dur: n.dur }));
+  const desde = Math.max(0, Math.min(...ref.map((n) => n.start)) - 0.3);
+  const hasta = Math.max(...ref.map((n) => n.start + n.dur)) + 0.3;
+  const esperada = expectedPitch(ref);
+  const notas = notesFromPitch(trackPitch(audio, SR, desde, hasta, esperada), esperada)
+    .map((n) => ({ midi: n.midi - tr, start: n.start - t.offset, dur: n.dur }))
+    .filter((n) => n.start >= 0);
+  return notas.length ? notas : null;
 }
 
 export interface Diff {

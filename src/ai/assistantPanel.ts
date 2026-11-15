@@ -3,7 +3,7 @@ import { makeVoice, VOICE_COLORS, sortNotes, type ChordMark, type Note, type Son
 import { insertMonophonic, isValidChord, nameToMidi, prettyAccidentals } from '../music';
 import { esc } from '../ui/dialog';
 import { analyzeSong, harmonize, songToPrompt, suggestChords } from './harmony';
-import { cleanSung, diffSungVsScore, findFusion, fusionPrompt, summarize } from './fusion';
+import { cleanSung, diffSungVsScore, findFusion, fusionPrompt, summarize, sungFromTrack } from './fusion';
 
 export interface AssistDeps {
   song: () => Song;
@@ -66,7 +66,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
     <section data-p="fusion">
       <p class="intro">Esta canción ha salido de mezclar una partitura con una grabación. Comparo lo que se oye con lo que pone la partitura: lo que es del detector se quita, y lo dudoso se lo pregunto a la IA, que para eso hace falta oído musical.</p>
       <div id="as-fu-sum"></div>
-      <div class="row end"><button class="btn" id="as-fu-clean">Limpiar lo evidente</button><button class="btn primary" id="as-fu-ai">Afinar con IA</button></div>
+      <div class="row end"><button class="btn" id="as-fu-redo" title="Sigue la altura de quien canta, momento a momento, con la partitura al lado. Para una grabación en la que se oye a una persona sola">🎧 Volver a sacarla de la grabación</button><button class="btn" id="as-fu-clean">Limpiar lo evidente</button><button class="btn primary" id="as-fu-ai">Afinar con IA</button></div>
       <div id="as-fu-out" class="as-out"></div>
     </section>
     <section data-p="ai">
@@ -171,9 +171,35 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
       </ul>${sis}`;
     };
     pinta();
+    const redo = q<HTMLButtonElement>('#as-fu-redo');
+    redo.onclick = async () => {
+      redo.disabled = true;
+      out.innerHTML = '<p class="thinking">Escuchando la grabación…</p>';
+      try {
+        const notas = await sungFromTrack(song, fusion);
+        if (!notas) {
+          out.innerHTML = '<p class="intro">La grabación de esta canción no está guardada en este dispositivo, o no se oye a nadie cantar.</p>';
+          return;
+        }
+        const antes = fusion.sung.notes.length;
+        deps.edit(() => {
+          fusion.sung.notes = notas;
+        }, false);
+        pinta();
+        out.innerHTML = `<p class="ok">«${esc(fusion.sung.name)}» sacada otra vez de la grabación: ${notas.length} notas (antes ${antes}).</p>`;
+        deps.toast('Voz de la grabación rehecha (puedes deshacerlo con ↶).');
+      } catch (err) {
+        out.innerHTML = `<p class="err">No se ha podido escuchar la grabación: ${esc((err as Error).message)}</p>`;
+      } finally {
+        redo.disabled = false;
+      }
+    };
     q<HTMLButtonElement>('#as-fu-clean').onclick = () => {
-      const r = cleanSung(song, fusion);
-      deps.edit(() => {}, false);
+      // Dentro de la edición: así ↶ vuelve a lo de antes de limpiar.
+      let r = { quitadas: 0, unidas: 0, octavas: 0 };
+      deps.edit(() => {
+        r = cleanSung(song, fusion);
+      }, false);
       pinta();
       out.innerHTML = `<p class="ok">Quitadas ${r.quitadas} notas sueltas, unidas ${r.unidas} y devueltas a su octava ${r.octavas}.</p>`;
       deps.toast('Fusión limpiada (puedes deshacerlo con ↶).');
