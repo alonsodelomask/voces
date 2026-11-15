@@ -7,7 +7,7 @@ import { ACCEPTED, importFile, isAudioFile } from './import';
 import { importAudio } from './import/audioDialog';
 import { openMix } from './import/mixDialog';
 import { isSung, migrateSungVoices, sungSource } from './ai/fusion';
-import { delTrack, getTrack, putTrack, trackIds } from './audio/track';
+import { delHeard, delTrack, getTrack, heardIds, putTrack, trackIds } from './audio/track';
 import { makeSong, makeVoice, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
 import { adaptNotesToChord, computeChords, isValidChord, midiToName, plainAccidentals, prettyAccidentals, transposeSong, typeInName, voiceType } from './music';
 import { confirmDialog, form } from './ui/dialog';
@@ -1148,8 +1148,8 @@ function openLibrary() {
             sinGrabacion = ' (sin la grabación: no se ha podido guardar)';
           }
           try {
-            const { heardBefore, rememberHeard } = await import('./import/transcribe');
-            const oidas = heardBefore(origen);
+            const { recallHeard, rememberHeard } = await import('./import/transcribe');
+            const oidas = await recallHeard(origen);
             if (oidas) rememberHeard(c, oidas);
           } catch {
             /* sin lo oído: se volverá a escuchar */
@@ -1396,10 +1396,11 @@ const last = getLast();
 setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
 requestAnimationFrame(loop);
 
-// Grabaciones de canciones que ya no existen: ocupan mucho y no sirven para nada.
+// Grabaciones de canciones que ya no existen (y lo oído en ellas): ocupan mucho y no sirven para nada.
 void (async () => {
   const vivas = new Set(loadSongs().map((s) => s.id));
   for (const id of await trackIds()) if (!vivas.has(id)) await delTrack(id);
+  for (const id of await heardIds()) if (!vivas.has(id)) await delHeard(id);
 })();
 
 

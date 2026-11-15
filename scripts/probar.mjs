@@ -69,21 +69,28 @@ for (const archivo of readdirSync(DIR).filter((f) => f.endsWith('.js') && f.incl
       source: "window.__msgs=[];window.ReactNativeWebView={postMessage:function(m){window.__msgs.push(JSON.parse(m));}};window.VocesNative={platform:'ios',apple:true,version:'1.0.0'};",
     });
   }
-  await send('Page.navigate', { url: BASE });
-  await sleep(1500);
   const codigo = readFileSync(join(DIR, archivo), 'utf8');
   try {
-    // El resultado se deja en la página como texto y se trae a trozos: un mensaje de más de unos pocos MB
-    // (el volcado de una grabación entera) se queda colgado y la prueba no termina nunca.
-    const expression = `(async () => { const v = await (${codigo})(); window.__resultado = JSON.stringify(v ?? null); return window.__resultado.length; })()`;
-    const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: Number(process.env.TIMEOUT ?? 60_000) });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    let texto = '';
-    for (let i = 0; i < r.result.value; i += 500_000) {
-      texto += (await send('Runtime.evaluate', { expression: `window.__resultado.slice(${i}, ${i + 500_000})`, returnByValue: true })).result.value;
+    // Una prueba que devuelve { recargar: true } se vuelve a evaluar después de recargar la página, con window.__vuelta
+    // = 1, 2…: así se prueba lo que se queda guardado en el dispositivo.
+    let valor;
+    for (let vuelta = 0; ; vuelta++) {
+      await send('Page.navigate', { url: BASE });
+      await sleep(1500);
+      // El resultado se deja en la página como texto y se trae a trozos: un mensaje de más de unos pocos MB
+      // (el volcado de una grabación entera) se queda colgado y la prueba no termina nunca.
+      const expression = `(async () => { window.__vuelta = ${vuelta}; const v = await (${codigo})(); window.__resultado = JSON.stringify(v ?? null); return window.__resultado.length; })()`;
+      const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: Number(process.env.TIMEOUT ?? 60_000) });
+      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+      let texto = '';
+      for (let i = 0; i < r.result.value; i += 500_000) {
+        texto += (await send('Runtime.evaluate', { expression: `window.__resultado.slice(${i}, ${i + 500_000})`, returnByValue: true })).result.value;
+      }
+      valor = JSON.parse(texto);
+      if (!valor?.recargar || vuelta >= 4) break;
+      console.log(`  ↻ ${archivo}, vuelta ${vuelta + 1}`, JSON.stringify(valor));
     }
-    const valor = JSON.parse(texto);
-    const ok = valor && valor.ok !== false && errores.length === 0;
+    const ok = valor && valor.ok !== false && !valor.recargar && errores.length === 0;
     if (!ok) fallos++;
     console.log(`${ok ? '✓' : '✖'} ${archivo}`, JSON.stringify(valor));
     if (errores.length) console.log('   errores en la página:', errores.slice(0, 3));
@@ -91,6 +98,8 @@ for (const archivo of readdirSync(DIR).filter((f) => f.endsWith('.js') && f.incl
     fallos++;
     console.log(`✖ ${archivo}`, e.message.split('\n')[0]);
   }
+  // El puente de la app nativa, solo para su prueba: las demás son de la web.
+  if (script) await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: script.identifier });
 }
 ws.close();
 chrome.kill();

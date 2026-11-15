@@ -271,7 +271,7 @@ export async function mix(
             solo: false,
           };
           notes.push('la grabación suena junto a las voces');
-          // Lo oído se recuerda: el diálogo Letra no tiene que volver a escuchar la grabación.
+          // Lo oído se guarda con la grabación: el diálogo Letra no tiene que volver a escucharla, tampoco otro día.
           if (oidas) (await import('./transcribe')).rememberHeard(song, oidas);
         }
       } catch (e) {

@@ -4,7 +4,7 @@
 // lo mismo.
 import { isSung } from '../ai/fusion';
 import { trackIds } from '../audio/track';
-import { heardBefore, hearTrack, isAbort, lyricsFromWords, type PalabraOida } from '../import/transcribe';
+import { hearTrack, isAbort, lyricsFromWords, recallHeard, type PalabraOida } from '../import/transcribe';
 import { splitSyllables } from '../lyrics';
 import type { Note, Song, Voice } from '../model';
 import { midiToName, prettyAccidentals } from '../music';
@@ -118,9 +118,10 @@ export async function openLyrics(deps: Deps): Promise<void> {
   const enAmbar = (k: number) => voice.notes.slice(k).some((n) => n.lyricDoubt);
   // Si ya hay letra, se abre para corregirla: tal cual está, sin volver a partirla ni a unir palabras.
   const corrige = yaTiene(0);
-  // Con grabación, cada sílaba puede ir a la nota en que se oye. Lo oído se recuerda mientras la app está abierta. Para
-  // escucharla tiene que estar guardada en este dispositivo: una canción traída de otro lleva sus datos, no el audio.
-  let oidas: PalabraOida[] | null = song.audioTrack ? heardBefore(song) : null;
+  // Con grabación, cada sílaba puede ir a la nota en que se oye. Lo oído se guarda en este dispositivo con la grabación:
+  // no hay que volver a escucharla, tampoco otro día. Para escucharla tiene que estar guardada en este dispositivo: una
+  // canción traída de otro lleva sus datos, no el audio.
+  let oidas: PalabraOida[] | null = song.audioTrack ? await recallHeard(song) : null;
   const enDispositivo = !!song.audioTrack && (await trackIds()).includes(song.id);
   const conGrabacion = enDispositivo || !!oidas;
   /** El texto que sale de lo oído (desde la nota de inicio): si no se toca, se pone lo oído tal cual. */
@@ -313,6 +314,10 @@ export async function openLyrics(deps: Deps): Promise<void> {
     for (const c of [desde, como, auto, sinalefa, otras, buenas]) if (c) c.disabled = si;
     if (area) area.readOnly = si;
   };
+  /** Lo oído, en una línea. */
+  const dicho = (o: PalabraOida[]) => (o.length ? `${o.length === 1 ? 'Oída' : 'Oídas'} ${cuenta(o.length, 'palabra', 'palabras')}.` : 'No se ha oído letra en la grabación.');
+  // Ya escuchada (hoy u otro día): se dice, para que se sepa que no hace falta esperar.
+  if (oidas && estado) estado.textContent = dicho(oidas);
   /** Escucha la grabación (si no se ha hecho ya) con el avance en el diálogo. */
   const escuchar = async (): Promise<boolean> => {
     if (oidas) {
@@ -332,7 +337,7 @@ export async function openLyrics(deps: Deps): Promise<void> {
         },
         corta.signal,
       );
-      if (estado) estado.textContent = oidas.length ? `${oidas.length === 1 ? 'Oída' : 'Oídas'} ${cuenta(oidas.length, 'palabra', 'palabras')}.` : 'No se ha oído letra en la grabación.';
+      if (estado) estado.textContent = dicho(oidas);
       return oidas.length > 0;
     } catch (e) {
       // Pararla al cerrar el diálogo no es un error que haya que contar.
@@ -420,7 +425,7 @@ export async function openLyrics(deps: Deps): Promise<void> {
   }
   if (!r) return;
   // Mientras estaba abierto (escuchar tarda), alguien del grupo ha podido guardar la canción: la abierta ya es otra y lo
-  // que se pusiera aquí no se vería ni se guardaría. Lo oído sigue en memoria.
+  // que se pusiera aquí no se vería ni se guardaría. Lo oído queda guardado.
   if (deps.song() !== song || !song.voices.includes(voice)) return deps.toast('La canción ha cambiado mientras tanto: vuelve a poner la letra.');
   const k = desdeNota(r.values.desde);
   const texto = r.values.texto ?? '';

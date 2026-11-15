@@ -5,7 +5,10 @@ import { env, pipeline } from '@huggingface/transformers';
 
 /** Whisper «base» con los tiempos de cada palabra (las variantes «_timestamped» son las que los dan). */
 const MODELO = 'onnx-community/whisper-base_timestamped';
-/** Versión fija del modelo, para que no cambie sin que lo sepamos. */
+/**
+ * Versión fija del modelo, para que no cambie sin que lo sepamos. Si cambias el modelo o su versión, sube `VERSION_OIDO`
+ * en `transcribe.ts`: lo ya oído y guardado en el dispositivo se volverá a escuchar con el nuevo.
+ */
 const REVISION = '608c49e61301901684bc36cac8f74b95ff6b5a8e';
 const SR = 16000;
 

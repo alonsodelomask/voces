@@ -50,7 +50,7 @@ async () => {
     await putTrack(s.id, encodeWav(new Float32Array(32000 * 8), 32000));
     s.audioTrack = { name: 'Ensayo jueves.wav', offset: 0, duration: 8, volume: 0.8, muted: false, solo: false };
 
-    // 1) Se escucha en la original (🎧) y se cierra sin poner nada: lo oído queda en memoria.
+    // 1) Se escucha en la original (🎧) y se cierra sin poner nada: lo oído queda guardado.
     V.roll.activeVoiceId = s.voices[0].id;
     let d = await dialogo();
     d.querySelector('[data-oir]').click();

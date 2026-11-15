@@ -2,28 +2,35 @@
 // No va en el almacén de canciones (localStorage son unos pocos MB y un WAV son decenas), ni se sube al grupo:
 // IndexedDB aguanta archivos grandes y cada canción guarda el suyo con su id.
 // Se guarda en mono y a 32 kHz, que para voces basta y ocupa una décima parte del original.
+// Lo que Whisper oyó en ella (`import/transcribe.ts`) va al lado, en otra base: así no hay que volver a escucharla otro
+// día. Otra base y no otro almacén en esta, porque añadirlo obliga a subir su versión, y una pestaña que siguiera abierta
+// con la app de antes ya no podría abrir las grabaciones.
 
-const DB_NAME = 'voces.audio';
-const STORE = 'pistas';
+interface Almacen {
+  base: string;
+  nombre: string;
+}
+const PISTAS: Almacen = { base: 'voces.audio', nombre: 'pistas' };
+const OIDO: Almacen = { base: 'voces.oido', nombre: 'oido' };
 export const TRACK_SR = 32000;
 
-function open(): Promise<IDBDatabase> {
+function open(a: Almacen): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(a.base, 1);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+      if (!req.result.objectStoreNames.contains(a.nombre)) req.result.createObjectStore(a.nombre);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('No se ha podido abrir el almacén de grabaciones.'));
   });
 }
 
-function run<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return open().then(
+function run<T>(a: Almacen, mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open(a).then(
     (db) =>
       new Promise<T>((resolve, reject) => {
-        const tx = db.transaction(STORE, mode);
-        const req = fn(tx.objectStore(STORE));
+        const tx = db.transaction(a.nombre, mode);
+        const req = fn(tx.objectStore(a.nombre));
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error ?? new Error('Error al acceder a la grabación.'));
         tx.oncomplete = () => db.close();
@@ -31,34 +38,68 @@ function run<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequ
   );
 }
 
-/** Guarda (o reemplaza) la grabación de una canción. */
-export async function putTrack(songId: string, wav: ArrayBuffer): Promise<void> {
-  await run('readwrite', (s) => s.put(wav, songId));
-}
-
-export async function getTrack(songId: string): Promise<ArrayBuffer | null> {
+async function ids(a: Almacen): Promise<string[]> {
   try {
-    return (await run<ArrayBuffer | undefined>('readonly', (s) => s.get(songId))) ?? null;
+    return (await run<IDBValidKey[]>(a, 'readonly', (s) => s.getAllKeys())).map(String);
   } catch {
-    return null;
+    return [];
   }
 }
 
-export async function delTrack(songId: string): Promise<void> {
+async function borra(a: Almacen, songId: string): Promise<void> {
   try {
-    await run('readwrite', (s) => s.delete(songId));
+    await run(a, 'readwrite', (s) => s.delete(songId));
   } catch {
     /* nada */
   }
 }
 
-/** Ids de las canciones que tienen grabación guardada (para limpiar las que ya no existen). */
-export async function trackIds(): Promise<string[]> {
+/** Guarda (o reemplaza) la grabación de una canción. Lo oído en la de antes deja de valer: se borra. */
+export async function putTrack(songId: string, wav: ArrayBuffer): Promise<void> {
+  await run(PISTAS, 'readwrite', (s) => s.put(wav, songId));
+  await delHeard(songId);
+}
+
+export async function getTrack(songId: string): Promise<ArrayBuffer | null> {
   try {
-    return (await run<IDBValidKey[]>('readonly', (s) => s.getAllKeys())).map(String);
+    return (await run<ArrayBuffer | undefined>(PISTAS, 'readonly', (s) => s.get(songId))) ?? null;
   } catch {
-    return [];
+    return null;
   }
+}
+
+/** Borra la grabación de una canción, y lo oído en ella. */
+export async function delTrack(songId: string): Promise<void> {
+  await borra(PISTAS, songId);
+  await delHeard(songId);
+}
+
+/** Ids de las canciones que tienen grabación guardada (para limpiar las que ya no existen). */
+export function trackIds(): Promise<string[]> {
+  return ids(PISTAS);
+}
+
+/** Lo oído en la grabación de una canción, tal como se guardó (lo comprueba quien lo lee); null si no hay nada. */
+export async function getHeard(songId: string): Promise<unknown> {
+  try {
+    return (await run<unknown>(OIDO, 'readonly', (s) => s.get(songId))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Guarda (o reemplaza) lo oído en la grabación de una canción. */
+export async function putHeard(songId: string, oido: unknown): Promise<void> {
+  await run(OIDO, 'readwrite', (s) => s.put(oido, songId));
+}
+
+export function delHeard(songId: string): Promise<void> {
+  return borra(OIDO, songId);
+}
+
+/** Ids de las canciones con algo oído guardado (para limpiar las que ya no existen). */
+export function heardIds(): Promise<string[]> {
+  return ids(OIDO);
 }
 
 /** Decodifica cualquier formato que entienda el navegador y lo deja en mono a `sr` Hz. */

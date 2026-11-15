@@ -3,7 +3,7 @@
 // partitura (en trozos de como mucho 28 s, cortados en sus silencios) y se limpia lo que Whisper se inventa. Todo se
 // puede cancelar con una `AbortSignal`: el error es entonces un `AbortError` (`isAbort`).
 import { isSung } from '../ai/fusion';
-import { decodeMono, getTrack } from '../audio/track';
+import { decodeMono, getHeard, getTrack, putHeard } from '../audio/track';
 import type { Note, Song } from '../model';
 import type { MensajeLetra, PeticionLetra } from './lyricsWorker';
 
@@ -158,7 +158,10 @@ const DESPEDIDA = /^[¡!\s]*(?:muchas\s+)?gracias\s+por\s+(?:ver|vernos|mirar)[\
 const RELLENO =
   /gracias\s+por\s+(?:(?:ver|vernos|mirar)\s+(?:el|este)\s+v[ií]deo|(?:su|vuestra)\s+atenci[oó]n)(?!\p{L})[.!]?|[[(][^\])]{0,60}[\])]/giu;
 
-/** Quita de lo que oye Whisper lo inventado (ver INVENTADA y RELLENO), tramo a tramo y frase a frase. */
+/**
+ * Quita de lo que oye Whisper lo inventado (ver INVENTADA y RELLENO), tramo a tramo y frase a frase. Lo que sale se
+ * guarda en el dispositivo: si cambias lo que se quita, sube `VERSION_OIDO`.
+ */
 function limpia(palabras: PalabraOida[], tramos: Tramo[]): PalabraOida[] {
   // Las palabras de cada tramo: Whisper escucha cada uno por separado.
   const grupos: PalabraOida[][] = [];
@@ -386,13 +389,60 @@ export async function hearSong(
   return palabras;
 }
 
-// Lo ya oído en la grabación de cada canción mientras la app está abierta (escucharla tarda: unos 45 s por 3 minutos),
-// con los tramos que se escucharon: si después hay notas donde no se escuchó, falta eso.
-const oido = new Map<string, { tramos: Tramo[]; palabras: PalabraOida[] }>();
+/** Lo oído en una grabación, con los tramos (en segundos de la canción) en que se escuchó. */
+interface Oido {
+  tramos: Tramo[];
+  palabras: PalabraOida[];
+}
+// Lo ya oído en la grabación de cada canción (escucharla tarda: unos 45 s por 3 minutos), con los tramos que se
+// escucharon: si después hay notas donde no se escuchó, falta eso. Se guarda en este dispositivo junto a la grabación
+// (`audio/track.ts`), así que vale también otro día; aquí está lo de esta sesión y lo ya leído de allí.
+const oido = new Map<string, Oido>();
 const clave = (song: Song) => {
   const t = song.audioTrack;
   return t ? `${song.id}|${t.name}|${t.offset.toFixed(3)}|${t.duration.toFixed(2)}` : '';
 };
+/**
+ * La manera de escuchar con que se oyó lo guardado. Súbela si cambia lo que sale (el modelo o su versión en
+ * `lyricsWorker.ts`, o cómo se limpia lo que se inventa Whisper): lo guardado con otra se vuelve a escuchar.
+ */
+const VERSION_OIDO = 1;
+
+const numero = (x: unknown) => typeof x === 'number' && Number.isFinite(x);
+const sonTramos = (x: unknown): x is Tramo[] =>
+  Array.isArray(x) && x.every((t: Partial<Tramo> | null) => !!t && numero(t.a) && numero(t.b));
+const sonPalabras = (x: unknown): x is PalabraOida[] =>
+  Array.isArray(x) && x.every((p: Partial<PalabraOida> | null) => !!p && typeof p.texto === 'string' && numero(p.a) && numero(p.b));
+
+/** Lo oído en la grabación de la canción, como se guardó en el dispositivo: solo si es de esta grabación y de esta manera de escuchar. */
+async function guardado(song: Song): Promise<Oido | null> {
+  const k = clave(song);
+  if (!k) return null;
+  const g = (await getHeard(song.id)) as { version?: unknown; clave?: unknown; tramos?: unknown; palabras?: unknown } | null;
+  if (!g || g.version !== VERSION_OIDO || g.clave !== k || !sonTramos(g.tramos) || !sonPalabras(g.palabras)) return null;
+  return { tramos: g.tramos, palabras: g.palabras };
+}
+
+/** Si no está ya en memoria, trae lo guardado en el dispositivo. */
+async function trae(song: Song): Promise<void> {
+  const k = clave(song);
+  if (!k || oido.has(k)) return;
+  const g = await guardado(song);
+  // Mientras se leía, ha podido oírse algo más: manda lo de la memoria.
+  if (g && !oido.has(k)) {
+    oido.set(k, g);
+    cubre.set(g.palabras, g.tramos);
+  }
+}
+
+/** Apunta lo oído en la memoria y lo guarda en el dispositivo (si no se puede, solo vale mientras la app está abierta). */
+function apunta(k: string, songId: string, o: Oido): void {
+  oido.set(k, o);
+  cubre.set(o.palabras, o.tramos);
+  putHeard(songId, { version: VERSION_OIDO, clave: k, tramos: o.tramos, palabras: o.palabras }).catch((e) =>
+    console.warn('[voces] no se ha podido guardar lo oído en la grabación', e),
+  );
+}
 
 /** Dónde hay que escuchar ahora la grabación de la canción, en segundos de la canción. */
 function tramosDe(song: Song): Tramo[] {
@@ -422,19 +472,26 @@ function faltan(tramos: Tramo[], hechos: Tramo[]): Tramo[] {
   });
 }
 
-/** Lo que ya se ha oído en la grabación de la canción (null si todavía no se ha escuchado, o si falta algún trozo con notas). */
-export function heardBefore(song: Song): PalabraOida[] | null {
+/** Lo que ya está en memoria de la grabación de la canción (null si no, o si falta algún trozo con notas). */
+function heardBefore(song: Song): PalabraOida[] | null {
   const o = oido.get(clave(song));
   return o && !faltan(tramosDe(song), o.tramos).length ? o.palabras : null;
+}
+
+/**
+ * Lo que ya se ha oído en la grabación de la canción, hoy u otro día (se guarda en este dispositivo con la grabación).
+ * null si todavía no se ha escuchado, o si falta algún trozo con notas.
+ */
+export async function recallHeard(song: Song): Promise<PalabraOida[] | null> {
+  await trae(song);
+  return heardBefore(song);
 }
 
 /** Guarda lo oído en la grabación de la canción (p. ej. al mezclar), para no volver a escucharla. */
 export function rememberHeard(song: Song, palabras: PalabraOida[]): void {
   if (!song.audioTrack) return;
   // Los tramos en que se oyó; si no se saben, los de ahora.
-  const tramos = cubre.get(palabras) ?? tramosDe(song);
-  oido.set(clave(song), { tramos, palabras });
-  cubre.set(palabras, tramos);
+  apunta(clave(song), song.id, { tramos: cubre.get(palabras) ?? tramosDe(song), palabras });
 }
 
 type Oyente = (fase: string, fraccion: number) => void;
@@ -460,9 +517,12 @@ export function hearTrack(song: Song, onProgress?: (fase: string, fraccion: numb
     const promesa = (async () => {
       const t = song.audioTrack;
       if (!t) throw new Error('Esta canción no tiene grabación.');
+      // Lo oído otro día, si se guardó.
+      await trae(song);
       const antes = oido.get(k);
       const tramos = tramosDe(song);
       const pendientes = antes ? faltan(tramos, antes.tramos) : tramos;
+      if (antes && !pendientes.length) return antes.palabras;
       let nuevas: PalabraOida[] = [];
       if (pendientes.length) {
         const wav = await getTrack(song.id);
@@ -480,8 +540,7 @@ export function hearTrack(song: Song, onProgress?: (fase: string, fraccion: numb
         ? [...antes.palabras.filter((p) => !en(p, pendientes)), ...nuevas.filter((p) => en(p, pendientes))].sort((x, y) => x.a - y.a)
         : nuevas;
       const hechos = [...(antes?.tramos ?? []), ...pendientes.map((x) => ({ a: x.a, b: x.b }))];
-      oido.set(k, { tramos: hechos, palabras });
-      cubre.set(palabras, hechos);
+      apunta(k, song.id, { tramos: hechos, palabras });
       return palabras;
     })();
     const nueva = { promesa, oyentes, corta };
