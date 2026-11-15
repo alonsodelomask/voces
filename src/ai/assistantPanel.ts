@@ -3,7 +3,7 @@ import { makeVoice, VOICE_COLORS, sortNotes, type ChordMark, type Note, type Son
 import { insertMonophonic, isValidChord, nameToMidi, prettyAccidentals } from '../music';
 import { esc } from '../ui/dialog';
 import { analyzeSong, harmonize, songToPrompt, suggestChords } from './harmony';
-import { cleanSung, diffSungVsScore, findFusion, fusionPrompt, summarize, sungFromTrack } from './fusion';
+import { cleanSung, diffSungVsScore, entriesFromTrack, findFusion, fusionPrompt, retimeSong, summarize, sungFromTrack } from './fusion';
 
 export interface AssistDeps {
   song: () => Song;
@@ -66,7 +66,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
     <section data-p="fusion">
       <p class="intro">Esta canción ha salido de mezclar una partitura con una grabación. Comparo lo que se oye con lo que pone la partitura: lo que es del detector se quita, y lo dudoso se lo pregunto a la IA, que para eso hace falta oído musical.</p>
       <div id="as-fu-sum"></div>
-      <div class="row end"><button class="btn" id="as-fu-redo" title="Sigue la altura de quien canta, momento a momento, con la partitura al lado. Para una grabación en la que se oye a una persona sola">🎧 Volver a sacarla de la grabación</button><button class="btn" id="as-fu-clean">Limpiar lo evidente</button><button class="btn primary" id="as-fu-ai">Afinar con IA</button></div>
+      <div class="row end"><button class="btn" id="as-fu-entradas" title="Cada nota de la partitura (y las de las otras voces que atacan con ella) entra donde se canta en la grabación, ni antes ni después. Para una grabación en la que se oye a una persona sola">⏱ Ajustar las entradas a la grabación</button><button class="btn" id="as-fu-redo" title="Sigue la altura de quien canta, momento a momento, con la partitura al lado. Para una grabación en la que se oye a una persona sola">🎧 Volver a sacarla de la grabación</button><button class="btn" id="as-fu-clean">Limpiar lo evidente</button><button class="btn primary" id="as-fu-ai">Afinar con IA</button></div>
       <div id="as-fu-out" class="as-out"></div>
     </section>
     <section data-p="ai">
@@ -171,6 +171,30 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
       </ul>${sis}`;
     };
     pinta();
+    const entradas = q<HTMLButtonElement>('#as-fu-entradas');
+    entradas.onclick = async () => {
+      entradas.disabled = true;
+      out.innerHTML = '<p class="thinking">Escuchando la grabación…</p>';
+      try {
+        const r = await entriesFromTrack(song, fusion);
+        if (!r) {
+          out.innerHTML = '<p class="intro">La grabación de esta canción no está guardada en este dispositivo.</p>';
+          return;
+        }
+        if (!r.movidas) {
+          out.innerHTML = '<p class="ok">Las entradas ya caen donde se canta: no hay nada que mover.</p>';
+          return;
+        }
+        deps.edit(() => retimeSong(song, r.map));
+        pinta();
+        out.innerHTML = `<p class="ok">Ajustadas ${r.movidas} entradas de «${esc(fusion.score.name)}» a donde se cantan, con las de las otras voces que atacan a la vez.</p>`;
+        deps.toast('Entradas ajustadas a la grabación (puedes deshacerlo con ↶).');
+      } catch (err) {
+        out.innerHTML = `<p class="err">No se ha podido escuchar la grabación: ${esc((err as Error).message)}</p>`;
+      } finally {
+        entradas.disabled = false;
+      }
+    };
     const redo = q<HTMLButtonElement>('#as-fu-redo');
     redo.onclick = async () => {
       redo.disabled = true;

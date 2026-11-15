@@ -7,7 +7,7 @@ import { makeSong, makeVoice, songDuration, uid, VOICE_COLORS, type Note, type S
 import { computeChords, transposeSong } from '../music';
 import { basicPitchOutputs, cleanNotes, decodeAudio, FRAME_RATE, notesFromOutputs, type BpOutputs, type RawNote } from './audio';
 import { isSung } from '../ai/fusion';
-import { expectedPitch, notesFromPitch, trackPitch } from './pitch';
+import { entryMap, expectedPitch, notesFromPitch, trackPitch } from './pitch';
 
 const SR = 22050;
 /** Resolución del alineamiento, en segundos. */
@@ -24,6 +24,8 @@ export const ALIGN = {
   sungWindow: 2,
   /** Probar también a seguir la altura de una voz sola (YIN) para la voz «🎙». */
   pitch: true,
+  /** Si se sigue así, llevar cada entrada de la partitura a donde se canta (`entryMap`). */
+  entradas: true,
   /** Para que una nota valga de ancla: fuerza del ataque y cuánto se oye esa altura después (medidos con «La vida es una copa de licor»). */
   onset: 0.12,
   heard: 0.1,
@@ -1121,7 +1123,8 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
 
   // Una voz más con lo que de verdad se canta, y a qué línea de la partitura corresponde.
   let sung: AlignResult['sung'];
-  if (opts.addSung) {
+  // (También sin ella: si canta una persona sola, sirve para que cada nota de la partitura entre donde se canta.)
+  if (opts.addSung || (ALIGN.pitch && ALIGN.entradas)) {
     progress('Oyendo cómo se canta…', 0.98);
     await new Promise((r) => setTimeout(r));
     const a0 = Math.min(...pasadas.map((p) => p.w.f(p.w.from))) + offset - 0.3;
@@ -1142,21 +1145,43 @@ export async function alignScoreToAudio(scoreIn: Song, data: ArrayBuffer, title:
         /* sin audio: solo el modelo */
       }
     }
-    const solo = tramo && ALIGN.pitch ? notesFromPitch(trackPitch(tramo, SR, a0, a1)) : null;
+    const pista = tramo && ALIGN.pitch ? trackPitch(tramo, SR, a0, a1) : null;
+    const solo = pista ? notesFromPitch(pista) : null;
     let pick: { v: Voice; a: number } | null = null;
     for (const v of song.voices) {
       if (!v.notes.length) continue;
       const a = Math.max(agreement(rough, inAudio(v)), solo ? agreement(solo, inAudio(v)) : 0);
       if (!pick || a > pick.a) pick = { v, a };
     }
-    const ref = pick && pick.a > 0.12 ? inAudio(pick.v) : null;
+    let ref = pick && pick.a > 0.12 ? inAudio(pick.v) : null;
     let line = ref ? sungLine(heardNotes, ref) : rough;
     if (tramo && solo) {
-      const esperada = ref ? expectedPitch(ref) : undefined;
-      const guiada = ref ? notesFromPitch(trackPitch(tramo, SR, a0, a1, esperada), esperada) : solo;
-      if (ref ? agreement(guiada, ref) > agreement(line, ref) : guiada.length > line.length) line = guiada;
+      const guiadaCon = (r: Note[]) => {
+        const esperada = expectedPitch(r);
+        return notesFromPitch(trackPitch(tramo!, SR, a0, a1, esperada), esperada);
+      };
+      const guiada = ref ? guiadaCon(ref) : solo;
+      if (ref ? agreement(guiada, ref) > agreement(line, ref) : guiada.length > line.length) {
+        line = guiada;
+        // Canta una persona sola y se la sigue bien: cada nota de la partitura entra donde ella la canta (ni antes ni
+        // después), y con ella las de las otras voces que atacan a la vez. Después se vuelve a sacar su línea.
+        if (ref && pick && ALIGN.entradas) {
+          const { map } = entryMap(pista!, ref);
+          const enCancion = (t: number) => map(t + shift) - shift;
+          for (const v of song.voices) {
+            for (const n of v.notes) {
+              const fin = enCancion(n.start + n.dur);
+              n.start = Math.max(0, enCancion(n.start));
+              n.dur = Math.max(0.03, fin - n.start);
+            }
+          }
+          for (const c of song.chords) c.time = Math.max(0, enCancion(c.time));
+          ref = inAudio(pick.v);
+          line = guiadaCon(ref);
+        }
+      }
     }
-    if (line.length >= 4) {
+    if (opts.addSung && line.length >= 4) {
       const notes = line.map((n) => ({ midi: n.midi - cmp, start: Math.max(0, n.start - shift), dur: n.dur }));
       // «🎙 Tenor»: la voz Tenor tal como se oye en la grabación (el micro es el mismo que el de la pista).
       const name = ref ? `🎙 ${pick!.v.name}` : '🎙 Grabación';

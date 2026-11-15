@@ -237,3 +237,237 @@ export function expectedPitch(ref: Note[]): (t: number) => number | null {
     return best;
   };
 }
+
+/** Ajustes de las entradas (se pueden cambiar en las pruebas). */
+export const ENTRADAS = {
+  /** Cuánto se busca la entrada antes y después de donde la pone la partitura, en segundos. */
+  busca: 0.2,
+  /** Lo que tiene que durar lo cantado al llegar a la nota para fiarse, en segundos. */
+  firme: 0.06,
+  /** Lo menos que se mueve una entrada: menos es ruido, o el portamento (la voz llega a la nota un poco después de
+   * empezar a subir o bajar hacia ella). */
+  minimo: 0.05,
+  /** Cuánto se puede mover una nota, en segundos, y el silencio que separa frases. */
+  mueve: 0.5,
+  respiro: 0.25,
+  /** Lo que cuesta mover una nota y cambiarle la duración, por cada 10 ms (un momento cantado en su nota vale 1). */
+  desplaza: 0.12,
+  estira: 0.06,
+  /** Hasta dónde (en semitonos) cuenta algo lo que se acerca a la nota sin ser ella. */
+  cerca: 0.75,
+  /** A partir de cuánto (en segundos) un movimiento tiene que oírse mejor que donde estaba. */
+  revisa: 0.1,
+  /** Momentos (de 10 ms) de la mediana con que se alisa la altura. */
+  lisa: 15,
+};
+
+/**
+ * Dónde empieza de verdad cada nota de `notas` (la línea que se oye, ordenada, en el reloj y el tono de `track`): si
+ * viene ligada de otra altura, donde la voz cruza la mitad del camino entre las dos (el portamento); si viene después
+ * de un silencio, donde empieza a sonar cerca de esa altura. null si no se sabe: la misma altura que la anterior sin
+ * respirar (no cambia nada que se pueda oír), o no se oye con claridad.
+ */
+export function sungOnsets(track: PitchTrack, notas: Note[]): (number | null)[] {
+  const { midi, t0, hop } = track;
+  const at = (t: number) => {
+    const i = Math.round((t - t0) / hop);
+    return i >= 0 && i < midi.length ? midi[i] : NaN;
+  };
+  const firme = Math.max(2, Math.round(ENTRADAS.firme / hop));
+  return notas.map((n, k) => {
+    const prev = notas[k - 1];
+    const next = notas[k + 1];
+    const ligada = !!prev && n.start - (prev.start + prev.dur) < 0.1;
+    if (ligada && prev.midi === n.midi) return null;
+    const lo = Math.max(n.start - ENTRADAS.busca, prev ? prev.start + Math.min(0.1, prev.dur / 2) : -Infinity);
+    const hi = Math.min(n.start + ENTRADAS.busca, n.start + n.dur * 0.7, next ? next.start - 0.03 : Infinity);
+    // La altura en la octava de la nota (YIN a veces oye otra).
+    const v = (t: number) => {
+      let x = at(t);
+      if (Number.isNaN(x)) return x;
+      while (x - n.midi > 6) x -= 12;
+      while (n.midi - x > 6) x += 12;
+      return x;
+    };
+    const mitad = ligada ? (prev.midi + n.midi) / 2 : NaN;
+    const sube = ligada && n.midi > prev.midi;
+    // ¿Está ya en el lado de la nota nueva (o, tras un silencio, cerca de ella)?
+    const llego = (x: number) => !Number.isNaN(x) && (ligada ? (sube ? x > mitad : x < mitad) && Math.abs(x - n.midi) < 1.5 : Math.abs(x - n.midi) < 1);
+    let mejor: number | null = null;
+    for (let t = lo; t <= hi; t += hop) {
+      if (!llego(v(t))) continue;
+      // Que lo de justo antes no estuviera ya allí (es un cambio de verdad) y que siga allí un rato.
+      const antes = v(t - hop);
+      if (llego(antes)) continue;
+      let ok = true;
+      for (let j = 1; j <= firme && ok; j++) ok = llego(v(t + j * hop));
+      if (!ok) continue;
+      if (mejor == null || Math.abs(t - n.start) < Math.abs(mejor - n.start)) mejor = t;
+    }
+    return mejor;
+  });
+}
+
+/**
+ * Cuánto hay que mover el tiempo de la partitura para que su melodía (`melodia`, en el reloj y el tono de `track`)
+ * entre donde se canta: una función que lleva cada segundo de la partitura a su segundo nuevo.
+ *
+ * Frase a frase (notas entre dos silencios), se prueban todas las maneras de colocar sus notas hasta medio segundo
+ * antes o después (programación dinámica, de 10 en 10 ms, sin que se crucen) y se queda la que más rato coincide la
+ * altura que se oye con la de cada nota, menos lo que cuesta moverlas y cambiarles la duración: así una nota solo se
+ * mueve si se oye con claridad dónde entra, tanto si iba tarde como pronto, y las que repiten altura (donde no se oye
+ * el cambio) se reparten como en la partitura. Entre esas anclas el tiempo se estira en línea recta: todas las voces
+ * se mueven juntas (las notas que atacan a la vez siguen a la vez) y nada se cruza. `track`, mejor sin la partitura al
+ * lado: con ella, la altura se iría a donde ya estaba.
+ */
+export function entryMap(track: PitchTrack, melodia: Note[]): { map: (t: number) => number; movidas: number } {
+  const { t0, hop } = track;
+  // Mediana de `ENTRADAS.lisa` momentos (un ciclo de vibrato): el vibrato ancho y los golpes de consonante no cuentan como
+  // otra nota.
+  const midi = new Float32Array(track.midi.length).fill(NaN);
+  for (let i = 0; i < midi.length; i++) {
+    const w: number[] = [];
+    const r = ENTRADAS.lisa >> 1;
+    for (let k = Math.max(0, i - r); k <= Math.min(midi.length - 1, i + r); k++) if (!Number.isNaN(track.midi[k])) w.push(track.midi[k]);
+    if (!Number.isNaN(track.midi[i]) && w.length > r) midi[i] = w.sort((p, q) => p - q)[w.length >> 1];
+  }
+  const paso = 0.01;
+  const R = Math.round(ENTRADAS.mueve / paso); // posiciones a cada lado
+  const S = 2 * R + 1;
+  const notas = [...melodia].sort((a, b) => a.start - b.start);
+  // Lo que suma cada momento a una nota: +1 si se canta su altura (medio semitono arriba o abajo), algo si se acerca, y
+  // −0,5 si se canta otra.
+  const vale = (t: number, m: number) => {
+    const i = Math.round((t - t0) / hop);
+    let x = i >= 0 && i < midi.length ? midi[i] : NaN;
+    if (Number.isNaN(x)) return 0;
+    while (x - m > 6) x -= 12;
+    while (m - x > 6) x += 12;
+    const d = Math.abs(x - m);
+    return d <= 0.5 ? 1 : d <= ENTRADAS.cerca ? 0.3 : -0.5;
+  };
+  const frases: Note[][] = [];
+  for (const n of notas) {
+    const f = frases[frases.length - 1];
+    const ult = f?.[f.length - 1];
+    if (ult && n.start - (ult.start + ult.dur) < ENTRADAS.respiro) f.push(n);
+    else frases.push([n]);
+  }
+  const anclas: [number, number][] = [];
+  let movidas = 0;
+  for (const f of frases) {
+    const K = f.length;
+    // Rejilla común de la frase: de su primera entrada menos el margen al final de la última más el margen.
+    const ini = f[0].start - ENTRADAS.mueve;
+    const fin = f[K - 1].start + f[K - 1].dur + ENTRADAS.mueve;
+    const G = Math.ceil((fin - ini) / paso) + 1;
+    // Sumas acumuladas de lo que vale cada momento para cada nota.
+    const acum = f.map((n) => {
+      const c = new Float64Array(G + 1);
+      for (let g = 0; g < G; g++) c[g + 1] = c[g] + vale(ini + g * paso, n.midi);
+      return c;
+    });
+    // Y solo los momentos en que se canta justo su altura.
+    const justo = f.map((n) => {
+      const c = new Float64Array(G + 1);
+      for (let g = 0; g < G; g++) c[g + 1] = c[g] + (vale(ini + g * paso, n.midi) === 1 ? 1 : 0);
+      return c;
+    });
+    const pos = (k: number, j: number) => Math.round((f[k].start - ini) / paso) + (j - R); // índice en la rejilla
+    const suma = (k: number, a: number, b: number) => acum[k][Math.max(0, Math.min(G, b))] - acum[k][Math.max(0, Math.min(G, a))];
+    const dur0 = (k: number) => Math.round(((k + 1 < K ? f[k + 1].start : f[k].start + f[k].dur) - f[k].start) / paso);
+    const minimo = Math.round(0.05 / paso);
+    // best[k][j]: lo mejor colocando las notas 0..k con la k en la posición j; de dónde viene.
+    let best = new Float64Array(S).fill(-Infinity);
+    const de: Int16Array[] = [];
+    for (let j = 0; j < S; j++) best[j] = -ENTRADAS.desplaza * Math.abs(j - R);
+    for (let k = 1; k < K; k++) {
+      const nuevo = new Float64Array(S).fill(-Infinity);
+      const desde = new Int16Array(S).fill(-1);
+      for (let j = 0; j < S; j++) {
+        const p = pos(k, j);
+        for (let i = 0; i < S; i++) {
+          if (best[i] === -Infinity) continue;
+          const q = pos(k - 1, i);
+          if (p - q < minimo) continue;
+          // Una nota no se queda en menos de la mitad de lo que dura en la partitura si en ese rato no se oye su altura:
+          // sería quitarla para dar sitio a otra.
+          const tramo = suma(k - 1, q, p);
+          if (p - q < dur0(k - 1) / 2 && justo[k - 1][Math.max(0, Math.min(G, p))] - justo[k - 1][Math.max(0, Math.min(G, q))] < 2) continue;
+          const v = best[i] + tramo - ENTRADAS.estira * Math.abs(p - q - dur0(k - 1));
+          if (v > nuevo[j]) {
+            nuevo[j] = v;
+            desde[j] = i;
+          }
+        }
+        nuevo[j] -= ENTRADAS.desplaza * Math.abs(j - R);
+      }
+      de.push(desde);
+      best = nuevo;
+    }
+    // La última nota: lo que dura en la partitura.
+    let jFin = R;
+    let vFin = -Infinity;
+    for (let j = 0; j < S; j++) {
+      if (best[j] === -Infinity) continue;
+      const p = pos(K - 1, j);
+      const v = best[j] + suma(K - 1, p, p + dur0(K - 1));
+      if (v > vFin) {
+        vFin = v;
+        jFin = j;
+      }
+    }
+    const js = new Array<number>(K);
+    js[K - 1] = jFin;
+    for (let k = K - 1; k > 0; k--) js[k - 1] = de[k - 1][js[k]];
+    // Una nota que se mueve mucho tiene que oírse donde se mueve: si entra antes, en lo que gana ya se canta su altura;
+    // si entra después, en lo que pierde todavía no. Si no, es el arreglo de la frase el que la arrastra: no se ancla
+    // y su sitio sale de las de alrededor.
+    const cuenta = (k: number, a: number, b: number) =>
+      justo[k][Math.max(0, Math.min(G, Math.round((b - ini) / paso)))] - justo[k][Math.max(0, Math.min(G, Math.round((a - ini) / paso)))];
+    const seOye = (k: number, d: number) => {
+      if (Math.abs(d) < ENTRADAS.revisa) return true;
+      const a = f[k].start;
+      const n = Math.abs(d) / paso;
+      return d < 0 ? cuenta(k, a + d, a) >= n * 0.5 : cuenta(k, a, a + d) <= n * 0.3 && cuenta(k, a + d, a + d + 0.1) >= 3;
+    };
+    let dUlt = 0;
+    f.forEach((n, k) => {
+      const d = (js[k] - R) * paso;
+      if (!seOye(k, d)) {
+        dUlt = 0;
+        return;
+      }
+      if (Math.abs(d) >= ENTRADAS.minimo) movidas++;
+      dUlt = Math.abs(d) >= ENTRADAS.minimo ? d : 0;
+      anclas.push([n.start, n.start + dUlt]);
+    });
+    const u = f[K - 1];
+    anclas.push([u.start + u.dur, u.start + u.dur + dUlt]);
+  }
+  anclas.sort((a, b) => a[0] - b[0]);
+  // Que no se crucen: cada ancla, después de la anterior (si no, se queda la anterior y esta se quita).
+  const buenas: [number, number][] = [];
+  for (const x of anclas) {
+    const p = buenas[buenas.length - 1];
+    if (p && (x[0] - p[0] < 1e-6 || x[1] - p[1] < Math.min(0.04, (x[0] - p[0]) * 0.5))) continue;
+    buenas.push(x);
+  }
+  const map = (t: number) => {
+    if (!buenas.length) return t;
+    if (t <= buenas[0][0]) return t + (buenas[0][1] - buenas[0][0]);
+    const u = buenas[buenas.length - 1];
+    if (t >= u[0]) return t + (u[1] - u[0]);
+    let lo = 0;
+    let hi = buenas.length - 1;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (buenas[m][0] <= t) lo = m;
+      else hi = m;
+    }
+    const [a0, b0] = buenas[lo];
+    const [a1, b1] = buenas[hi];
+    return b0 + ((t - a0) / (a1 - a0)) * (b1 - b0);
+  };
+  return { map, movidas };
+}

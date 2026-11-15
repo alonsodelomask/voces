@@ -3,7 +3,7 @@
 // Aquí se comparan: lo que es claramente del detector se quita a mano, y lo dudoso (¿cantáis otra nota o se ha
 // equivocado el detector?) es una pregunta musical, y esa se la hacemos a la IA.
 import { decodeMono, getTrack } from '../audio/track';
-import { expectedPitch, notesFromPitch, trackPitch } from '../import/pitch';
+import { entryMap, expectedPitch, notesFromPitch, trackPitch } from '../import/pitch';
 import type { Note, Song, Voice } from '../model';
 import { midiToName, prettyAccidentals } from '../music';
 
@@ -95,6 +95,39 @@ export async function sungFromTrack(song: Song, pair: FusionPair): Promise<Note[
     .map((n) => ({ midi: n.midi - tr, start: n.start - t.offset, dur: n.dur }))
     .filter((n) => n.start >= 0);
   return notas.length ? notas : null;
+}
+
+/**
+ * Dónde entra de verdad cada nota de la línea de la partitura de la voz «🎙» en la grabación guardada en este
+ * dispositivo (`entryMap`, para una grabación en la que se oye a una persona sola): una función que lleva cada segundo
+ * de la canción a su segundo nuevo, y cuántas notas se mueven. null si la grabación no está en este dispositivo.
+ */
+export async function entriesFromTrack(song: Song, pair: FusionPair): Promise<{ map: (t: number) => number; movidas: number } | null> {
+  const t = song.audioTrack;
+  if (!t || !pair.score.notes.length) return null;
+  const wav = await getTrack(song.id);
+  if (!wav) return null;
+  const SR = 22050;
+  const audio = await decodeMono(wav, SR);
+  const tr = song.audioTranspose ?? 0;
+  const ref = pair.score.notes.map((n) => ({ midi: n.midi + tr, start: n.start + t.offset, dur: n.dur }));
+  const desde = Math.max(0, Math.min(...ref.map((n) => n.start)) - 1);
+  const hasta = Math.max(...ref.map((n) => n.start + n.dur)) + 1;
+  const { map, movidas } = entryMap(trackPitch(audio, SR, desde, hasta), ref);
+  return { map: (x) => map(x + t.offset) - t.offset, movidas };
+}
+
+/** Mueve el tiempo de las voces de la partitura (no las «🎙») y del cifrado con `map` (de `entriesFromTrack`). */
+export function retimeSong(song: Song, map: (t: number) => number): void {
+  for (const v of song.voices) {
+    if (isSung(v)) continue;
+    for (const n of v.notes) {
+      const fin = map(n.start + n.dur);
+      n.start = Math.max(0, map(n.start));
+      n.dur = Math.max(0.03, fin - n.start);
+    }
+  }
+  for (const c of song.chords) c.time = Math.max(0, map(c.time));
 }
 
 export interface Diff {

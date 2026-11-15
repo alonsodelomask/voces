@@ -5,7 +5,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-const { trackPitch, notesFromPitch, expectedPitch } = await import("../src/import/pitch.ts");
+const { trackPitch, notesFromPitch, expectedPitch, entryMap } = await import("../src/import/pitch.ts");
 
 const SR = 22050;
 const hz = (m) => 440 * 2 ** ((m - 69) / 12);
@@ -82,5 +82,43 @@ describe("trackPitch y notesFromPitch", () => {
     const t = performance.now();
     trackPitch(x, SR);
     assert.ok(performance.now() - t < 5000, `tarda ${(performance.now() - t).toFixed(0)} ms`);
+  });
+
+  describe("entryMap: cada entrada de la partitura donde se canta", () => {
+    // La partitura, y lo que se canta: la 2.ª nota 0,25 s antes (entra pronto) y la 4.ª 0,2 s después (entra tarde).
+    const partitura = [[60, 0.3, 0.4], [62, 0.7, 0.4], [64, 1.1, 0.4], [62, 1.5, 0.4], [60, 1.9, 0.6]];
+    const cantado = [[60, 0.3, 0.15], [62, 0.45, 0.65], [64, 1.1, 0.6], [62, 1.7, 0.2], [60, 1.9, 0.6]];
+    const { map, movidas } = entryMap(trackPitch(voz(cantado), SR), ref(partitura));
+
+    test("la que entra pronto y la que entra tarde van a donde se cantan; las demás se quedan", () => {
+      assert.ok(Math.abs(map(0.7) - 0.45) < 0.05, `la 2.ª, en ${map(0.7).toFixed(3)}`);
+      assert.ok(Math.abs(map(1.5) - 1.7) < 0.05, `la 4.ª, en ${map(1.5).toFixed(3)}`);
+      for (const t of [0.3, 1.1, 1.9]) assert.ok(Math.abs(map(t) - t) < 0.03, `la de ${t}, en ${map(t).toFixed(3)}`);
+      assert.equal(movidas, 2);
+    });
+
+    test("entre anclas el tiempo se estira en línea recta y nada se cruza", () => {
+      let antes = -Infinity;
+      for (let t = 0; t <= 3; t += 0.01) {
+        const x = map(t);
+        assert.ok(x > antes, `en ${t.toFixed(2)}`);
+        antes = x;
+      }
+      assert.ok(Math.abs(map(0.9) - (map(0.7) + ((0.9 - 0.7) / (1.1 - 0.7)) * (map(1.1) - map(0.7)))) < 1e-9);
+    });
+
+    test("una nota que no se canta donde iría no se mueve por arrastre", () => {
+      // La 3.ª no se canta (se queda la 2.ª): no hay de dónde sacar su entrada.
+      const cantado2 = [[60, 0.3, 0.4], [62, 0.7, 0.8], [62, 1.5, 0.4], [60, 1.9, 0.6]];
+      const { map: m2 } = entryMap(trackPitch(voz(cantado2), SR), ref(partitura));
+      for (const t of [0.3, 0.7, 1.9]) assert.ok(Math.abs(m2(t) - t) < 0.05, `la de ${t}, en ${m2(t).toFixed(3)}`);
+      assert.ok(m2(1.1) > m2(0.7) && m2(1.1) < m2(1.5));
+    });
+
+    test("cantado igual que la partitura: no se mueve nada", () => {
+      const { map: m3, movidas: n3 } = entryMap(trackPitch(voz(partitura), SR), ref(partitura));
+      assert.equal(n3, 0);
+      for (const t of [0.3, 0.7, 1.1, 1.5, 1.9, 2.5]) assert.ok(Math.abs(m3(t) - t) < 1e-9);
+    });
   });
 });
