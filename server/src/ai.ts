@@ -1,10 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI, { APIError, RateLimitError } from 'openai';
 import { z } from 'zod';
 
 import { ApiError, errorClassName } from './errors.ts';
 
 /**
- * Asistente de arreglos vocales con Claude. La app manda la canción como texto (pulsos y notas) y una petición; la
+ * Asistente de arreglos vocales con OpenAI (como Baulify: Responses API, salida JSON estricta y `store: false`). La app manda la canción como texto (pulsos y notas) y una petición; la
  * respuesta es un JSON con una explicación, acordes nuevos (o ninguno) y las voces que se crean o reescriben.
  */
 
@@ -29,7 +29,8 @@ export interface AiProvider {
   arrange(request: AiRequest): Promise<AiAnswer>;
 }
 
-export const MODEL = 'claude-opus-5-5';
+/** GPT-6.1 Sol: casi tan bueno como Astra a una quinta parte del precio. Se cambia con `OPENAI_MODEL` en Render. */
+export const DEFAULT_MODEL = 'gpt-6.1-sol';
 
 const SYSTEM = `Eres el asistente de arreglos de «Vocify», una app con la que grupos vocales (a cappella o con poco acompañamiento) componen y ensayan sus voces.
 Recibes la canción como texto: tempo, compás, armadura, acordes y cada voz como lista inicio:duración:nota, con tiempos en PULSOS (negras) desde 0 y notas en notación científica (C4 = do central, F#4, Bb3).
@@ -74,37 +75,50 @@ const OUTPUT_SCHEMA = {
   },
 };
 
-export function createClaudeProvider(apiKey: string, client: Anthropic = new Anthropic({ apiKey, maxRetries: 2, timeout: 120_000 })): AiProvider {
+export type OpenAIClientLike = Pick<OpenAI, 'responses'>;
+
+export function createOpenAIProvider(
+  apiKey: string,
+  model: string = DEFAULT_MODEL,
+  client: OpenAIClientLike = new OpenAI({ apiKey, maxRetries: 1, timeout: 180_000 }),
+): AiProvider {
   return {
-    name: `Claude (${MODEL})`,
+    name: `OpenAI (${model})`,
     async arrange({ prompt, song }) {
-      let message: Anthropic.Beta.BetaMessage;
+      let response: Awaited<ReturnType<OpenAIClientLike['responses']['create']>> & { output_text?: string };
       try {
-        message = await client.beta.messages
-          .stream({
-            model: MODEL,
-            max_tokens: 32000,
-            // Si el modelo rechaza una petición, la API la reintenta con otro modelo (se avisa en la documentación).
-            betas: ['server-side-fallback-2026-07-01'],
-            fallbacks: 'default',
-            output_config: { effort: 'medium', format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
-            system: SYSTEM,
-            messages: [{ role: 'user', content: `CANCIÓN\n${song}\n\nPETICIÓN\n${prompt}` }],
-          })
-          .finalMessage();
+        response = await client.responses.create({
+          model,
+          instructions: SYSTEM,
+          input: `CANCIÓN
+${song}
+
+PETICIÓN
+${prompt}`,
+          reasoning: { effort: 'medium' },
+          max_output_tokens: 48_000,
+          // Ni OpenAI guarda la conversación ni se usa para entrenar (API).
+          store: false,
+          text: { format: { type: 'json_schema', name: 'arreglo', strict: true, schema: OUTPUT_SCHEMA } },
+        });
       } catch (error) {
-        console.error(`[voces] fallo al llamar a Claude: ${errorClassName(error)}${error instanceof Anthropic.APIError ? ` (${error.status ?? '?'})` : ''}`);
-        if (error instanceof Anthropic.RateLimitError) throw new ApiError('ai-unavailable', 'La IA está saturada; prueba en un minuto.');
+        // Nunca el mensaje del error: puede llevar la petición. Solo la clase y el estado.
+        console.error(`[voces] fallo al llamar a OpenAI: ${errorClassName(error)}${error instanceof APIError ? ` (${error.status ?? '?'})` : ''}`);
+        if (error instanceof RateLimitError) throw new ApiError('ai-unavailable', 'La IA está saturada; prueba en un minuto.');
         throw new ApiError('ai-failed', 'La IA no ha podido responder. Prueba otra vez.');
       }
-      if (message.stop_reason === 'refusal') return { reply: 'La IA no puede ayudar con esta petición.', chords: [], voices: [] };
-      if (message.stop_reason === 'max_tokens') {
+      // La negativa del modelo llega como contenido «refusal», no como texto.
+      const refused = (response.output ?? []).some((item) => item.type === 'message' && item.content.some((part) => part.type === 'refusal'));
+      if (refused || response.incomplete_details?.reason === 'content_filter') {
+        return { reply: 'La IA no puede ayudar con esta petición.', chords: [], voices: [] };
+      }
+      if (response.status === 'incomplete') {
         throw new ApiError('ai-failed', 'La respuesta era demasiado larga. Pide algo más acotado (por ejemplo, solo unos compases).');
       }
-      const text = message.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+      if (response.status === 'failed') throw new ApiError('ai-failed', 'La IA no ha podido responder. Prueba otra vez.');
       let parsed: unknown;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(response.output_text ?? '');
       } catch {
         throw new ApiError('ai-failed', 'No se pudo interpretar la respuesta de la IA.');
       }

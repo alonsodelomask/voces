@@ -28,7 +28,7 @@ export const conoce = {
       <div class="feature"><h3>🎧 Ensaya la tuya</h3><p>Solo o silencio por voz, velocidad lenta, metrónomo, cuenta atrás y bucle de los compases difíciles.</p></div>
       <div class="feature"><h3>✏️ Edita y compón</h3><p>Pon, mueve y alarga notas con el dedo; cambia acordes, transporta y deshaz. O tararea una melodía y se convierte en notas.</p></div>
       <div class="feature"><h3>👥 Comparte con el grupo</h3><p>Crea el grupo, invita con un código y las canciones se sincronizan solas para todos.</p></div>
-      <div class="feature"><h3>🤖 Asistente de arreglos</h3><p>Revisa cruces y saltos, propone acordes y crea voces nuevas. Con IA (Claude) para ideas más elaboradas.</p></div>
+      <div class="feature"><h3>🤖 Asistente de arreglos</h3><p>Revisa cruces y saltos, propone acordes y crea voces nuevas. Con IA para ideas más elaboradas.</p></div>
       <div class="feature"><h3>🎸 Acordes para instrumentos</h3><p>Si quieres, debajo aparece cómo tocar cada acorde en guitarra, ukelele o piano.</p></div>
       <div class="feature"><h3>📱 Vídeo para redes</h3><p>Graba un vídeo vertical con las líneas y el sonido, listo para compartir.</p></div>
     </section>
@@ -81,7 +81,7 @@ export const privacidad = {
         <li><b>Uso de la IA</b>: la fecha y hora de cada petición, solo para aplicar el límite diario.</li>
       </ul>
       <h3>Asistente con IA</h3>
-      <p>Cuando pides algo a la IA, enviamos tu petición y una descripción en texto de la canción abierta (notas, acordes, nombres de las voces y tempo) a Anthropic, que proporciona el modelo Claude, para generar la respuesta. No enviamos tu correo, tu nombre ni ningún audio. Las funciones «Revisar», «Acordes» y «Crear voces» del asistente funcionan en tu dispositivo sin enviar nada.</p>
+      <p>Cuando pides algo a la IA, enviamos tu petición y una descripción en texto de la canción abierta (notas, acordes, nombres de las voces y tempo) a OpenAI, que proporciona el modelo de IA, para generar la respuesta. Pedimos que no se guarde. No enviamos tu correo, tu nombre ni ningún audio. Las funciones «Revisar», «Acordes» y «Crear voces» del asistente funcionan en tu dispositivo sin enviar nada.</p>
       <h3>Datos técnicos</h3>
       <p>Como cualquier servicio en Internet, nuestros proveedores de alojamiento registran de forma automática datos técnicos de cada conexión (dirección IP, fecha, página pedida, tipo de navegador) para mantener el servicio seguro y resolver errores. No los usamos para perfilarte.</p>
 
@@ -102,21 +102,21 @@ export const privacidad = {
         <tr><th>Proveedor</th><th>Para qué</th><th>Dónde</th></tr>
         <tr><td>Supabase, Inc.</td><td>Cuentas, inicio de sesión, base de datos de grupos y canciones</td><td>Unión Europea (Fráncfort, Alemania)</td></tr>
         <tr><td>Render Services, Inc.</td><td>Servidor de la app y alojamiento de la web</td><td>Unión Europea (Fráncfort, Alemania); la web estática se sirve desde su red de distribución global</td></tr>
-        <tr><td>Anthropic Ireland, Limited</td><td>Modelo de IA Claude, solo cuando usas el asistente con IA</td><td>Estados Unidos</td></tr>
+        <tr><td>OpenAI Ireland Ltd.</td><td>Modelo de IA, solo cuando usas el asistente con IA</td><td>Irlanda y Estados Unidos</td></tr>
         <tr><td>Apple Distribution International Ltd.</td><td>«Iniciar sesión con Apple» y distribución de la app, si los usas</td><td>Según su propia política</td></tr>
         <tr><td>GitHub, Inc.</td><td>Copia de la web en GitHub Pages (solo si entras por esa dirección)</td><td>Estados Unidos</td></tr>
       </table></div>
       <p>Los miembros de tus grupos ven tu nombre visible y las canciones que compartes en ese grupo. No vendemos ni cedemos tus datos a nadie más, salvo obligación legal.</p>
 
       <h2>5. Transferencias fuera de la Unión Europea</h2>
-      <p>Cuando usas el asistente con IA, tu petición se procesa en Estados Unidos. Anthropic se compromete en su acuerdo de tratamiento de datos a aplicar las cláusulas contractuales tipo aprobadas por la Comisión Europea (Decisión 2021/914). Los demás proveedores con sede en Estados Unidos aplican igualmente las garantías del RGPD (cláusulas contractuales tipo u otros mecanismos válidos) para cualquier acceso desde fuera de la UE.</p>
+      <p>Cuando usas el asistente con IA, contratamos con OpenAI Ireland Ltd. (Irlanda), que trata la petición con otras empresas de su grupo y con sus subencargados en Estados Unidos y otros países mediante las cláusulas contractuales tipo aprobadas por la Comisión Europea (Decisión 2021/914). Los demás proveedores con sede en Estados Unidos aplican igualmente las garantías del RGPD (cláusulas contractuales tipo u otros mecanismos válidos) para cualquier acceso desde fuera de la UE.</p>
 
       <h2>6. Cuánto tiempo los guardamos</h2>
       <ul>
         <li><b>Cuenta, nombre y grupos:</b> mientras tengas la cuenta. Al borrarla se eliminan.</li>
         <li><b>Registro de uso de la IA:</b> 30 días; después se borra automáticamente.</li>
         <li><b>Código de Apple:</b> hasta que borres la cuenta y se revoque el acceso.</li>
-        <li><b>Peticiones a la IA en Anthropic:</b> Anthropic las borra en un máximo de 30 días, salvo que se marquen por incumplir sus normas de uso (hasta 2 años) o por obligación legal. No las usa para entrenar sus modelos.</li>
+        <li><b>Peticiones a la IA en OpenAI:</b> pedimos que no se guarden. OpenAI conserva un registro hasta 30 días para vigilar abusos, o más si la ley le obliga o si lo considera razonablemente necesario para proteger su servicio o a otras personas. No las usa para entrenar sus modelos.</li>
         <li><b>Canciones compartidas:</b> forman parte del grupo. Si borras tu cuenta o sales del grupo, las canciones que compartiste siguen disponibles para el resto de miembros, sin tu nombre. Puedes quitarlas del grupo antes desde <i>Mis canciones</i> (botón ⊘). Un grupo, con sus canciones, se elimina cuando sale su último miembro.</li>
         <li><b>Datos técnicos de conexión:</b> el tiempo limitado que conserven nuestros proveedores por seguridad.</li>
       </ul>

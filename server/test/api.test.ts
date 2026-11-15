@@ -229,8 +229,8 @@ describe('Configuración', () => {
   });
 
   it('las variables vacías cuentan como no puestas y Apple queda desactivado sin sus cuatro claves', () => {
-    const c = loadConfig({ SUPABASE_URL: SUPABASE_URL, VOCES_DATA: 'memory', ANTHROPIC_API_KEY: '', APPLE_TEAM_ID: 'ABCDE12345' });
-    assert.equal(c.anthropicKey, null);
+    const c = loadConfig({ SUPABASE_URL: SUPABASE_URL, VOCES_DATA: 'memory', OPENAI_API_KEY: '', APPLE_TEAM_ID: 'ABCDE12345' });
+    assert.equal(c.openai, null);
     assert.equal(c.apple, null);
     assert.deepEqual(c.appleMissing, ['APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_TOKEN_ENCRYPTION_KEY']);
     assert.ok(c.corsOrigins.includes('https://app.voces.invalid'));

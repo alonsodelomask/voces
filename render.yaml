@@ -2,7 +2,7 @@
 # NO contiene claves: las que llevan «sync: false» se pegan en el panel de Render al crear los servicios
 # (o después en Environment). Guía paso a paso: docs/BACKEND.md.
 services:
-  # API: IA de arreglos con Claude, borrar la cuenta y revocación de «Iniciar sesión con Apple».
+  # API: IA de arreglos con OpenAI (como Baulify), borrar la cuenta y revocación de «Iniciar sesión con Apple».
   - type: web
     name: voces-api
     runtime: node
@@ -21,7 +21,7 @@ services:
         value: 24.14.1
       - key: VOCES_DATA
         value: supabase
-      # «real» usa Claude si hay ANTHROPIC_API_KEY; «simulated» responde con datos ficticios sin gastar nada.
+      # «real» usa OpenAI si hay OPENAI_API_KEY; «simulated» responde con datos ficticios sin gastar nada.
       - key: VOCES_AI
         value: real
       # Peticiones a la IA por persona y día.
@@ -38,7 +38,10 @@ services:
       # Opcional: sólo si el proyecto usa todavía el secreto JWT heredado (HS256).
       - key: SUPABASE_JWT_SECRET
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: OPENAI_API_KEY
+        sync: false
+      # Opcional: otro modelo de OpenAI (por defecto gpt-6.1-sol; más barato, gpt-6.1-terra).
+      - key: OPENAI_MODEL
         sync: false
       # Revocar el token de «Iniciar sesión con Apple» al borrar la cuenta (norma 5.1.1(v)). Sin las cuatro, la
       # revocación queda desactivada y el borrado funciona igual. Cómo conseguirlas: docs/BACKEND.md, paso 7.

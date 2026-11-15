@@ -28,7 +28,7 @@ Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Androi
   - La letra del MusicXML entra con la partitura (la estrofa que toca en cada vuelta de una repetición) y la mezcla la lleva a cada toma. El MIDI la guarda como eventos de letra de karaoke, de la voz que la lleva (`lyricsVoice` en `model.ts`: la melodía, no una voz que solo la copia en algunas frases o que canta «uh»; si dudan, la que se oye en la grabación).
 - **Tararear**: cantas y se convierte en notas (detección de tono YIN en el dispositivo), con metrónomo, cuenta atrás y la opción de oír las otras voces mientras grabas.
 - **Asistente**: revisión de voces (paralelas, cruces, saltos, registros), propuesta de acordes para una melodía y armonización automática.
-- **IA (Claude)**: pídele cambios en lenguaje natural; ves la propuesta antes de aplicarla.
+- **IA (OpenAI)**: pídele cambios en lenguaje natural; ves la propuesta antes de aplicarla.
 - **Grupos en la nube**: cuentas con código por email, grupos con código de invitación y canciones compartidas que se sincronizan en tiempo real.
 - **Exportar** MIDI, proyecto `.json` y vídeo vertical 1080×1920.
 
@@ -64,7 +64,7 @@ node scripts/sitio/generar.mjs  # web pública y textos legales (public/conoce, 
 | `src/ai/` | Asistente por reglas y panel de IA |
 | `src/cloud/` | Cliente de Supabase y del servidor: cuentas, grupos, sincronización, IA |
 | `src/native.ts` | Puente con la app nativa (compartir archivos, Apple) |
-| `server/` | API en Render: IA con Claude, borrar la cuenta, revocación de Apple |
+| `server/` | API en Render: IA con OpenAI, borrar la cuenta, revocación de Apple |
 | `supabase/migrations/` | Esquema SQL con RLS |
 | `movil/` | App Expo (iOS/Android) que lleva la web dentro |
 | `render.yaml` | Blueprint de Render (API y web) |

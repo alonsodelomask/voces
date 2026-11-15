@@ -44,7 +44,7 @@ Supabase › **Authentication › Sign In / Providers › Apple** › *Client ID
 ### 5. Lo que ya estaba pendiente
 
 1. **Conectar la API a la base de datos:** Supabase › proyecto **Voces** › *Project Settings › API Keys* › copia la *Secret key* (`sb_secret_…`) → Render › **voces-api** › *Environment* › `SUPABASE_SERVICE_ROLE_KEY` › **Save changes**. En *Logs* debe desaparecer «MODO ESPERA».
-2. **Activar la IA:** https://console.anthropic.com › *API Keys* › crea «Vocify Render» (con 5-10 € de saldo sobra para empezar) → Render › **voces-api** › `ANTHROPIC_API_KEY`.
+2. **Activar la IA:** https://platform.openai.com › *API Keys* › crea «Vocify Render» → Render › **voces-api** › `OPENAI_API_KEY` (15/11/2026: OpenAI en vez de Claude).
 3. **Cuenta de demostración para Apple:** Supabase › *Authentication › Users › Add user*, con contraseña y *Auto Confirm User*.
 4. **Compilar con EAS** (como Baulify):
 

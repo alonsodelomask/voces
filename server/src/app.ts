@@ -74,7 +74,7 @@ export function createApp(deps: AppDeps) {
     return parsed.data;
   }
 
-  /** Ideas de arreglo con Claude. Límite: unas pocas por minuto y `aiDailyLimit` al día por persona. */
+  /** Ideas de arreglo con la IA (OpenAI). Límite: unas pocas por minuto y `aiDailyLimit` al día por persona. */
   app.post('/v1/ai', async (c) => {
     if (!deps.ai) throw new ApiError('not-configured', 'La IA todavía no está activada en el servidor.');
     const userId = c.get('userId');

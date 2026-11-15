@@ -15,7 +15,8 @@ const env = z.object({
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
   SUPABASE_JWT_SECRET: z.string().min(16).optional(),
-  ANTHROPIC_API_KEY: z.string().min(10).optional(),
+  OPENAI_API_KEY: z.string().min(10).optional(),
+  OPENAI_MODEL: z.string().regex(/^[a-z0-9][a-z0-9.\-]{1,63}$/).optional(),
   APPLE_TEAM_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
   APPLE_KEY_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
   APPLE_PRIVATE_KEY: z.string().min(100).optional(),
@@ -30,7 +31,7 @@ export type Config = {
   aiDailyLimit: number;
   corsOrigins: string[];
   supabase: { url: string; serviceRoleKey: string | null; jwtSecret: string | null };
-  anthropicKey: string | null;
+  openai: { key: string; model: string | null } | null;
   apple: { teamId: string; keyId: string; privateKey: string; clientId: string; encryptionKey: Buffer } | null;
   appleMissing: string[];
 };
@@ -62,7 +63,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     aiDailyLimit: v.VOCES_AI_DAILY_LIMIT,
     corsOrigins: [...APP_ORIGINS, ...(v.VOCES_CORS_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean)],
     supabase: { url: v.SUPABASE_URL, serviceRoleKey: v.SUPABASE_SERVICE_ROLE_KEY ?? null, jwtSecret: v.SUPABASE_JWT_SECRET ?? null },
-    anthropicKey: v.ANTHROPIC_API_KEY ?? null,
+    openai: v.OPENAI_API_KEY ? { key: v.OPENAI_API_KEY, model: v.OPENAI_MODEL ?? null } : null,
     apple:
       appleMissing.length === 0 && key
         ? { teamId: v.APPLE_TEAM_ID!, keyId: v.APPLE_KEY_ID!, privateKey: v.APPLE_PRIVATE_KEY!, clientId: v.APPLE_CLIENT_ID, encryptionKey: key }

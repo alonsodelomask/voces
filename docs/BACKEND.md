@@ -8,7 +8,7 @@ Decisión del usuario (12/11/2026): Voces se despliega con **el mismo proceso qu
 - **Render** (UE, Fráncfort): la API `voces-api` y la web `voces-web`.
 - **Expo + EAS**: la app de iPhone se compila y se sube a App Store Connect en la nube, sin necesidad de Mac.
 
-Este documento explica qué hay preparado en el repositorio y qué tienes que hacer tú. **Lo desplegado y lo pendiente está en «Estado», más abajo.** No se ha llamado a Claude ni a Apple de verdad: el servidor se ha probado con proveedores simulados y datos ficticios (`cd server; npm test`).
+Este documento explica qué hay preparado en el repositorio y qué tienes que hacer tú. **Lo desplegado y lo pendiente está en «Estado», más abajo.** No se ha llamado a OpenAI ni a Apple de verdad: el servidor se ha probado con proveedores simulados y datos ficticios (`cd server; npm test`).
 
 ## Cómo encaja todo
 
@@ -16,14 +16,14 @@ Este documento explica qué hay preparado en el repositorio y qué tienes que ha
 iPhone (app Expo: la web de Voces dentro de un WebView)
    │  sesión de Supabase (código por email o «Iniciar sesión con Apple» nativo)
    ├──────────────▶ Supabase (UE): Auth, grupos, canciones (RLS) y tiempo real
-   └─HTTPS + JWT──▶ voces-api (Render, Fráncfort) ──▶ Claude (Anthropic)   ← ideas de arreglo
+   └─HTTPS + JWT──▶ voces-api (Render, Fráncfort) ──▶ OpenAI              ← ideas de arreglo
                          │  verifica la sesión (JWKS)                       ──▶ Apple   ← revocar al borrar la cuenta
                          └──── service role ───▶ Supabase
 Navegador ─────────▶ voces-web (Render, sitio estático): la misma web + política de privacidad
 ```
 
 - La **app** es la misma web: `npm run build:movil` la compila en un único HTML que va dentro de la app (`movil/`). Así funciona sin conexión y cada versión de la App Store lleva su web.
-- Las claves de Anthropic, Apple y la *service role* de Supabase **solo viven en Render**. La app y la web solo conocen la URL de Supabase, su clave pública (*publishable*) y la URL de `voces-api`.
+- Las claves de OpenAI, Apple y la *service role* de Supabase **solo viven en Render**. La app y la web solo conocen la URL de Supabase, su clave pública (*publishable*) y la URL de `voces-api`.
 - La sincronización de canciones va directa entre la app y Supabase, protegida con RLS (cada persona solo ve los grupos en los que está). Comprobado con PGlite: alguien de fuera no puede ver, crear ni cambiar canciones de un grupo ajeno.
 
 ## Qué guarda cada tabla
@@ -40,18 +40,18 @@ Navegador ─────────▶ voces-web (Render, sitio estático): la
 
 ## La API (`server/`)
 
-Node 24 con TypeScript sin compilar, Hono, `jose`, `zod`, `@supabase/supabase-js` y el SDK oficial de Anthropic. Son las mismas versiones que `baulify-api`, más `@anthropic-ai/sdk` 1.8.0.
+Node 24 con TypeScript sin compilar, Hono, `jose`, `zod`, `@supabase/supabase-js` y el SDK oficial de OpenAI (`openai` 7.23.0). Son las mismas versiones que `baulify-api`.
 
 | Ruta | Qué hace |
 | --- | --- |
 | `GET /health` | `{"ok":true}` (comprobación de Render) |
-| `POST /v1/ai` | Ideas de arreglo con Claude Opus 5.5 y salida estructurada (JSON validado). Como mucho 6 por minuto y `VOCES_AI_DAILY_LIMIT` (40) al día por persona |
+| `POST /v1/ai` | Ideas de arreglo con OpenAI (GPT-6.1 Sol por defecto; `OPENAI_MODEL` lo cambia), salida JSON estricta y validada, sin guardar la conversación (`store: false`). Como mucho 6 por minuto y `VOCES_AI_DAILY_LIMIT` (40) al día por persona |
 | `POST /v1/apple/authorization` | Tras «Iniciar sesión con Apple»: canjea el código, **comprueba que es de esa cuenta** y guarda el token cifrado |
 | `DELETE /v1/account` | Revoca el acceso de Apple (o lo deja en cola si Apple no responde) y borra la cuenta; el grupo pasa al miembro más antiguo |
 
 Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las claves públicas del proyecto). Los errores llevan un mensaje en español que se puede enseñar tal cual; nunca claves ni respuestas de proveedores.
 
-**IA:** si Claude rechaza una petición, la API la reintenta automáticamente con otro modelo (`fallbacks: "default"`). Es una opción del SDK que se puede quitar en `server/src/ai.ts`.
+**IA (15/11/2026):** OpenAI en vez de Claude, por decisión del usuario, para usar la misma cuenta que Baulify. Si el modelo se niega, la app lo dice y no cambia nada.
 
 ## Costes
 
@@ -60,7 +60,7 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 | Supabase | Free | 0 € (500 MB de base; de sobra para un grupo) |
 | Render `voces-api` | Free | 0 €. Se duerme tras 15 minutos sin uso y la primera petición tarda ~1 minuto. **Starter: 7 $/mes** (no se duerme) |
 | Render `voces-web` | Static | 0 € |
-| Claude (Anthropic) | Pago por uso | Opus 5.5: 4 $/20 $ por millón de tokens. Una petición típica cuesta unos 0,05-0,15 $; con el límite de 40/día por persona, el peor caso para 5 personas es de unos 30 $/día |
+| OpenAI | Pago por uso (la cuenta de Baulify) | GPT-6.1 Sol: 2 $/10 $ por millón de tokens. Una petición típica cuesta unos 0,03-0,08 $; con el límite de 40/día por persona, el peor caso para 5 personas es de unos 15 $/día |
 | Apple Developer | Anual | 99 $/año (ya lo tienes por Baulify) |
 | EAS (Expo) | Free | 0 € (compilaciones de iOS en cola gratuita) |
 
@@ -76,7 +76,7 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
   - Usuarios: `txapelabrava@gmail.com` invitada el 15/11/2026 (entra con el enlace del correo; para tener contraseña, «¿La has olvidado?»).
   - Correo: sin SMTP propio, Supabase no deja editar las plantillas y manda un **enlace**, no un código. En la web el enlace inicia la sesión. En el iPhone se entra con Apple o con contraseña. Para que llegue un código, configura un SMTP (paso 1.6) y añade `{{ .Token }}` a las plantillas.
 - **Render: hecho.** Blueprint `voces` (desde el repositorio público, sin despliegue automático) con `voces-api` → https://voces-api-0wt8.onrender.com (Fráncfort, gratuito, en **modo espera** hasta que pongas `SUPABASE_SERVICE_ROLE_KEY`) y `voces-web` → **https://vocify.es** (y https://voces-web.onrender.com; se despliega solo con cada commit que toque la web). 15/11/2026: *Manual sync* aplicado, dominio y `www` (redirige) verificados con HTTPS, DNS en Hostinger (`A @ 216.24.57.1`, `CNAME www voces-web.onrender.com`). CORS comprobado: admite `vocify.es` y la app.
-- **Pendiente (tuyo):** `SUPABASE_SERVICE_ROLE_KEY` y `ANTHROPIC_API_KEY` en Render (sin ellas la API sigue en modo espera: entrar, grupos y canciones compartidas funcionan; la IA y borrar la cuenta, no), el buzón `soporte@vocify.es`, tus datos en las páginas legales, la cuenta de demostración, EAS y la revocación de Apple. Lista corta: [MANANA.md](MANANA.md).
+- **Pendiente (tuyo):** `SUPABASE_SERVICE_ROLE_KEY` y `OPENAI_API_KEY` en Render (sin ellas la API sigue en modo espera: entrar, grupos y canciones compartidas funcionan; la IA y borrar la cuenta, no), el buzón `soporte@vocify.es`, tus datos en las páginas legales, la cuenta de demostración, EAS y la revocación de Apple. Lista corta: [MANANA.md](MANANA.md).
 
 ## Guía paso a paso para ti
 
@@ -110,7 +110,7 @@ En **Project Settings › API Keys**:
 1. Los commits ya están en GitHub (`alonsodelomask/voces`).
 2. En [render.com](https://render.com) › **New › Blueprint** › repositorio **voces**. Render lee `render.yaml` y propone dos servicios: `voces-api` (Fráncfort, plan gratuito, carpeta `server`) y `voces-web` (sitio estático).
 3. Te pedirá las variables sin valor:
-   - `voces-api`: `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` (obligatorias). Deja vacías `SUPABASE_JWT_SECRET`, `ANTHROPIC_API_KEY` y las `APPLE_…` por ahora.
+   - `voces-api`: `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` (obligatorias). Deja vacías `SUPABASE_JWT_SECRET`, `OPENAI_API_KEY` y las `APPLE_…` por ahora.
    - `voces-web`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` y `VITE_API_URL` = `https://voces-api-0wt8.onrender.com` (si Render le da otro nombre, usa el que salga).
 4. **Apply**. Abre `https://voces-api-0wt8.onrender.com/health`: debe responder `{"ok":true}`. En **Logs** verás `IA: desactivada` hasta el paso 4.
 5. Abre `https://voces-web.onrender.com`: es la web con la nube activada. Entra con tu email, crea el grupo y comparte el código.
@@ -119,9 +119,9 @@ En **Project Settings › API Keys**:
 
 ### 4. Activar la IA
 
-1. En [console.anthropic.com](https://console.anthropic.com) › **API Keys** › crea una clave (por ejemplo «Voces Render») y añade saldo.
-2. Render › `voces-api` › **Environment** › `ANTHROPIC_API_KEY` = la clave. Guarda (Render reinicia).
-3. En **Logs** debe salir `IA: Claude (claude-opus-5-5)`. En la web: Editar › ✨ Asistente › IA.
+1. En [platform.openai.com](https://platform.openai.com) (la organización de Baulify) › **API Keys** › crea una clave (por ejemplo «Vocify Render»). El saldo es el de esa cuenta.
+2. Render › `voces-api` › **Environment** › `OPENAI_API_KEY` = la clave. Guarda con *Save, rebuild, and deploy*.
+3. En **Logs** debe salir `IA: OpenAI (gpt-6.1-sol)`. En la web: Editar › ✨ Asistente › IA.
 
 Para probar sin gastar, pon `VOCES_AI=simulated`: responde con una voz de ejemplo.
 
@@ -207,6 +207,6 @@ En Expo Go **no** funciona «Iniciar sesión con Apple» (firma con otro identif
 
 ## Lo que tendrás que hacer tú (seguridad)
 
-- Las claves secretas (service role, Anthropic, `.p8`, clave de cifrado) **solo en Render**. Si alguna se filtra, cámbiala en su servicio y en Render.
+- Las claves secretas (service role, OpenAI, `.p8`, clave de cifrado) **solo en Render**. Si alguna se filtra, cámbiala en su servicio y en Render.
 - `.env.local` y `server/.env` están en `.gitignore`: no los subas.
-- Revisa de vez en cuando el gasto en console.anthropic.com y pon un límite mensual en *Limits*.
+- Revisa de vez en cuando el gasto en platform.openai.com y pon un límite mensual en *Settings › Limits*.

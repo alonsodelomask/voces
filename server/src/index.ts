@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 
 import { AccountService } from './account.ts';
-import { createClaudeProvider, createSimulatedProvider, type AiProvider } from './ai.ts';
+import { createOpenAIProvider, createSimulatedProvider, type AiProvider } from './ai.ts';
 import { createAppleClient } from './apple/client.ts';
 import { createApp } from './app.ts';
 import { createVerifier } from './auth.ts';
@@ -22,7 +22,7 @@ export function buildServer(config: Config) {
 
   let ai: AiProvider | null = null;
   if (config.ai === 'simulated') ai = createSimulatedProvider();
-  else if (config.anthropicKey) ai = createClaudeProvider(config.anthropicKey);
+  else if (config.openai) ai = createOpenAIProvider(config.openai.key, config.openai.model ?? undefined);
 
   const apple = config.apple
     ? {
@@ -34,7 +34,7 @@ export function buildServer(config: Config) {
   const app = createApp({ verify, store, ai, aiDailyLimit: config.aiDailyLimit, account, corsOrigins: config.corsOrigins });
 
   // Avisos al arrancar: sólo nombres de variables, nunca valores.
-  if (!ai) console.warn('[voces] IA desactivada: falta ANTHROPIC_API_KEY (o pon VOCES_AI=simulated para probar).');
+  if (!ai) console.warn('[voces] IA desactivada: falta OPENAI_API_KEY (o pon VOCES_AI=simulated para probar).');
   if (!apple) console.warn(`[voces] revocación del token de Apple desactivada: faltan ${config.appleMissing.join(', ')}. Borrar la cuenta funciona igual, sin revocar.`);
   /** Limpieza: el registro de uso de la IA se guarda 30 días (lo dice la política de privacidad). */
   const purge = () => store.purgeAiUsage(new Date(Date.now() - 30 * 24 * 3600_000).toISOString());
