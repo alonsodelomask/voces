@@ -47,6 +47,8 @@ const ERRORS: Record<string, string> = {
   'Unable to validate email address': 'Ese correo no parece válido.',
   'For security purposes, you can only request this after': 'Espera unos segundos antes de pedir otro correo.',
   'Email rate limit exceeded': 'Se han enviado demasiados correos. Prueba dentro de un rato.',
+  // «Error sending confirmation / recovery / magic link / invite email»: el servidor de correo no lo ha aceptado.
+  'Error sending': 'No hemos podido enviar el correo. Prueba dentro de un rato y, si sigue fallando, escríbenos a soporte@vocify.es.',
   'New password should be different': 'La contraseña nueva tiene que ser distinta de la anterior.',
   invalid_code: 'Ese código de invitación no existe.',
   group_full: 'El grupo está completo.',
