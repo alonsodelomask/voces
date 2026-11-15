@@ -327,6 +327,7 @@ export async function groupSongs(groupId: string): Promise<RemoteSongMeta[]> {
     .from('songs')
     .select('id, title, updated_at, updated_by, group_id')
     .eq('group_id', groupId)
+    .is('deleted_at', null)
     .order('updated_at', { ascending: false });
   if (error) fail(error);
   return data ?? [];
@@ -354,6 +355,7 @@ export async function pushSong(song: Song): Promise<string> {
       .from('songs')
       .update({ title: song.title, data, updated_by: currentUser.id })
       .eq('id', song.id)
+      .is('deleted_at', null)
       .select('updated_at');
     if (error) fail(error);
     if (rows && rows.length) return rows[0].updated_at as string;
@@ -372,14 +374,98 @@ export async function deleteRemoteSong(id: string) {
   if (error) fail(error);
 }
 
+// ---------- Papelera del grupo (004_biblioteca_grupo.sql) ----------
+
+export interface TrashedSong {
+  id: string;
+  title: string;
+  deleted_at: string;
+  deleted_by: string | null;
+  group_id: string;
+}
+/** «Quitar del grupo»: desaparece para todos, pero se puede recuperar durante 30 días. */
+export async function trashRemoteSong(id: string) {
+  const { error } = await need().rpc('trash_group_song', { p_song: id });
+  if (error) fail(error);
+}
+/** La saca de la papelera del grupo. Devuelve su marca de tiempo nueva. */
+export async function restoreRemoteSong(id: string): Promise<string> {
+  const { data, error } = await need().rpc('restore_group_song', { p_song: id });
+  if (error) fail(error);
+  return data as string;
+}
+/** Lo que hay en la papelera de un grupo (lo de más de 30 días se borra al pedirlo). */
+export async function groupTrash(groupId: string): Promise<TrashedSong[]> {
+  const { data, error } = await need().rpc('group_trash', { p_group: groupId });
+  if (error) fail(error);
+  return ((data ?? []) as Omit<TrashedSong, 'group_id'>[]).map((t) => ({ ...t, group_id: groupId }));
+}
+
+// ---------- Historial de versiones ----------
+
+export interface SongVersion {
+  id: number;
+  title: string;
+  saved_by: string | null;
+  saved_at: string;
+}
+/** Versiones anteriores de una canción del grupo, de la más nueva a la más antigua (como mucho 50). */
+export async function songVersions(songId: string): Promise<SongVersion[]> {
+  const { data, error } = await need()
+    .from('song_versions')
+    .select('id, title, saved_by, saved_at')
+    .eq('song_id', songId)
+    .order('saved_at', { ascending: false })
+    .limit(50);
+  if (error) fail(error);
+  return data ?? [];
+}
+export async function fetchVersion(id: number): Promise<{ title: string; data: Song }> {
+  const { data, error } = await need().from('song_versions').select('title, data').eq('id', id).single();
+  if (error) fail(error);
+  return { title: data.title as string, data: data.data as Song };
+}
+/** Vuelve la canción del grupo a esa versión (la de ahora se guarda antes como versión). */
+export async function restoreVersion(id: number): Promise<string> {
+  const { data, error } = await need().rpc('restore_song_version', { p_version: id });
+  if (error) fail(error);
+  return data as string;
+}
+
+// ---------- Repertorios del grupo ----------
+
+export interface RemoteSetlist {
+  id: string;
+  group_id: string;
+  name: string;
+  song_ids: string[];
+  updated_at: string;
+}
+export async function groupSetlists(groupId: string): Promise<RemoteSetlist[]> {
+  const { data, error } = await need().from('group_setlists').select('id, group_id, name, song_ids, updated_at').eq('group_id', groupId);
+  if (error) fail(error);
+  return data ?? [];
+}
+export async function pushSetlist(r: { id: string; groupId: string; name: string; songIds: string[] }) {
+  if (!currentUser) throw new Error('Inicia sesión primero.');
+  const { error } = await need()
+    .from('group_setlists')
+    .upsert({ id: r.id, group_id: r.groupId, name: r.name, song_ids: r.songIds, updated_by: currentUser.id });
+  if (error) fail(error);
+}
+export async function deleteSetlist(id: string) {
+  const { error } = await need().from('group_setlists').delete().eq('id', id);
+  if (error) fail(error);
+}
+
 /** Avisa cuando alguien del grupo crea, cambia o borra una canción. */
-export function watchGroup(groupId: string, cb: (ev: { type: string; id: string; updated_by?: string | null; updated_at?: string }) => void): () => void {
+export function watchGroup(groupId: string, cb: (ev: { type: string; id: string; updated_by?: string | null; updated_at?: string; deleted_at?: string | null }) => void): () => void {
   if (!sb) return () => {};
   const ch: RealtimeChannel = sb
     .channel('songs-' + groupId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'songs', filter: `group_id=eq.${groupId}` }, (p) => {
-      const row = (p.new && Object.keys(p.new).length ? p.new : p.old) as { id: string; updated_by?: string; updated_at?: string };
-      cb({ type: p.eventType, id: row.id, updated_by: row.updated_by, updated_at: row.updated_at });
+      const row = (p.new && Object.keys(p.new).length ? p.new : p.old) as { id: string; updated_by?: string; updated_at?: string; deleted_at?: string | null };
+      cb({ type: p.eventType, id: row.id, updated_by: row.updated_by, updated_at: row.updated_at, deleted_at: row.deleted_at });
     })
     .subscribe();
   return () => {

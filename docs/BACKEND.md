@@ -72,6 +72,10 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
   - Migraciones `001_init.sql` y `002_servidor.sql` ejecutadas; las 7 tablas tienen RLS activado. Comprobado con la clave pública: sin sesión no se ve nada y las funciones de grupo y de borrado están bloqueadas.
   - Apple activado con el Client ID `es.vocify.app` (cambiado el 15/11/2026), sin *Secret Key*.
   - Migración `003_nombre_registro.sql` ejecutada (el perfil toma el nombre del registro).
+  - Migración `004_biblioteca_grupo.sql` **ejecutada** (15/11/2026, desde el SQL Editor; comprobado: RLS y reglas en `song_versions` y `group_setlists`, la columna `deleted_at`, el disparador y las 6 funciones) para la biblioteca del grupo:
+    - **historial de versiones**: una por sesión de trabajo o por persona, como mucho 50 por canción;
+    - **papelera del grupo**: «Quitar del grupo» la manda allí, se puede recuperar y a los 30 días se borra al pedir la papelera;
+    - **repertorios compartidos** (`group_setlists`).
   - Site URL `https://vocify.es/` y URL de retorno permitidas: `vocify.es`, `www.vocify.es`, GitHub Pages, `voces-web.onrender.com` y `localhost:5173`.
   - Usuarios: `txapelabrava@gmail.com` invitada el 15/11/2026 (entra con el enlace del correo; para tener contraseña, «¿La has olvidado?»).
   - Correo (15/11/2026): SMTP propio con el buzón `soporte@vocify.es` de Hostinger (`smtp.hostinger.com`, puerto 465; la contraseña la puso el usuario). Hasta 30 correos por hora. Las seis plantillas de *Authentication › Emails* están en español; las de confirmar la cuenta y entrar llevan el enlace y también el código (`{{ .Token }}`). La invitación explica cómo poner contraseña («¿La has olvidado?»).
@@ -87,6 +91,7 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 2. **SQL Editor** › **New query** › pega todo `supabase/migrations/001_init.sql` › **Run**. Debe decir «Success».
 3. Nueva consulta con `supabase/migrations/002_servidor.sql` › **Run**. Es **aditiva** e idempotente.
 3 bis. Nueva consulta con `supabase/migrations/003_nombre_registro.sql` › **Run** (13/11/2026: el perfil toma el nombre que se escribe al registrarse). Idempotente; solo cambia una función.
+3 ter. Nueva consulta con `supabase/migrations/004_biblioteca_grupo.sql` › **Run** (15/11/2026: historial de versiones, papelera del grupo y repertorios compartidos). Aditiva e idempotente: dos columnas vacías en `songs`, las tablas `song_versions` y `group_setlists` y funciones. **Va antes de publicar la web de esa fecha**, porque la web ya pide `deleted_at`. Probada con PGlite: `server/test/sql/biblioteca-grupo.test.ts`.
 4. **Table Editor**: deben aparecer `profiles`, `groups`, `group_members`, `songs`, `ai_usage`, `apple_tokens` y `apple_revocations`, todas con «RLS enabled».
 5. **Authentication › Sign In / Providers › Email**: activado. Para que llegue un **código** en vez de un enlace, en **Authentication › Emails › Templates** cambia *Magic Link* y *Confirm signup* para que incluyan `{{ .Token }}`, por ejemplo:
 

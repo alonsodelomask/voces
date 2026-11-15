@@ -1,6 +1,8 @@
 /**
- * Repertorios: listas ordenadas de canciones («Concierto de Navidad», «Ensayo del jueves»). Son de este dispositivo y
- * ocupan muy poco (solo nombres e ids), así que van en `localStorage`. Una canción puede estar en varios.
+ * Repertorios: listas ordenadas de canciones («Concierto de Navidad», «Ensayo del jueves»). Ocupan muy poco (solo
+ * nombres e ids), así que van en `localStorage`. Una canción puede estar en varios.
+ * Un repertorio puede compartirse con un grupo (`groupId`): entonces vive también en la nube (`group_setlists`), la
+ * biblioteca lo sube al cambiarlo y, al abrirse, trae lo que hayan cambiado los demás (`mergeShared`).
  */
 
 export interface Repertorio {
@@ -9,6 +11,8 @@ export interface Repertorio {
   songIds: string[];
   createdAt: number;
   updatedAt: number;
+  /** Grupo con el que se comparte, si se comparte. */
+  groupId?: string;
 }
 
 const KEY = 'voces.repertorios.v1';
@@ -86,11 +90,47 @@ export function moveInRepertorio(id: string, songId: string, dir: -1 | 1) {
   });
 }
 
-/** Una canción borrada del todo deja de estar en los repertorios. */
+/** Lo marca como compartido con un grupo (o deja de estarlo, con `undefined`). */
+export function setRepertorioGroup(id: string, groupId: string | undefined) {
+  return update(id, (r) => (r.groupId = groupId));
+}
+
+export interface SharedSetlist {
+  id: string;
+  name: string;
+  songIds: string[];
+  updatedAt: number;
+}
+
+/**
+ * Pone al día los repertorios de un grupo con lo que hay en la nube: los nuevos o más recientes se traen tal cual, y
+ * los de ese grupo que ya no están (los borró alguien) se quitan. Devuelve si ha cambiado algo.
+ */
+export function mergeShared(groupId: string, remote: SharedSetlist[]): boolean {
+  const list = loadRepertorios();
+  let changed = false;
+  for (const r of remote) {
+    const local = list.find((x) => x.id === r.id);
+    if (!local) {
+      list.push({ id: r.id, name: r.name, songIds: [...r.songIds], createdAt: r.updatedAt, updatedAt: r.updatedAt, groupId });
+      changed = true;
+    } else if (r.updatedAt > local.updatedAt || local.groupId !== groupId) {
+      Object.assign(local, { name: r.name, songIds: [...r.songIds], updatedAt: r.updatedAt, groupId });
+      changed = true;
+    }
+  }
+  const keep = list.filter((x) => x.groupId !== groupId || remote.some((r) => r.id === x.id));
+  if (keep.length !== list.length) changed = true;
+  if (changed) write(keep);
+  return changed;
+}
+
+/** Una canción borrada del todo deja de estar en los repertorios de este dispositivo (los del grupo no se tocan). */
 export function forgetSong(songIds: string[]) {
   const list = loadRepertorios();
   let changed = false;
   for (const r of list) {
+    if (r.groupId) continue;
     const before = r.songIds.length;
     r.songIds = r.songIds.filter((s) => !songIds.includes(s));
     if (r.songIds.length !== before) changed = true;

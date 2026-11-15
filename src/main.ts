@@ -134,9 +134,9 @@ function watchCurrent() {
   watchedGroup = g;
   unwatch = g ? cloud.watchGroup(g, onRemoteChange) : null;
 }
-async function onRemoteChange(ev: { type: string; id: string; updated_by?: string | null; updated_at?: string }) {
-  if (ev.type === 'DELETE') {
-    // Se ha quitado del grupo: aquí se queda como canción propia (y no se vuelve a subir).
+async function onRemoteChange(ev: { type: string; id: string; updated_by?: string | null; updated_at?: string; deleted_at?: string | null }) {
+  if (ev.type === 'DELETE' || ev.deleted_at) {
+    // Se ha quitado del grupo (a la papelera del grupo, o borrada): aquí se queda como canción propia (y no se vuelve a subir).
     const local = ev.id === song.id ? song : loadSongs().find((x) => x.id === ev.id);
     if (!local?.groupId) return;
     local.groupId = undefined;
@@ -1111,6 +1111,13 @@ function openLib() {
       await syncNow();
       watchCurrent();
       renderPanel();
+    },
+    adopt: (s) => {
+      // La grabación es de este dispositivo y no viaja al grupo: se conserva.
+      const local = s.id === song.id ? song : getSong(s.id);
+      if (local?.audioTrack) s.audioTrack = local.audioTrack;
+      if (s.id === song.id) setSong(s);
+      saveSong(s);
     },
     toast,
     exportMidi,

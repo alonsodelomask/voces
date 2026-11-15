@@ -109,6 +109,11 @@ Borrar no es definitivo: lo borrado **se guarda 90 días** y se puede recuperar;
 6. **Las canciones del grupo, en la misma lista**, marcadas con ☁. *Grupo y cuenta* se queda para miembros e invitación.
 
 ### Fase 2: la nube
+
+**Hecha el 15/11/2026**:
+- migración `supabase/migrations/004_biblioteca_grupo.sql`, probada con PGlite en `server/test/sql/biblioteca-grupo.test.ts`;
+- biblioteca: ⋯ › Historial, la papelera del grupo dentro de la Papelera y «Compartir con el grupo» en el ⋯ de cada repertorio;
+- prueba de navegador `26-biblioteca-grupo.js`, sobre una nube de mentira que solo existe en desarrollo.
 - Historial de versiones de las canciones del grupo, en una tabla nueva con su migración aditiva, con «Volver a esta versión».
 - Papelera del grupo: quitar una canción la deja recuperable unos días.
 - Repertorios del grupo, compartidos entre todos.

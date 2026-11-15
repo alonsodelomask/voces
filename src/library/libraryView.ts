@@ -11,9 +11,11 @@ import {
   deleteRepertorio,
   forgetSong,
   loadRepertorios,
+  mergeShared,
   moveInRepertorio,
   removeFromRepertorio,
   renameRepertorio,
+  setRepertorioGroup,
   type Repertorio,
 } from './repertorios';
 
@@ -36,12 +38,21 @@ export interface LibraryDeps {
   openAnother: () => void;
   /** Compartir la abierta con un grupo (guarda y sincroniza). */
   shareCurrent: (groupId: string) => Promise<void>;
+  /** Guarda la versión del grupo que se acaba de traer; si es la abierta, la pone en su lugar (con su grabación). */
+  adopt: (s: Song) => void;
   toast: (msg: string, error?: boolean) => void;
   exportMidi: (s: Song) => void;
   exportProject: (s: Song) => void;
   playQueue: (ids: string[]) => void;
   create: { newSong: () => void; importFile: () => void; mix: () => void; hum: () => void };
 }
+
+/**
+ * La nube que usa la biblioteca. Solo en desarrollo, las pruebas pueden poner una de mentira en memoria
+ * (`window.__vocesNube`, ver scripts/pruebas/26-biblioteca-grupo.js) para probar el grupo sin Supabase.
+ */
+type Nube = typeof cloud;
+const nube = (): Nube => (import.meta.env.DEV && (window as unknown as { __vocesNube?: Nube }).__vocesNube) || cloud;
 
 type Section = 'all' | 'trash' | `rep:${string}`;
 
@@ -71,9 +82,11 @@ let dlg: HTMLDialogElement;
 let section: Section = 'all';
 const query: Query & ViewPrefs = { q: '', where: '', audio: false, lyrics: false, ...loadPrefs() };
 const selected = new Set<string>();
-/** Canciones de los grupos (de la última consulta) y nombres de los grupos. */
+/** Canciones de los grupos (de la última consulta), su papelera y los nombres de los grupos y de sus miembros. */
 let remote: LibItem[] = [];
+let remoteTrash: LibItem[] = [];
 let groupNames = new Map<string, string>();
+const memberNames = new Map<string, string>();
 let remoteLoading = false;
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => dlg.querySelector(sel) as T;
@@ -178,11 +191,16 @@ function repOf(sec: Section): Repertorio | undefined {
 }
 
 function baseItems(): LibItem[] {
-  if (section === 'trash') return peekTrash().map(itemFromSong);
+  if (section === 'trash') {
+    const local = peekTrash().map(itemFromSong);
+    const have = new Set(local.map((i) => i.id));
+    return [...local, ...remoteTrash.filter((r) => !have.has(r.id))];
+  }
   const local = peekSongs().map(itemFromSong);
   const rep = repOf(section);
   if (rep) {
-    const byId = new Map(local.map((i) => [i.id, i]));
+    // En un repertorio del grupo puede haber canciones del grupo que aún no están en este dispositivo.
+    const byId = new Map([...remote, ...local].map((i) => [i.id, i]));
     return rep.songIds.map((id) => byId.get(id)).filter((i): i is LibItem => !!i);
   }
   const have = new Set(local.map((i) => i.id));
@@ -196,12 +214,37 @@ function visible(items = baseItems()): LibItem[] {
 }
 
 async function loadRemote() {
-  if (!cloud.cloudEnabled || !cloud.user() || remoteLoading) return;
+  if (!nube().cloudEnabled || !nube().user() || remoteLoading) return;
   remoteLoading = true;
   try {
-    const groups = await cloud.myGroups();
+    const groups = await nube().myGroups();
     groupNames = new Map(groups.map((g) => [g.id, g.name]));
-    const lists = await Promise.all(groups.map((g) => cloud.groupSongs(g.id).catch(() => [])));
+    const [lists, trashes, setlists, people] = await Promise.all([
+      Promise.all(groups.map((g) => nube().groupSongs(g.id).catch(() => []))),
+      // La papelera y los repertorios del grupo necesitan la migración 004: sin ella, como antes.
+      Promise.all(groups.map((g) => nube().groupTrash(g.id).catch(() => null))),
+      Promise.all(groups.map((g) => nube().groupSetlists(g.id).catch(() => null))),
+      Promise.all(groups.map((g) => nube().members(g.id).catch(() => []))),
+    ]);
+    people.flat().forEach((m) => memberNames.set(m.user_id, m.display_name));
+    remoteTrash = trashes.flatMap((t) => t ?? []).map((t) => ({
+      id: t.id,
+      title: t.title,
+      voices: [],
+      groupId: t.group_id,
+      createdAt: Date.parse(t.deleted_at),
+      updatedAt: Date.parse(t.deleted_at),
+      deletedAt: Date.parse(t.deleted_at),
+      by: t.deleted_by ? (memberNames.get(t.deleted_by) ?? 'alguien del grupo') : undefined,
+      audio: false,
+      lyrics: false,
+      lyricText: '',
+      remote: true,
+    }));
+    groups.forEach((g, i) => {
+      const list = setlists[i];
+      if (list) mergeShared(g.id, list.map((r) => ({ id: r.id, name: r.name, songIds: r.song_ids, updatedAt: Date.parse(r.updated_at) })));
+    });
     remote = lists.flat().map((m) => ({
       id: m.id,
       title: m.title,
@@ -239,12 +282,14 @@ function render() {
   // Barra lateral.
   dlg.querySelectorAll<HTMLElement>('.bib-sec').forEach((b) => b.classList.toggle('on', b.dataset.sec === section));
   $('[data-count="all"]').textContent = String(liveIds.size);
-  $('[data-count="trash"]').textContent = String(peekTrash().length);
+  const localTrash = new Set(peekTrash().map((s) => s.id));
+  $('[data-count="trash"]').textContent = String(localTrash.size + remoteTrash.filter((r) => !localTrash.has(r.id)).length);
+  const remoteIds = new Set(remote.map((r) => r.id));
   $('.bib-reps').innerHTML = reps.length
     ? reps
         .map(
           (r) => `<div class="bib-rep${section === `rep:${r.id}` ? ' on' : ''}">
-            <button class="bib-sec" data-sec="rep:${esc(r.id)}"><span>🎼 ${esc(r.name)}</span><small>${r.songIds.filter((id) => liveIds.has(id)).length}</small></button>
+            <button class="bib-sec" data-sec="rep:${esc(r.id)}" ${r.groupId ? `title="Compartido con «${esc(groupName(r.groupId))}»"` : ''}><span>${r.groupId ? '☁' : '🎼'} ${esc(r.name)}</span><small>${r.songIds.filter((id) => liveIds.has(id) || remoteIds.has(id)).length}</small></button>
             <button class="bib-icon" data-rep-more="${esc(r.id)}" aria-label="Más acciones del repertorio «${esc(r.name)}»">⋯</button>
           </div>`,
         )
@@ -252,7 +297,7 @@ function render() {
     : '<p class="bib-hint">Junta canciones para un concierto o un ensayo.</p>';
 
   // Cabecera.
-  const title = section === 'trash' ? 'Papelera' : rep ? rep.name : 'Todas las canciones';
+  const title = section === 'trash' ? 'Papelera' : rep ? `${rep.name}${rep.groupId ? ` · ☁ ${groupName(rep.groupId)}` : ''}` : 'Todas las canciones';
   $('#bib-title').textContent = title;
   const n = all.length;
   $('#bib-count').textContent =
@@ -300,8 +345,8 @@ function render() {
       : `<button class="btn small" data-bulk="rep">🎼 Añadir a un repertorio</button>${rep ? '<button class="btn small" data-bulk="unrep">Quitar del repertorio</button>' : ''}<button class="btn small" data-bulk="copy">⧉ Duplicar</button><button class="btn small" data-bulk="trash">🗑 A la papelera</button>`;
   const extra = $('.bib-extra');
   extra.innerHTML =
-    section === 'trash' && all.length
-      ? `<button class="btn small danger" data-act="empty-trash">Vaciar la papelera</button>`
+    section === 'trash' && localTrash.size
+      ? `<button class="btn small danger" data-act="empty-trash" title="Solo lo de este dispositivo; lo del grupo se borra solo a los ${TRASH_DAYS} días">Vaciar la papelera</button>`
       : rep && rep.songIds.length
         ? `<button class="btn small primary" data-act="play-rep">▶ Tocar todo seguido</button>`
         : '';
@@ -318,7 +363,8 @@ function render() {
 }
 
 function emptyText(total: number, rep?: Repertorio): string {
-  if (section === 'trash') return `<p><b>La papelera está vacía.</b></p><p>Lo que mandes aquí se guarda ${TRASH_DAYS} días, con su grabación, por si quieres recuperarlo.</p>`;
+  if (section === 'trash')
+    return `<p><b>La papelera está vacía.</b></p><p>Lo que mandes aquí se guarda ${TRASH_DAYS} días, con su grabación, por si quieres recuperarlo. Lo que se quite de un grupo, también: cualquiera del grupo puede recuperarlo.</p>`;
   if (rep && !rep.songIds.length)
     return `<p><b>«${esc(rep.name)}» está vacío.</b></p><p>Añade canciones desde <i>Todas las canciones</i>: ⋯ › <i>Añadir a un repertorio</i>, o selecciona varias.</p>`;
   if (total) return '<p>Ninguna canción coincide con la búsqueda o los filtros.</p><p><button class="bib-link" data-act="clear">Quitar la búsqueda y los filtros</button></p>';
@@ -333,11 +379,11 @@ function mini(it: LibItem): string {
 
 function row(it: LibItem, current: boolean): string {
   const t = esc(it.title || 'Sin título');
-  const voices = it.voices.length ? esc(it.voices.join(' · ')) : it.remote ? 'Del grupo · sin descargar' : 'Sin voces';
+  const voices = it.voices.length ? esc(it.voices.join(' · ')) : it.remote ? (it.deletedAt ? 'En la papelera del grupo' : 'Del grupo · sin descargar') : 'Sin voces';
   const badges = [it.audio ? '<span class="bib-badge" title="Tiene grabación">🎙</span>' : '', it.lyrics ? '<span class="bib-badge" title="Tiene letra">📝</span>' : ''].join('');
   const when =
     section === 'trash' && it.deletedAt
-      ? `Borrada ${relativeDate(it.deletedAt)} · ${daysLeft(it.deletedAt, TRASH_DAYS)} días para recuperarla`
+      ? `${it.remote ? `Quitada del grupo${it.by ? ` por ${it.by}` : ''}` : 'Borrada'} ${relativeDate(it.deletedAt)} · ${daysLeft(it.deletedAt, TRASH_DAYS)} días para recuperarla`
       : relativeDate(it.updatedAt);
   const where = it.groupId ? `☁ ${esc(groupName(it.groupId))}` : 'En este dispositivo';
   const check = it.remote
@@ -380,16 +426,19 @@ function closePop() {
 
 function songMenu(it: LibItem): string {
   const b = (a: string, label: string, cls = '') => `<button role="menuitem" class="${cls}" data-a="${a}" data-id="${esc(it.id)}">${label}</button>`;
-  if (it.remote) return b('open', '⇣ Abrir (descargar)');
-  if (section === 'trash') return b('restore', '↩ Recuperar') + b('purge', 'Borrar para siempre', 'danger');
   const rep = repOf(section);
-  const logged = cloud.cloudEnabled && !!cloud.user();
+  const inRep = rep ? b('up', '↑ Subir en el repertorio') + b('down', '↓ Bajar en el repertorio') + b('unrep', 'Quitar del repertorio') : '';
+  if (it.remote && it.deletedAt) return b('grestore', '↩ Recuperar en el grupo');
+  if (it.remote) return b('open', '⇣ Abrir (descargar)') + inRep;
+  if (section === 'trash') return b('restore', '↩ Recuperar') + b('purge', 'Borrar para siempre', 'danger');
+  const logged = nube().cloudEnabled && !!nube().user();
   return [
     b('open', 'Abrir'),
     b('rename', '✎ Cambiar el nombre'),
     b('copy', '⧉ Duplicar'),
     b('rep', '🎼 Añadir a un repertorio'),
-    rep ? b('up', '↑ Subir en el repertorio') + b('down', '↓ Bajar en el repertorio') + b('unrep', 'Quitar del repertorio') : '',
+    inRep,
+    logged && it.groupId ? b('history', '🕘 Historial de versiones') : '',
     logged ? (it.groupId ? b('unshare', '⊘ Quitar del grupo') : b('share', '☁ Compartir con el grupo')) : '',
     '<hr />',
     b('midi', 'Exportar MIDI'),
@@ -401,7 +450,13 @@ function songMenu(it: LibItem): string {
 
 function repMenu(r: Repertorio): string {
   const b = (a: string, label: string, cls = '') => `<button role="menuitem" class="${cls}" data-ra="${a}" data-id="${esc(r.id)}">${label}</button>`;
-  return b('play', '▶ Tocar todo seguido') + b('rename', '✎ Cambiar el nombre') + b('delete', 'Borrar el repertorio', 'danger');
+  const logged = nube().cloudEnabled && !!nube().user();
+  return (
+    b('play', '▶ Tocar todo seguido') +
+    b('rename', '✎ Cambiar el nombre') +
+    (logged && !r.groupId ? b('share', '☁ Compartir con el grupo') : '') +
+    b('delete', r.groupId ? 'Borrar el repertorio (para todo el grupo)' : 'Borrar el repertorio', 'danger')
+  );
 }
 
 function createMenu(): string {
@@ -495,7 +550,7 @@ async function openItem(it: LibItem) {
   if (it.remote) {
     try {
       deps.toast(`Descargando «${it.title}»…`);
-      const s = await cloud.fetchSong(it.id);
+      const s = await nube().fetchSong(it.id);
       dlg.close();
       deps.openDownloaded(s);
     } catch (e) {
@@ -519,6 +574,19 @@ function live(id: string): Song | undefined {
 async function songAction(a: string, id: string) {
   const it = baseItems().find((i) => i.id === id);
   if (a === 'open' && it) return openItem(it);
+  if (a === 'grestore' && it) {
+    await groupRestore(it);
+    return render();
+  }
+  if ((a === 'up' || a === 'down' || a === 'unrep') && it?.remote) {
+    const rep = repOf(section);
+    if (rep) {
+      if (a === 'unrep') removeFromRepertorio(rep.id, [id]);
+      else moveInRepertorio(rep.id, id, a === 'up' ? -1 : 1);
+      void syncRep(rep.id);
+    }
+    return render();
+  }
   const s = live(id);
   if (!s) return render();
   const isCur = id === deps.current().id;
@@ -545,14 +613,23 @@ async function songAction(a: string, id: string) {
     case 'up':
     case 'down': {
       const rep = repOf(section);
-      if (rep) moveInRepertorio(rep.id, id, a === 'up' ? -1 : 1);
+      if (rep) {
+        moveInRepertorio(rep.id, id, a === 'up' ? -1 : 1);
+        void syncRep(rep.id);
+      }
       break;
     }
     case 'unrep': {
       const rep = repOf(section);
-      if (rep) removeFromRepertorio(rep.id, [id]);
+      if (rep) {
+        removeFromRepertorio(rep.id, [id]);
+        void syncRep(rep.id);
+      }
       break;
     }
+    case 'history':
+      await history(s, isCur);
+      break;
     case 'share':
       await share(s, isCur);
       break;
@@ -591,7 +668,10 @@ async function bulk(a: string) {
       break;
     case 'unrep': {
       const rep = repOf(section);
-      if (rep) removeFromRepertorio(rep.id, ids);
+      if (rep) {
+        removeFromRepertorio(rep.id, ids);
+        void syncRep(rep.id);
+      }
       break;
     }
     case 'copy':
@@ -699,7 +779,14 @@ async function chooseRepertorio(ids: string[]): Promise<boolean> {
     target = createRepertorio(name);
   }
   const added = addToRepertorio(target.id, ids);
-  deps.toast(added ? `Añadida${added === 1 ? '' : 's'} ${added} a «${target.name}».` : `Ya estaba${n === 1 ? '' : 'n'} en «${target.name}».`);
+  let note = '';
+  if (target.groupId) {
+    void syncRep(target.id);
+    // Las que no están en ese grupo, los demás no las tienen: se avisa.
+    const outside = ids.filter((id) => getSong(id)?.groupId !== target!.groupId).length;
+    if (outside) note = ` ${outside === 1 ? 'Una no está' : `${outside} no están`} en el grupo: los demás no ${outside === 1 ? 'la verán' : 'las verán'} hasta que ${outside === 1 ? 'la compartas' : 'las compartas'}.`;
+  }
+  deps.toast((added ? `Añadida${added === 1 ? '' : 's'} ${added} a «${target.name}».` : `Ya estaba${n === 1 ? '' : 'n'} en «${target.name}».`) + note);
   return true;
 }
 
@@ -720,19 +807,71 @@ async function repAction(a: string, id: string) {
   if (a === 'rename') {
     const f = await form({ title: 'Cambiar el nombre', fields: [{ name: 'name', label: 'Nombre', value: r.name }], okLabel: 'Guardar' });
     const name = f?.values.name?.trim();
-    if (name) renameRepertorio(id, name);
+    if (name) {
+      renameRepertorio(id, name);
+      void syncRep(id);
+    }
+  }
+  if (a === 'share') {
+    const g = await pickGroup();
+    if (g) {
+      setRepertorioGroup(id, g.id);
+      groupNames.set(g.id, g.name);
+      if (await syncRep(id)) {
+        const outside = r.songIds.filter((sid) => getSong(sid)?.groupId !== g.id).length;
+        deps.toast(
+          `«${r.name}» compartido con «${g.name}».` +
+            (outside ? ` ${outside === 1 ? 'Una canción no está' : `${outside} canciones no están`} en el grupo: compártelas para que los demás las vean.` : ''),
+        );
+      } else setRepertorioGroup(id, undefined);
+    }
   }
   if (a === 'delete') {
-    if (await confirmDialog('Borrar el repertorio', `¿Borrar «${r.name}»? Las canciones no se borran: siguen en la biblioteca.`, 'Borrar')) {
-      deleteRepertorio(id);
-      if (section === `rep:${id}`) section = 'all';
+    const text = r.groupId
+      ? `¿Borrar «${r.name}»? Está compartido: desaparece para todo el grupo. Las canciones no se borran.`
+      : `¿Borrar «${r.name}»? Las canciones no se borran: siguen en la biblioteca.`;
+    if (await confirmDialog('Borrar el repertorio', text, 'Borrar')) {
+      try {
+        if (r.groupId) await nube().deleteSetlist(id);
+        deleteRepertorio(id);
+        if (section === `rep:${id}`) section = 'all';
+      } catch (e) {
+        deps.toast((e as Error).message || 'No se ha podido borrar el repertorio del grupo.', true);
+      }
     }
   }
   render();
 }
 
-function playRep(r: Repertorio) {
+/** Sube un repertorio compartido tal como está ahora. Devuelve si ha ido bien (o si no hacía falta). */
+async function syncRep(id: string): Promise<boolean> {
+  const r = loadRepertorios().find((x) => x.id === id);
+  if (!r?.groupId) return true;
+  try {
+    await nube().pushSetlist({ id: r.id, groupId: r.groupId, name: r.name, songIds: r.songIds });
+    return true;
+  } catch (e) {
+    deps.toast(`No se ha podido guardar «${r.name}» en el grupo: ${(e as Error).message}`, true);
+    return false;
+  }
+}
+
+async function playRep(r: Repertorio) {
   const live = new Set(peekSongs().map((s) => s.id));
+  const fromGroup = new Set(remote.map((x) => x.id));
+  // Las del grupo que aún no están en este dispositivo se descargan antes.
+  const missing = r.songIds.filter((id) => !live.has(id) && fromGroup.has(id));
+  if (missing.length) {
+    deps.toast(`Descargando ${missing.length} ${missing.length === 1 ? 'canción' : 'canciones'} del grupo…`);
+    for (const id of missing) {
+      try {
+        saveSong(await nube().fetchSong(id));
+        live.add(id);
+      } catch {
+        /* sin conexión: se salta */
+      }
+    }
+  }
   const ids = r.songIds.filter((id) => live.has(id));
   if (!ids.length) return deps.toast(`«${r.name}» no tiene canciones.`, true);
   dlg.close();
@@ -740,7 +879,7 @@ function playRep(r: Repertorio) {
 }
 
 async function pickGroup(): Promise<cloud.Group | null> {
-  const groups = await cloud.myGroups();
+  const groups = await nube().myGroups();
   if (!groups.length) {
     deps.toast('Aún no estás en ningún grupo: créalo o únete en Menú › Grupo y cuenta.', true);
     return null;
@@ -761,7 +900,7 @@ async function share(s: Song, isCur: boolean) {
     if (isCur) await deps.shareCurrent(g.id);
     else {
       s.groupId = g.id;
-      s.remoteUpdatedAt = await cloud.pushSong(s);
+      s.remoteUpdatedAt = await nube().pushSong(s);
       saveSong(s);
     }
     groupNames.set(g.id, g.name);
@@ -772,10 +911,16 @@ async function share(s: Song, isCur: boolean) {
 }
 
 async function unshare(s: Song, isCur: boolean) {
-  if (!(await confirmDialog('Quitar del grupo', `¿Quitar «${s.title}» del grupo? Desaparecerá para todos los miembros. En este dispositivo se queda como canción tuya.`, 'Quitar')))
+  if (
+    !(await confirmDialog(
+      'Quitar del grupo',
+      `¿Quitar «${s.title}» del grupo? Desaparecerá para todos los miembros, pero cualquiera del grupo podrá recuperarla durante ${TRASH_DAYS} días desde la Papelera. En este dispositivo se queda como canción tuya.`,
+      'Quitar',
+    ))
+  )
     return;
   try {
-    await cloud.deleteRemoteSong(s.id);
+    await nube().trashRemoteSong(s.id);
     s.groupId = undefined;
     s.remoteUpdatedAt = undefined;
     if (isCur) {
@@ -787,4 +932,90 @@ async function unshare(s: Song, isCur: boolean) {
   } catch (e) {
     deps.toast((e as Error).message || 'No se ha podido quitar del grupo.', true);
   }
+}
+
+// ---------------- Papelera del grupo ----------------
+
+/** Recupera en el grupo una canción de su papelera, y la de este dispositivo vuelve a ser la del grupo. */
+async function groupRestore(it: LibItem) {
+  try {
+    await nube().restoreRemoteSong(it.id);
+    const s = await nube().fetchSong(it.id);
+    deps.adopt(s);
+    remoteTrash = remoteTrash.filter((r) => r.id !== it.id);
+    deps.toast(`«${it.title}» ha vuelto al grupo «${groupName(it.groupId)}».`);
+    void loadRemote();
+  } catch (e) {
+    deps.toast((e as Error).message || 'No se ha podido recuperar.', true);
+  }
+}
+
+// ---------------- Historial de versiones ----------------
+
+const fmtDate = (t: number) =>
+  new Date(t).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+/** Las versiones anteriores de una canción del grupo: abrir una como copia o volver a ella. */
+async function history(s: Song, isCur: boolean) {
+  let list: cloud.SongVersion[];
+  try {
+    list = await nube().songVersions(s.id);
+  } catch (e) {
+    return deps.toast((e as Error).message || 'No se ha podido leer el historial.', true);
+  }
+  const d = document.createElement('dialog');
+  d.className = 'dlg bib-history';
+  const who = (id: string | null) => (id ? (memberNames.get(id) ?? 'alguien del grupo') : 'alguien del grupo');
+  d.innerHTML = `<h2>Historial de «${esc(s.title)}»</h2>
+    <p class="intro">Cada vez que alguien del grupo la cambia se guarda cómo estaba: una versión por sesión de trabajo, las 50 últimas.</p>
+    ${
+      list.length
+        ? `<div class="bib-versions">${list
+            .map(
+              (v) => `<div class="bib-version">
+                <span><b>${esc(fmtDate(Date.parse(v.saved_at)))}</b><small>${esc(relativeDate(Date.parse(v.saved_at)))} · ${esc(who(v.saved_by))}${v.title !== s.title ? ` · «${esc(v.title)}»` : ''}</small></span>
+                <span class="bib-version-acts"><button class="btn small" data-v-copy="${v.id}">Abrir como copia</button><button class="btn small" data-v-restore="${v.id}">Volver a esta</button></span>
+              </div>`,
+            )
+            .join('')}</div>`
+        : '<p class="bib-hint">Todavía no hay versiones anteriores: se guardan a partir de ahora, cuando alguien la cambie.</p>'
+    }
+    <form method="dialog" class="row"><button class="btn" value="cancel">Cerrar</button></form>`;
+  document.body.appendChild(d);
+  d.addEventListener('close', () => d.remove());
+  d.addEventListener('click', async (e) => {
+    const el = e.target as HTMLElement;
+    const copyId = el.closest<HTMLElement>('[data-v-copy]')?.dataset.vCopy;
+    const restoreId = el.closest<HTMLElement>('[data-v-restore]')?.dataset.vRestore;
+    try {
+      if (copyId) {
+        const v = await nube().fetchVersion(Number(copyId));
+        const when = list.find((x) => String(x.id) === copyId)!.saved_at;
+        const c: Song = { ...JSON.parse(JSON.stringify(v.data)), id: uid(), title: `${v.title} (versión del ${fmtDate(Date.parse(when))})`, groupId: undefined, remoteUpdatedAt: undefined, audioTrack: undefined };
+        c.createdAt = c.updatedAt = Date.now();
+        saveSong(c);
+        d.close();
+        dlg.close();
+        deps.open(c);
+        deps.toast(`Abierta como copia: «${c.title}». La del grupo no cambia.`);
+      }
+      if (restoreId) {
+        const ok = await confirmDialog(
+          'Volver a esta versión',
+          `«${s.title}» volverá a como estaba el ${fmtDate(Date.parse(list.find((x) => String(x.id) === restoreId)!.saved_at))}, para todo el grupo. La de ahora se guarda en el historial, así que se puede deshacer.`,
+          'Volver a esta',
+        );
+        if (!ok) return;
+        if (isCur) deps.persistCurrent();
+        await nube().restoreVersion(Number(restoreId));
+        deps.adopt(await nube().fetchSong(s.id));
+        d.close();
+        render();
+        deps.toast(`«${s.title}» ha vuelto a la versión elegida, para todo el grupo.`);
+      }
+    } catch (err) {
+      deps.toast((err as Error).message || 'No se ha podido.', true);
+    }
+  });
+  d.showModal();
 }
