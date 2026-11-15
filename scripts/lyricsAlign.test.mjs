@@ -1241,6 +1241,272 @@ function medir(sigma, { errores = ERRORES, pMel = 0.06, pMelFin = 0.35 } = {}) {
   };
 }
 
+describe("métrica: una nota por sílaba métrica, como la pone el compositor", () => {
+  // Un verso como el que vio el usuario, con letra inventada: «Por fin la tarde es nuestra cada día», un endecasílabo.
+  // Once sílabas métricas, porque «de‿es» van en sinalefa (al cantar, dos vocales que se tocan entre palabras van en una
+  // nota) y «dí-a» es un hiato con acento (no se junta); y once notas: una anacrusa, ocho corcheas, otra corchea y la
+  // última ligada a una blanca (las dos son una sola nota cantada). Va entre otros tres versos, en corcheas a 140 por
+  // minuto con un silencio de dos corcheas entre cada dos, que Whisper oye en su sitio y sin huecos entre palabras.
+  const C = 60 / 140 / 2;
+  const VERSOS = ["Suena la noche sobre la ciudad", "Por fin la tarde es nuestra cada día", "y en tu ventana canta la luna", "vuelve a casa al amanecer"];
+  const VERSO = ["Por", "fin", "la", "tar-", "de‿es", "nues-", "tra", "ca-", "da", "dí-", "a"];
+  /** Las notas (una por sílaba métrica, con sus sinalefas; la última de cada verso, más larga) y lo que oye Whisper: cada
+   *  palabra desde su primera nota hasta que empieza la siguiente (la última, hasta el final de su nota), y la palabra k
+   *  de las n del 2.º verso, `desfase(k, n)` s más tarde. Y dónde empieza cada verso. */
+  const cancion = (desfase) => {
+    const notas = [];
+    const palabras = [];
+    const inicio = [];
+    let t = 0.5;
+    VERSOS.forEach((texto, v) => {
+      const ss = silabasConRasgos(texto);
+      const notaDe = []; // de cada sílaba, su nota en el verso
+      let q = -1;
+      ss.forEach((s, i) => {
+        if (i === 0 || !ss[i - 1].sinalefa) q++;
+        notaDe.push(q);
+      });
+      const n = q + 1;
+      inicio.push(notas.length);
+      const desde = []; // de cada nota del verso, dónde está en `notas`
+      for (let k = 0; k < n; k++) {
+        desde.push(notas.length);
+        if (v === 1 && k === n - 1) {
+          notas.push({ ini: t, fin: t + C * 0.97 });
+          notas.push({ ini: t + C, fin: t + 5 * C * 0.97, ligada: true });
+          t += 5 * C;
+        } else {
+          const d = k === n - 1 ? 3 * C : C;
+          notas.push({ ini: t, fin: t + d * 0.97 });
+          t += d;
+        }
+      }
+      t += 2 * C;
+      const primera = [];
+      const ultima = [];
+      let w = -1;
+      ss.forEach((s, i) => {
+        if (s.abrePalabra) w++;
+        primera[w] ??= notaDe[i];
+        ultima[w] = notaDe[i];
+      });
+      const ws = texto.split(" ");
+      const oidas = ws.map((x, k) => {
+        const d = v === 1 ? desfase(k, ws.length) : 0;
+        const fin = ultima[k] === n - 1 ? notas[notas.length - 1].fin : notas[desde[ultima[k]]].fin;
+        return { texto: x, a: notas[desde[primera[k]]].ini + d, b: fin + d, abreLinea: k === 0 };
+      });
+      for (let k = 0; k + 1 < oidas.length; k++) oidas[k].b = Math.max(oidas[k].b, oidas[k + 1].a);
+      palabras.push(...oidas);
+    });
+    return { notas, palabras, inicio };
+  };
+  /** Lo que sale en el 2.º verso (sus 12 notas: la última, la ligada, sin nada) y si alguna queda en ámbar, con lo oído
+   *  tal cual y con el texto corregido. */
+  const casar = ({ notas, palabras, inicio }, opts) => {
+    const del = (r) => ({ letra: r.porNota.slice(inicio[1], inicio[2]), ambar: r.dudosas.slice(inicio[1], inicio[2]).some(Boolean), descartadas: r.descartadas });
+    const corregido = heredarTiempos(VERSOS.join("\n"), palabras.map(({ texto, a, b }) => ({ texto, a, b })), notas);
+    return { tal: del(casarLetra(notas, palabras, opts)), texto: del(casarLetra(notas, corregido, opts)) };
+  };
+  const BIEN = [...VERSO, undefined];
+
+  test("el verso tiene once sílabas métricas: la sinalefa junta «de‿es» y el hiato con acento «dí-a» no se junta", () => {
+    assert.deepEqual(splitSyllables(VERSOS[1]), VERSO);
+    const { inicio } = cancion(() => 0);
+    assert.equal(inicio[2] - inicio[1], 12); // once notas cantadas: la última, con su ligada
+  });
+
+  test("Whisper lo oye tarde (cada palabra 0,2 s, y la última 0,6 s): una sílaba en cada nota, tal cual y con el texto", () => {
+    const c = cancion((k, n) => (k === n - 1 ? 0.6 : 0.2));
+    const { tal, texto } = casar(c);
+    for (const r of [tal, texto]) {
+      assert.deepEqual(r.letra, BIEN);
+      assert.equal(r.ambar, false);
+      assert.deepEqual(r.descartadas, []);
+    }
+    // sin la métrica sale lo que vio el usuario: «de» y «es» en dos notas, el verso corrido una nota y «día» en la última
+    const sin = casar(c, { metrica: false });
+    for (const r of [sin.tal, sin.texto]) assert.deepEqual(r.letra, ["Por", "fin", "la", "tar-", "de", "es", "nues-", "tra", "ca-", "da", "día", undefined]);
+  });
+
+  test("Whisper oye todo el verso medio segundo pronto: una sílaba en cada nota, tal cual y con el texto", () => {
+    const { tal, texto } = casar(cancion(() => -0.5));
+    for (const r of [tal, texto]) {
+      assert.deepEqual(r.letra, BIEN);
+      assert.equal(r.ambar, false);
+      assert.deepEqual(r.descartadas, []);
+    }
+  });
+
+  test("lo que la métrica deja donde estaba conserva su ámbar si Whisper no ha oído bien la letra (y si es de la persona, no)", () => {
+    // Aquí cuadran los cuatro versos: lo que oyó Whisper es de fiar. Si no lo fuera (pocas frases que cuadran), las
+    // sílabas que el reparto ya tenía en su sitio, pero con dudas, siguen en ámbar: la cuenta podría cuadrar por
+    // casualidad (una palabra mal oída que suma lo mismo que la de verdad). Con la letra de la persona, no.
+    const { tal, texto } = casar(cancion((k, n) => (k === n - 1 ? 0.6 : 0.2)), { metricaFiable: 2 });
+    assert.deepEqual(tal.letra, BIEN);
+    assert.equal(tal.ambar, true);
+    assert.deepEqual(texto.letra, BIEN);
+    assert.equal(texto.ambar, false);
+  });
+});
+
+describe("métrica: en la frase que cuadra, una sílaba métrica por nota", () => {
+  // Cuatro versos silábicos en corcheas a 140 por minuto (la última nota de cada verso, más larga) con un silencio entre
+  // ellos. El 2.º, «canta la noche es tuya y mía»: 9 notas, porque «che‿es» y «ya‿y» van en sinalefa y «mí-a» es un
+  // hiato con acento (no se junta). Whisper lo oye cada vez más tarde (`deriva` s al final del verso), como en las
+  // grabaciones de verdad; los demás versos, en su sitio. Letra inventada.
+  const C = 0.214;
+  const VERSOS = [
+    ["Ven a cantar conmigo esta canción", 10, [0, 1, 2, 4, 6, 8]],
+    ["canta la noche es tuya y mía", 9, [0, 2, 3, 4, 5, 6, 7]],
+    ["vuela la luna sobre el mar", 8, [0, 2, 3, 5, 6, 7]],
+    ["dime que vuelves al amanecer", 10, [0, 2, 3, 4, 6, 7]],
+  ];
+  const VERSO = ["can-", "ta", "la", "no-", "che‿es", "tu-", "ya‿y", "mí-", "a"];
+  /** Las notas y lo oído; con `picado`, un silencio de 0,2 s dentro del 2.º verso (tras su 4.ª nota). */
+  const cancion = (deriva, picado = false) => {
+    const notas = [];
+    const palabras = [];
+    let t = 0.5;
+    VERSOS.forEach(([texto, n, inicioNota], v) => {
+      const q0 = notas.length;
+      for (let k = 0; k < n; k++) {
+        const d = k === n - 1 ? 3 * C : C;
+        notas.push({ ini: t, fin: t + d * 0.97 });
+        t += d + (picado && v === 1 && k === 3 ? 0.2 : 0);
+      }
+      t += 2 * C;
+      texto.split(" ").forEach((w, k, ws) => {
+        const q = q0 + inicioNota[k];
+        const sig = k + 1 < ws.length ? q0 + inicioNota[k + 1] : notas.length;
+        const dt = v === 1 ? (deriva * inicioNota[k]) / n : 0.05;
+        palabras.push({ texto: w, a: notas[q].ini + dt, b: notas[sig - 1].fin + dt, abreLinea: k === 0 });
+      });
+    });
+    return { notas, palabras, texto: VERSOS.map((v) => v[0]).join("\n") };
+  };
+  const delVerso = (x) => x.slice(10, 19);
+
+  test("un verso que cuadra va sílaba a sílaba aunque Whisper lo oiga corrido: sinalefa sí, hiato con acento no", () => {
+    const { notas, palabras, texto } = cancion(0.7);
+    const r = casarLetra(notas, palabras);
+    assert.deepEqual(splitSyllables(VERSOS[1][0]), VERSO);
+    assert.deepEqual(delVerso(r.porNota), VERSO);
+    assert.deepEqual(delVerso(r.dudosas), new Array(9).fill(false));
+    // sin la métrica, el reparto separa «che» y «es» y junta «mí-a» (con todo en ámbar)
+    const sin = casarLetra(notas, palabras, { metrica: false });
+    assert.notDeepEqual(delVerso(sin.porNota), VERSO);
+    assert.ok(sin.porNota.includes("mía"));
+    // con la letra corregida, igual
+    const r2 = casarLetra(notas, heredarTiempos(texto, palabras.map(({ texto, a, b }) => ({ texto, a, b })), notas));
+    assert.deepEqual(delVerso(r2.porNota), VERSO);
+    assert.equal(r2.descartadas.length, 0);
+  });
+
+  test("una cabecera de la persona que cae en la nota libre de un verso que cuadra se queda fuera entera", () => {
+    const { notas, palabras, texto } = cancion(0.7);
+    const l = texto.split("\n");
+    const conCabecera = [l[0], l[1], "Coro:", l[2], l[3]].join("\n");
+    const r = casarLetra(notas, heredarTiempos(conCabecera, palabras.map(({ texto, a, b }) => ({ texto, a, b })), notas));
+    assert.deepEqual(delVerso(r.porNota), VERSO);
+    assert.deepEqual(r.descartadas, ["Coro:"]);
+  });
+
+  test("pero con lo que da Whisper tal cual no deja fuera una palabra oída para que cuadre: el verso, en ámbar", () => {
+    // Whisper oye «lleva» justo tras el verso, y el reparto pone «va» en su última nota. Puede que se la inventara, pero
+    // con lo oído tal cual la que sobra suele ser otra (una palabra mal oída en medio del verso): dejar fuera la del borde
+    // para que cuadre la cuenta acertaba una de cada cinco veces en el simulador, y sin ámbar. Así que el verso queda
+    // como sin la métrica, con sus dudas a la vista.
+    const { notas, palabras } = cancion(0);
+    const fin = palabras[12].b; // «mía»
+    const conOtra = [...palabras.slice(0, 13), { texto: "lleva", a: fin + 0.05, b: fin + 0.3 }, ...palabras.slice(13)];
+    const r = casarLetra(notas, conOtra);
+    assert.deepEqual(r, casarLetra(notas, conOtra, { metrica: false }));
+    assert.ok(delVerso(r.dudosas).some(Boolean));
+  });
+
+  test("si no cuadra o la frase no es ligada, queda como sin métrica", () => {
+    // notas picadas: un silencio dentro de la frase (no es un verso seguido)
+    const p = cancion(0.7, true);
+    assert.deepEqual(casarLetra(p.notas, p.palabras), casarLetra(p.notas, p.palabras, { metrica: false }));
+    // un melisma: «ven a mi la-do» en 6 notas (la última alarga «do»); y si Whisper oye «mira» por «mi», la cuenta cuadra
+    // por casualidad, pero el reparto ya pone una sílaba por nota y la métrica no lo cambia
+    for (const [mi, dur] of [["mi", 0.4], ["mira", 0.6]]) {
+      const notas = [];
+      const palabras = [];
+      let t = 0.5;
+      [["canta la noche sobre el mar", [0, 2, 3, 5, 6, 7], 8], ["ven a mi lado", [0, 1, 2, 3], 6]].forEach(([texto, ini, n], v) => {
+        const q0 = notas.length;
+        for (let k = 0; k < n; k++) {
+          notas.push({ ini: t, fin: t + dur * 0.97 });
+          t += dur;
+        }
+        t += 2 * dur;
+        texto.split(" ").forEach((w, k, ws) => {
+          const sig = k + 1 < ws.length ? q0 + ini[k + 1] : notas.length;
+          palabras.push({ texto: v === 1 && w === "mi" ? mi : w, a: notas[q0 + ini[k]].ini + 0.03, b: notas[sig - 1].fin, abreLinea: k === 0 });
+        });
+      });
+      assert.deepEqual(casarLetra(notas, palabras), casarLetra(notas, palabras, { metrica: false }), mi);
+    }
+  });
+
+  test("ajustes de la métrica", () => {
+    const A = AJUSTES_CASAR;
+    // de las frases de 4 notas en adelante; lo oído puede apartarse como mucho σ más que en el reparto; y lo que oyó
+    // Whisper es de fiar si cuadran nueve de cada diez frases
+    assert.ok(A.metrica === true && A.metricaMin === 4 && A.metricaHolgura === 1 && A.metricaFiable === 0.9);
+  });
+});
+
+describe("métrica: el verso del usuario en una canción con melismas", () => {
+  // Cuatro versos en corcheas de 0,214 s con un silencio entre ellos. Los demás alargan su última sílaba dos notas (un
+  // melisma): tienen una nota más que sílabas y no cuadran, así que la canción no es silábica. El 2.º, «Por fin la tarde
+  // es nuestra cada día» (letra inventada, un endecasílabo como el del usuario), sí: once notas, una por sílaba métrica
+  // («de‿es» en sinalefa; «dí-a», hiato con acento, en dos). Whisper oye los demás versos en su sitio (0,03 s tarde) y
+  // este tarde, como en la grabación del usuario: cada palabra 0,25 s y la última 0,66 s.
+  test("sinalefa sí, hiato con acento no: una sílaba en cada nota, tal cual y con el texto (y con el texto, sin ámbar)", () => {
+    const C = 0.214;
+    const VERSOS = [
+      ["la luna sobre el mar", [0, 1, 3, 4, 5], 7],
+      ["Por fin la tarde es nuestra cada día", [0, 1, 2, 3, 4, 5, 7, 9], 11],
+      ["ven a cantar conmigo", [0, 1, 2, 4], 8],
+      ["dime que vuelves", [0, 2, 3], 6],
+    ];
+    const notas = [];
+    const palabras = [];
+    const inicio = [];
+    let t = 0.5;
+    VERSOS.forEach(([texto, ini, n], v) => {
+      const q0 = notas.length;
+      inicio.push(q0);
+      for (let k = 0; k < n; k++) {
+        const d = k >= n - (v === 1 ? 1 : 2) ? 2 * C : C;
+        notas.push({ ini: t, fin: t + d * 0.97 });
+        t += d;
+      }
+      t += 2 * C;
+      texto.split(" ").forEach((w, k, ws) => {
+        const sig = k + 1 < ws.length ? q0 + ini[k + 1] : notas.length;
+        const dt = v === 1 ? (k === ws.length - 1 ? 0.66 : 0.25) : 0.03;
+        palabras.push({ texto: w, a: notas[q0 + ini[k]].ini + dt, b: notas[sig - 1].fin + dt, abreLinea: k === 0 });
+      });
+    });
+    inicio.push(notas.length);
+    const BIEN = ["Por", "fin", "la", "tar-", "de‿es", "nues-", "tra", "ca-", "da", "dí-", "a"];
+    const delVerso = (x) => x.slice(inicio[1], inicio[2]);
+    const corregido = heredarTiempos(VERSOS.map((v) => v[0]).join("\n"), palabras.map(({ texto, a, b }) => ({ texto, a, b })), notas);
+    // sin la métrica sale lo que vio el usuario: «de» y «es» en dos notas, el verso corrido una nota y «día» en la última
+    for (const pal of [palabras, corregido]) {
+      assert.deepEqual(delVerso(casarLetra(notas, pal, { metrica: false }).porNota), ["Por", "fin", "la", "tar-", "de", "es", "nues-", "tra", "ca-", "da", "día"]);
+    }
+    assert.deepEqual(delVerso(casarLetra(notas, palabras).porNota), BIEN);
+    const r = casarLetra(notas, corregido);
+    assert.deepEqual(delVerso(r.porNota), BIEN);
+    assert.deepEqual(delVerso(r.dudosas), new Array(11).fill(false));
+  });
+});
+
 describe("simulador: canciones silábicas con el texto corregido", () => {
   const medidas = new Map();
   const de = (sigma) => {

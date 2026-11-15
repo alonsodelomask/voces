@@ -36,6 +36,16 @@
 //     cabecera, una línea de más) o se oyó lejos de sus notas (lo canta otra voz, o se lo inventa Whisper). Una línea
 //     entera que se ve que sobra (sin oír y sin sitio entre lo oído, o oída donde esta voz calla) cuesta como lo de
 //     Whisper.
+//   - Métrica: el compositor pone una nota por sílaba métrica (y alguna más si alarga una sílaba: un melisma), y las
+//     sílabas métricas de un verso son las suyas menos las sinalefas. Al cantar, la sinalefa entre palabras es lo
+//     normal («no-che‿es»: dos vocales que se tocan van en una nota); un hiato con acento dentro de una palabra no se
+//     junta («dí-a», «rí-o»), y unas notas ligadas son una sola nota cantada. Whisper, en cambio, se adelanta o se
+//     retrasa dentro del verso hasta medio segundo y estira la última palabra, y seguirlo al pie de la letra corre el
+//     verso una nota: separa «che» y «es» y junta «ví-a» al final. Así que, hecho el reparto, si las palabras que caen
+//     en una frase de la melodía (las notas entre dos silencios largos) dan, con todas sus sinalefas, tantas sílabas
+//     como notas tiene la frase, van una en cada nota. Los tiempos de Whisper deciden qué palabras van en cada frase, y
+//     la métrica, dónde va cada sílaba dentro de ella. Solo si ese reparto es de fiar (ver `versosQueCuadran`): si no
+//     cuadran (melismas, una línea de más, palabras mal oídas) o lo oído dice otra cosa, se queda como sale.
 // Sin tiempos (NaN) funciona igual, guiándose solo por lo demás. Con tiempos, cada sílaba solo mira las notas que
 // empiezan a ±5 s del suyo (o entre las de sus vecinas), para que vaya rápido.
 //
@@ -181,6 +191,15 @@ export interface AjustesCasar {
   minDesfases: number;
   /** Una sílaba es dudosa si ponerla en otro sitio, o quitarla, costaría menos de esto de más. */
   duda: number;
+  /** Métrica (ver arriba): en las frases de al menos `metricaMin` notas que cuadran con sus palabras, una sílaba en
+   *  cada nota, si así ninguna palabra empieza más de σ × `metricaHolgura` más lejos de cuando se oyó que en el
+   *  reparto. Lo que la métrica cambia de sitio no queda en ámbar por eso; lo que deja donde estaba, tampoco si la letra
+   *  es de la persona o si cuadran al menos `metricaFiable` de las frases que se miran (Whisper ha oído bien las
+   *  palabras); si no, conserva su duda. */
+  metrica: boolean;
+  metricaMin: number;
+  metricaHolgura: number;
+  metricaFiable: number;
 }
 
 /** Los ajustes recomendados (probados con canciones simuladas y de coro: ver scripts/lyricsAlign.test.mjs). */
@@ -227,6 +246,10 @@ export const AJUSTES_CASAR: AjustesCasar = Object.freeze({
   desfaseMax: 0.8,
   minDesfases: 3,
   duda: 0.5,
+  metrica: true,
+  metricaMin: 4,
+  metricaHolgura: 1,
+  metricaFiable: 0.9,
 });
 
 // ───────────────────────────── Texto corregido ─────────────────────────────
@@ -940,8 +963,10 @@ interface Elem {
   vocal: boolean;
   /** Es la tónica de su palabra. */
   tonica: boolean;
-  /** Admite sinalefa con la sílaba anterior. */
+  /** Admite sinalefa con la sílaba anterior… */
   sinalefaAntes: boolean;
+  /** …o puede ir con ella en una nota como en una sinalefa (también entre dos líneas oídas: ver `elementosDe`). */
+  juntable: boolean;
   /** Segundo en que empieza a oírse (solo la primera sílaba de una palabra con tiempo fiable; si no, NaN)… */
   tIni: number;
   /** …y en que deja de oírse (solo el último elemento de esa palabra)… */
@@ -988,6 +1013,7 @@ function elementosDe(palabras: PalabraTiempo[], A: AjustesCasar): Elem[] {
     vocal: false,
     tonica: false,
     sinalefaAntes: false,
+    juntable: false,
     dentro: false,
     largoPalabra: NaN,
     tIni: NaN,
@@ -1066,6 +1092,7 @@ function elementosDe(palabras: PalabraTiempo[], A: AjustesCasar): Elem[] {
         vocal: ss[0]!.vocalAlEmpezar,
         tonica: s.tonica,
         sinalefaAntes: conSinalefa,
+        juntable,
         tIni: conTiempo && r === 0 ? a : repartible ? a + ((b - a) * antes[r]!) / sumaPesos : NaN,
         dentro: r > 0,
         largoPalabra: repartible ? b - a : NaN,
@@ -1740,6 +1767,144 @@ function sobrantes(palabras: PalabraTiempo[], S: Elem[], ini: Float64Array, fin:
   return sobra;
 }
 
+/** Una frase de la melodía que se canta sílaba a sílaba: sus elementos [h0, h1), sus sonidos [a, b) y el sonido en que
+ *  va cada elemento. */
+interface Verso {
+  h0: number;
+  h1: number;
+  a: number;
+  b: number;
+  sonido: Int32Array;
+}
+
+/**
+ * Las frases de la melodía (entre silencios largos) que se cantan sílaba a sílaba según el reparto `inicio` (ver
+ * «Métrica» arriba), y cuántas se han mirado: las ligadas (sin silencios dentro: unas notas picadas no son un verso), de
+ * al menos `metricaMin` sonidos y con alguna palabra. Las palabras de una frase son las que tienen en ella su primera
+ * sílaba colocada, y las que no han cabido entre ellas. Cuadran si dan, con todas sus sinalefas (`sinalefaOk`) y sus
+ * «_», tantas sílabas como sonidos tiene la frase. Si la primera o la última es de la letra de la persona y no ha cabido
+ * entera (una cabecera, o una línea de más, puesta a medias en una nota libre), se prueba también sin ella, que se
+ * queda fuera. Con lo que da Whisper tal cual, no: esa suele ser de verdad, y la que sobra, otra que oyó mal o se
+ * inventó. Y, para que ese reparto sea de fiar:
+ *   - las notas van en orden; las palabras, también, y no tienen ninguna sílaba en otra frase;
+ *   - la primera y la última palabra se oyeron (las de en medio pueden ser de la persona): si no, es el reparto el que
+ *     las ha metido ahí, y la cuenta puede cuadrar por casualidad;
+ *   - lo oído no dice otra cosa: puesta una sílaba en cada nota, ninguna palabra empieza más de `holgura` s más lejos
+ *     de cuando se oyó (`tIni`, con el desfase) que en el reparto. Si no, Whisper ha cambiado, perdido o metido alguna
+ *     palabra y la cuenta cuadra por casualidad, o la frase no es silábica.
+ */
+function versosQueCuadran(
+  P: Problema,
+  S: Elem[],
+  sinalefaOk: Uint8Array,
+  inicio: Int32Array,
+  tIni: Float64Array,
+  holgura: number,
+): { versos: Verso[]; miradas: number } {
+  const { N, L, largo, tras, ini, ordenadas, A } = P;
+  const nada = { versos: [], miradas: 0 };
+  if (!L || !N || !ordenadas) return nada;
+  // Dónde empieza cada frase.
+  const frase = new Int32Array(N);
+  const comienzo: number[] = [0];
+  for (let q = 1; q < N; q++) {
+    if (largo[q]) comienzo.push(q);
+    frase[q] = comienzo.length - 1;
+  }
+  comienzo.push(N);
+  const F = comienzo.length - 1;
+  // De cada palabra, sus elementos [desde, hasta), la frase de su primera sílaba colocada (−1: ninguna) y si alguna de
+  // sus sílabas no ha cabido.
+  const W = S[L - 1]!.palabra + 1;
+  const desde = new Int32Array(W).fill(-1);
+  const hasta = new Int32Array(W).fill(-1);
+  const fraseDe = new Int32Array(W).fill(-1);
+  const aMedias = new Uint8Array(W);
+  for (let h = 0; h < L; h++) {
+    const w = S[h]!.palabra;
+    if (desde[w]! < 0) desde[w] = h;
+    hasta[w] = h + 1;
+    if (S[h]!.marca) continue;
+    if (inicio[h]! < 0) aMedias[w] = 1;
+    else if (fraseDe[w]! < 0) fraseDe[w] = frase[inicio[h]!]!;
+  }
+  const primera = new Int32Array(F).fill(-1);
+  const ultima = new Int32Array(F).fill(-1);
+  for (let w = 0, antes = -1; w < W; w++) {
+    const f = fraseDe[w]!;
+    if (f < 0) continue;
+    if (f < antes) return nada;
+    antes = f;
+    if (primera[f]! < 0) primera[f] = w;
+    ultima[f] = w;
+  }
+  // Una palabra de la letra de la persona que no ha cabido entera: se puede dejar fuera del verso.
+  const sobraEntera = (w: number): boolean => aMedias[w] === 1 && S[desde[w]!]!.segura;
+  // Si las palabras w0…w1 cuadran con los sonidos [a, b): el verso, o null. En la frase no puede haber nada más que
+  // ellas y, si acaso, sílabas de las de wa…wb que se dejan fuera.
+  const cuadra = (w0: number, w1: number, a: number, b: number, wa: number, wb: number): Verso | null => {
+    let h0 = -1;
+    let h1 = -1;
+    for (let w = w0; w <= w1; w++) {
+      if (desde[w]! < 0) continue;
+      if (h0 < 0) h0 = desde[w]!;
+      h1 = hasta[w]!;
+    }
+    if (h0 < 0 || tIni[h0] !== tIni[h0]) return null;
+    const sonido = new Int32Array(h1 - h0);
+    // Dónde tenía el reparto la sílaba h: su nota o, si la dejó sin nota, la de lo siguiente del verso que sí puso (lo
+    // anterior, si después no hay nada). Así una palabra que Whisper oyó corrida y el reparto quitó cuenta como las demás.
+    const enReparto = (h: number): number => {
+      for (let k = h; k < h1; k++) if (!S[k]!.marca && inicio[k]! >= 0) return inicio[k]!;
+      for (let k = h - 1; k >= h0; k--) if (!S[k]!.marca && inicio[k]! >= 0) return inicio[k]!;
+      return -1;
+    };
+    let q = a - 1;
+    let ultimaOida = false;
+    for (let h = h0; h < h1; h++) {
+      const antes = inicio[h]!;
+      if (antes >= 0 && (antes < a || antes >= b)) return null;
+      // una sílaba nueva va en la nota siguiente; la que admite sinalefa con la anterior, en la de ella
+      if (S[h]!.marca || h === h0 || S[h - 1]!.marca || !sinalefaOk[h]) q++;
+      if (q >= b) return null;
+      sonido[h - h0] = q;
+      if (S[h]!.marca || !S[h]!.abrePalabra) continue;
+      const t = tIni[h]!;
+      ultimaOida = t === t;
+      const r = enReparto(h);
+      if (t === t && Math.abs(ini[q]! - t) - (r >= 0 ? Math.abs(ini[r]! - t) : 0) > holgura) return null;
+    }
+    if (q !== b - 1 || !ultimaOida) return null;
+    for (let h = h0 - 1; h >= 0 && !(inicio[h]! >= 0 && inicio[h]! < a); h--) {
+      if (inicio[h]! >= a && (S[h]!.palabra < wa || S[h]!.palabra >= w0)) return null;
+    }
+    for (let h = h1; h < L && !(inicio[h]! >= b); h++) {
+      if (inicio[h]! >= a && (S[h]!.palabra > wb || S[h]!.palabra <= w1)) return null;
+    }
+    return { h0, h1, a, b, sonido };
+  };
+  const versos: Verso[] = [];
+  let miradas = 0;
+  for (let f = 0; f < F; f++) {
+    const w0 = primera[f]!;
+    const w1 = ultima[f]!;
+    const a = comienzo[f]!;
+    const b = comienzo[f + 1]!;
+    if (w0 < 0 || b - a < A.metricaMin) continue;
+    let ligada = true;
+    for (let q = a + 1; q < b && ligada; q++) if (tras[q]) ligada = false;
+    if (!ligada) continue;
+    miradas++;
+    const v =
+      cuadra(w0, w1, a, b, w0, w1) ??
+      (sobraEntera(w1) && w1 > w0 ? cuadra(w0, w1 - 1, a, b, w0, w1) : null) ??
+      (sobraEntera(w0) && w1 > w0 ? cuadra(w0 + 1, w1, a, b, w0, w1) : null) ??
+      (sobraEntera(w0) && sobraEntera(w1) && w1 > w0 + 1 ? cuadra(w0 + 1, w1 - 1, a, b, w0, w1) : null);
+    if (v) versos.push(v);
+  }
+  return { versos, miradas };
+}
+
 /**
  * Casa las sílabas de las palabras con las notas de la melodía: una sílaba (o dos con sinalefa) en cada nota que
  * empieza sílaba, y nada en las que la alargan. Las palabras pueden venir de Whisper tal cual o de `heredarTiempos`.
@@ -1965,9 +2130,36 @@ export function casarLetra(notas: NotaTiempo[], palabras: PalabraTiempo[], opts?
     }
   }
 
-  const r = pasada(P, tiempos(dIni, dFin, 1), true);
+  const T = tiempos(dIni, dFin, 1);
+  const r = pasada(P, T, true);
   const { inicio } = r;
   const margen = r.margen!;
+
+  // Métrica (ver arriba): en las frases que cuadran con sus palabras, una sílaba en cada nota. Lo de fuera que había
+  // caído en ellas (una cabecera en una nota libre) se queda sin nota. Lo que la métrica cambia de sitio no queda
+  // dudoso por margen: es ella la que dice dónde va. Lo que ya estaba en su sitio deja de serlo si la letra es de la
+  // persona, o si cuadran casi todas las frases (`metricaFiable`: Whisper ha oído bien las palabras). Si no, puede que
+  // la cuenta cuadre por casualidad (una palabra mal oída que suma tantas sílabas como la de verdad) y conserva su duda.
+  if (A.metrica) {
+    const sinalefaOk = Uint8Array.from(S, (s, h) => (s.juntable && junta[h] === s.junta ? 1 : 0));
+    const { versos, miradas } = versosQueCuadran(P, S, sinalefaOk, inicio, T.tIni, A.metricaHolgura * sigmaP);
+    const fiable = versos.length >= A.metricaFiable * miradas;
+    const deVerso = new Uint8Array(L);
+    const enVerso = new Uint8Array(N);
+    for (const v of versos) {
+      deVerso.fill(1, v.h0, v.h1);
+      enVerso.fill(1, v.a, v.b);
+    }
+    for (let h = 0; h < L; h++) if (!deVerso[h] && inicio[h]! >= 0 && enVerso[inicio[h]!]) inicio[h] = -1;
+    for (const v of versos) {
+      for (let h = v.h0; h < v.h1; h++) {
+        const q = v.sonido[h - v.h0]!;
+        if (inicio[h] !== q) margen[h] = A.duda;
+        else if (S[h]!.segura || fiable) margen[h] = Math.max(margen[h]!, A.duda);
+        inicio[h] = q;
+      }
+    }
+  }
 
   // Lo que va en cada nota: las sílabas seguidas que empiezan en el mismo sonido. Si lo que sigue de la palabra no ha
   // cabido, la nota no lleva guion (la palabra no sigue en otra nota: con él, el karaoke y el texto para corregir la
