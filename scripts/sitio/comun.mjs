@@ -1,21 +1,21 @@
 // Cabecera, pie y datos comunes de la web pública de Vocify.
-// Lo que falta por decidir (titular, NIF, domicilio) aparece marcado como «pendiente» hasta que se complete aquí.
+// Si falta un dato del titular (titular, NIF, domicilio), la página lo marca como «pendiente».
 
 export const DATOS = {
   marca: 'Vocify',
   dominio: 'https://vocify.es/',
   correo: 'soporte@vocify.es',
-  // Completar antes de publicar la app (lo exige la LSSI): nombre y apellidos o razón social, NIF y domicilio.
-  titular: null,
-  nif: null,
-  domicilio: null,
+  // Lo exige la LSSI. Los mismos datos que Baulify (titular persona física, autónomo), por decisión del usuario del 15/11/2026.
+  titular: 'Pablo M. Fdez. Alonso de Lomas',
+  nif: '44690585K',
+  domicilio: { es: 'Goienkale 5, 48260 Ermua (Bizkaia), España', en: 'Goienkale 5, 48260 Ermua (Bizkaia), Spain' },
   actualizado: { es: '15 de noviembre de 2026', en: 'November 15, 2026' },
 };
 
 export const pendiente = (txt) => `<span class="pendiente">${txt}</span>`;
 export const titular = (lang) => DATOS.titular ?? pendiente(lang === 'es' ? 'pendiente: nombre del titular' : 'pending: owner name');
 export const nif = (lang) => DATOS.nif ?? pendiente(lang === 'es' ? 'pendiente: NIF' : 'pending: tax ID');
-export const domicilio = (lang) => DATOS.domicilio ?? pendiente(lang === 'es' ? 'pendiente: domicilio' : 'pending: address');
+export const domicilio = (lang) => DATOS.domicilio?.[lang] ?? pendiente(lang === 'es' ? 'pendiente: domicilio' : 'pending: address');
 export const correo = () => `<a href="mailto:${DATOS.correo}">${DATOS.correo}</a>`;
 
 const NAV = {

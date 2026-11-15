@@ -154,6 +154,11 @@
       "expo-status-bar",
       "expo-asset"
     ],
-    "owner": "alonsodelomas"
+    "owner": "alonsodelomas",
+    "extra": {
+      "eas": {
+        "projectId": "5b960d45-d359-45d9-80be-3c7d9b1858e5"
+      }
+    }
   }
 }
