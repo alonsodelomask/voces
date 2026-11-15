@@ -1,5 +1,5 @@
 async () => {
-  // Duplicar (⧉ en «Mis canciones») una canción con grabación: la copia lleva su propia grabación (se oye y se puede
+  // Duplicar (⋯ › Duplicar en la biblioteca) una canción con grabación: la copia lleva su propia grabación (se oye y se puede
   // escuchar) y lo ya oído en ella, así que «Letra» pone la letra donde se oye sin volver a escuchar. Lo que «oye»
   // Whisper es de mentira (window.__vocesLetraOida): no se descarga el modelo. La letra y la melodía son inventadas.
   const V = window.voces;
@@ -62,14 +62,15 @@ async () => {
     // Desde aquí, si algo volviera a escuchar, no oiría nada.
     window.__vocesLetraOida = [];
 
-    // 2) Duplicar desde «Mis canciones» y abrir la copia.
-    document.querySelector('#menu [data-act=library]').click();
-    await espera(() => document.querySelector('#library-list .lib-item.current [data-a=copy]'));
-    document.querySelector('#library-list .lib-item.current [data-a=copy]').click();
+    // 2) Duplicar desde la biblioteca (⋯ › Duplicar) y abrir la copia.
+    document.querySelector('#btn-library').click();
+    await espera(() => document.querySelector('#library-list .bib-row.current [data-more]'));
+    document.querySelector('#library-list .bib-row.current [data-more]').click();
+    document.querySelector('#dlg-library .bib-pop [data-a=copy]').click();
     await espera(() => /^Copia creada/.test(aviso() ?? ''));
     res.avisoCopia = aviso();
-    const item = [...document.querySelectorAll('#library-list .lib-item')].find((x) => x.querySelector('b')?.textContent.includes(`${titulo} (copia)`));
-    item.querySelector('.meta').click();
+    const item = [...document.querySelectorAll('#library-list .bib-row')].find((x) => x.querySelector('b')?.textContent.includes(`${titulo} (copia)`));
+    item.querySelector('.bib-open').click();
     await espera(() => V.song.title === `${titulo} (copia)`);
     const c = V.song;
     res.otroId = c.id !== s.id;

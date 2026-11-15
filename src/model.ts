@@ -79,6 +79,8 @@ export interface Song {
   audioTrack?: AudioTrack;
   /** Segundo en que empieza cada compás de la partitura (repeticiones desarrolladas), si se sabe. */
   barStarts?: number[];
+  /** Si está en la papelera: cuándo se mandó allí (se borra del todo a los 30 días; ver `storage.ts`). */
+  deletedAt?: number;
 }
 
 // Colores neón, ordenados de la voz más aguda a la más grave.

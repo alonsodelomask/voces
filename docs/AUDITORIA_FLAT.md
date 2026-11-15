@@ -95,6 +95,8 @@ Borrar no es definitivo: lo borrado **se guarda 90 días** y se puede recuperar;
 ## 4. Propuesta
 
 ### Fase 1: la biblioteca en el dispositivo (sin tocar el servidor)
+
+**Hecha el 15/11/2026** (`src/library/`, `src/storage.ts`; pruebas `scripts/biblioteca.test.mjs` y `scripts/pruebas/04`, `23`, `24` y `25`). Las canciones del grupo salen en la misma lista, pero sin descargar no muestran voces ni miniatura.
 1. **Pantalla «Biblioteca»** en lugar del diálogo, también en el móvil, donde la barra lateral se pliega. Contiene:
    - el botón **＋ Crear** con su menú;
    - el buscador;

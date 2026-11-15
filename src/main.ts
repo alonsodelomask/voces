@@ -18,7 +18,10 @@ import { openGroupPanel } from './cloud/groupPanel';
 import * as cloud from './cloud/cloud';
 import { initNative, isNative, onNativeFile } from './native';
 import { linkSitePages } from './site';
-import { deleteSong, getLast, loadSongs, saveSong, setLast } from './storage';
+import { allSongIds, getLast, getSong, initStorage, loadSongs, onStorageError, purgeOldTrash, saveSong, setLast } from './storage';
+import * as storage from './storage';
+import { openLibrary } from './library/libraryView';
+import { forgetSong } from './library/repertorios';
 import { Visualizer } from './viz/visualizer';
 import type { Instrument } from './viz/chordShapes';
 
@@ -47,17 +50,19 @@ function setSong(s: Song, save = false) {
   viz.setSong(s);
   roll.setSong(s);
   setLast(s.id);
+  if (!queueOpening) stopQueue();
   renderPanel();
   renderEditorControls();
   updateDuration();
   updateEmptyStates();
   if (save) persist();
   watchCurrent();
-  void loadAudioTrack(s);
+  trackReady = loadAudioTrack(s);
 }
 
 /** La grabación de la canción (si tiene) está guardada en este dispositivo: se carga y se decodifica aparte. */
 let trackLoading = 0;
+let trackReady: Promise<void> = Promise.resolve();
 async function loadAudioTrack(s: Song) {
   const turno = ++trackLoading;
   if (!s.audioTrack) return;
@@ -1034,7 +1039,7 @@ menu.addEventListener('click', (e) => {
       void runMix();
       break;
     case 'library':
-      openLibrary();
+      openLib();
       break;
     case 'save':
       persist();
@@ -1083,119 +1088,83 @@ $<HTMLDialogElement>('#dlg-new').addEventListener('close', () => {
   switchView('edit');
 });
 
-function openLibrary() {
-  const list = $('#library-list');
-  const search = $<HTMLInputElement>('#lib-search');
-  const q = search.value.trim().toLowerCase();
-  list.innerHTML = '';
-  const all = loadSongs();
-  const songs = q ? all.filter((s) => s.title.toLowerCase().includes(q)) : all;
-  if (!all.length) list.innerHTML = '<p class="lib-empty">Aún no hay canciones guardadas. Importa una partitura o crea una nueva.</p>';
-  else if (!songs.length) list.innerHTML = '<p class="lib-empty">Ninguna canción coincide con la búsqueda.</p>';
-  $('#lib-group-hint').hidden = !(cloud.cloudEnabled && cloud.user());
-  for (const s of songs) {
-    const item = document.createElement('div');
-    item.className = 'lib-item' + (s.id === song.id ? ' current' : '');
-    const nNotes = s.voices.reduce((a, v) => a + v.notes.length, 0);
-    item.innerHTML = `<div class="meta" role="button" tabindex="0"><b></b><small>${s.groupId ? '☁ Grupo · ' : ''}${s.voices.length} voces · ${nNotes} notas · ${new Date(s.updatedAt).toLocaleDateString()}</small></div>
-      <div class="lib-actions">
-        <button class="btn small" data-a="rename" title="Cambiar el nombre" aria-label="Cambiar el nombre">✎</button>
-        <button class="btn small" data-a="copy" title="Duplicar" aria-label="Duplicar">⧉</button>
-        ${s.groupId && cloud.user() ? '<button class="btn small" data-a="unshare" title="Quitar del grupo" aria-label="Quitar del grupo">⊘</button>' : ''}
-        <button class="btn small" data-a="delete" title="Eliminar" aria-label="Eliminar">✕</button>
-      </div>`;
-    item.querySelector('b')!.textContent = s.title + (s.id === song.id ? '  · abierta' : '');
-    const open = () => {
-      $<HTMLDialogElement>('#dlg-library').close();
-      if (s.id !== song.id) setSong(s);
-    };
-    item.querySelector<HTMLElement>('.meta')!.onclick = open;
-    item.querySelector<HTMLElement>('.meta')!.onkeydown = (e) => {
-      if (e.key === 'Enter') open();
-    };
-    item.querySelector('.lib-actions')!.addEventListener('click', async (e) => {
-      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset.a;
-      if (a === 'rename') {
-        const r = await form({ title: 'Cambiar el nombre', fields: [{ name: 't', label: 'Título', value: s.title }], okLabel: 'Guardar' });
-        const t = r?.values.t.trim();
-        if (!t) return;
-        if (s.id === song.id) {
-          song.title = t;
-          persist();
-          renderPanel();
-        } else {
-          s.title = t;
-          saveSong(s);
-        }
-      }
-      if (a === 'copy') {
-        const origen = s.id === song.id ? song : s;
-        const c: Song = JSON.parse(JSON.stringify(origen));
-        c.id = uid();
-        c.title = `${s.title} (copia)`;
-        c.groupId = undefined;
-        c.remoteUpdatedAt = undefined;
-        c.createdAt = c.updatedAt = Date.now();
-        // La grabación se guarda aparte, con el id de la canción: la copia necesita la suya. Y lo ya oído en ella, para
-        // no tener que volver a escucharla al poner la letra en la copia.
-        let sinGrabacion = '';
-        if (c.audioTrack) {
-          const wav = await getTrack(s.id);
-          try {
-            if (wav) await putTrack(c.id, wav);
-            else sinGrabacion = ' (sin la grabación: no está en este dispositivo)';
-          } catch {
-            sinGrabacion = ' (sin la grabación: no se ha podido guardar)';
-          }
-          try {
-            const { recallHeard, rememberHeard } = await import('./import/transcribe');
-            const oidas = await recallHeard(origen);
-            if (oidas) rememberHeard(c, oidas);
-          } catch {
-            /* sin lo oído: se volverá a escuchar */
-          }
-        }
-        saveSong(c);
-        toast(`Copia creada: «${c.title}»${sinGrabacion}.`);
-      }
-      if (a === 'unshare' && s.groupId) {
-        if (!(await confirmDialog('Quitar del grupo', `¿Quitar «${s.title}» del grupo? Desaparecerá para todos los miembros. En este dispositivo se queda como canción tuya.`, 'Quitar'))) return;
-        try {
-          const target = s.id === song.id ? song : s;
-          await cloud.deleteRemoteSong(s.id);
-          target.groupId = undefined;
-          target.remoteUpdatedAt = undefined;
-          saveSong(target);
-          if (target === song) {
-            renderPanel();
-            watchCurrent();
-          }
-          toast(`«${s.title}» ya no está en el grupo.`);
-        } catch (err) {
-          toast((err as Error).message || 'No se ha podido quitar del grupo.', true);
-        }
-      }
-      if (a === 'delete') {
-        if (!(await confirmDialog('Eliminar canción', `¿Eliminar «${s.title}» de este dispositivo? No se puede deshacer.${s.groupId ? ' En el grupo sigue estando.' : ''}`, 'Eliminar'))) return;
-        deleteSong(s.id);
-        void delTrack(s.id);
-        if (s.id === song.id) {
-          const rest = loadSongs();
-          setSong(rest[0] ?? demoSong());
-        }
-      }
-      openLibrary();
-    });
-    list.appendChild(item);
-  }
-  const dlg = $<HTMLDialogElement>('#dlg-library');
-  if (!dlg.open) dlg.showModal();
+function openLib() {
+  openLibrary({
+    current: () => song,
+    open: (s) => setSong(s),
+    openDownloaded: (s) => {
+      setSong(s);
+      saveSong(s);
+    },
+    persistCurrent: () => persist(),
+    refreshCurrent: () => {
+      renderPanel();
+      watchCurrent();
+    },
+    openAnother: () => {
+      const rest = loadSongs();
+      setSong(rest[0] ?? demoSong());
+    },
+    shareCurrent: async (groupId) => {
+      song.groupId = groupId;
+      saveSong(song);
+      await syncNow();
+      watchCurrent();
+      renderPanel();
+    },
+    toast,
+    exportMidi,
+    exportProject,
+    playQueue,
+    create: {
+      newSong: () => $<HTMLDialogElement>('#dlg-new').showModal(),
+      importFile: () => fileInput.click(),
+      mix: () => void runMix(),
+      hum: () => {
+        switchView('edit');
+        $('#ed-hum').click();
+      },
+    },
+  });
 }
-$<HTMLInputElement>('#lib-search').addEventListener('input', () => openLibrary());
-$('#lib-new').onclick = () => {
-  $<HTMLDialogElement>('#dlg-library').close();
-  $<HTMLDialogElement>('#dlg-new').showModal();
-};
+$('#btn-library').onclick = () => openLib();
+
+// ---------------- Tocar un repertorio seguido ----------------
+
+/** Canciones que quedan por tocar (las de un repertorio, en orden). Abrir otra canción a mano lo corta. */
+let queue: string[] = [];
+let queuePos = 0;
+let queueOpening = false;
+function playQueue(ids: string[]) {
+  queue = ids;
+  queuePos = 0;
+  void playQueued();
+}
+function stopQueue() {
+  if (!queue.length) return;
+  queue = [];
+  if (engine.onEnded === nextQueued) engine.onEnded = () => {};
+}
+function nextQueued() {
+  queuePos++;
+  if (queuePos < queue.length) return void playQueued();
+  stopQueue();
+  toast('Fin del repertorio.');
+}
+async function playQueued() {
+  const s = getSong(queue[queuePos]);
+  if (!s) return nextQueued();
+  queueOpening = true;
+  setSong(s);
+  queueOpening = false;
+  switchView('viz');
+  // Con la grabación ya cargada, para que suene desde el principio con las voces.
+  await trackReady;
+  if (song.id !== s.id || !queue.length) return;
+  engine.onEnded = nextQueued;
+  await engine.play(0);
+  toast(`Repertorio ${queuePos + 1}/${queue.length}: «${s.title}»`);
+}
 
 // ---------------- Grabar vídeo ----------------
 
@@ -1363,46 +1332,54 @@ function showWelcome() {
 // ---------------- Inicio ----------------
 
 const capturando = new URLSearchParams(location.search).has('captura');
-const firstRun = (() => {
-  try {
-    return !loadSongs().length && !localStorage.getItem(WELCOME_KEY) && !capturando;
-  } catch {
-    return false;
-  }
-})();
-cloud.onPasswordRecovery(() => showAuthScreen({ allowSkip: false, mode: 'newpass' }));
-cloud.initAuth().then(() => {
-  watchCurrent();
-  // Pantalla de entrada al abrir: con la nube activa, sin sesión y si no se eligió antes «Continuar sin cuenta».
-  let skipped = false;
-  try {
-    skipped = !!localStorage.getItem('voces.sinCuenta');
-  } catch {
-    /* nada */
-  }
-  if (cloud.recoveryInUrl) showAuthScreen({ allowSkip: false, mode: 'newpass' });
-  else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando) showAuthScreen({ allowSkip: true, onClose: () => firstRun && showWelcome() });
-  else if (firstRun) showWelcome();
-  let signedIn = !!cloud.user();
-  cloud.onAuth((u) => {
-    // Al volver del enlace del correo (o al entrar con Apple), un aviso para que se note.
-    if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Grupo y cuenta para tu grupo.`);
-    signedIn = !!u;
-    watchCurrent();
-  });
-});
-const saved = loadSongs();
-const last = getLast();
-setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
-requestAnimationFrame(loop);
+onStorageError(() => toast('No se ha podido guardar en este dispositivo (¿almacenamiento lleno?).', true));
 
-// Grabaciones de canciones que ya no existen (y lo oído en ellas): ocupan mucho y no sirven para nada.
 void (async () => {
-  const vivas = new Set(loadSongs().map((s) => s.id));
+  // Las canciones están en IndexedDB: se leen antes de abrir ninguna (la primera vez, se traen las de localStorage).
+  await initStorage();
+  // Lo que lleva más de 30 días en la papelera se borra del todo, con su grabación.
+  const purgadas = purgeOldTrash();
+  if (purgadas.length) forgetSong(purgadas);
+
+  const firstRun = (() => {
+    try {
+      return !loadSongs().length && !localStorage.getItem(WELCOME_KEY) && !capturando;
+    } catch {
+      return false;
+    }
+  })();
+  cloud.onPasswordRecovery(() => showAuthScreen({ allowSkip: false, mode: 'newpass' }));
+  cloud.initAuth().then(() => {
+    watchCurrent();
+    // Pantalla de entrada al abrir: con la nube activa, sin sesión y si no se eligió antes «Continuar sin cuenta».
+    let skipped = false;
+    try {
+      skipped = !!localStorage.getItem('voces.sinCuenta');
+    } catch {
+      /* nada */
+    }
+    if (cloud.recoveryInUrl) showAuthScreen({ allowSkip: false, mode: 'newpass' });
+    else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando) showAuthScreen({ allowSkip: true, onClose: () => firstRun && showWelcome() });
+    else if (firstRun) showWelcome();
+    let signedIn = !!cloud.user();
+    cloud.onAuth((u) => {
+      // Al volver del enlace del correo (o al entrar con Apple), un aviso para que se note.
+      if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Grupo y cuenta para tu grupo.`);
+      signedIn = !!u;
+      watchCurrent();
+    });
+  });
+  const saved = loadSongs();
+  const last = getLast();
+  setSong(saved.find((s) => s.id === last) ?? saved[0] ?? demoSong());
+  requestAnimationFrame(loop);
+
+  // Grabaciones de canciones que ya no existen (y lo oído en ellas): ocupan mucho y no sirven para nada.
+  // Las de la papelera no: si se recupera la canción, vuelve con su grabación.
+  const vivas = allSongIds();
   for (const id of await trackIds()) if (!vivas.has(id)) await delTrack(id);
   for (const id of await heardIds()) if (!vivas.has(id)) await delHeard(id);
 })();
-
 
 initNative();
 onNativeFile((f) => void openFile(f));
@@ -1430,4 +1407,5 @@ if (import.meta.env.DEV) {
 }
 
 // Para depurar desde la consola.
-(window as unknown as Record<string, unknown>).voces = { engine, viz, roll, openFile, get song() { return song; } };
+// `storage`: el mismo módulo que usa la app (con el servidor de desarrollo, importarlo aparte puede dar otra copia).
+(window as unknown as Record<string, unknown>).voces = { engine, viz, roll, openFile, storage, get song() { return song; } };

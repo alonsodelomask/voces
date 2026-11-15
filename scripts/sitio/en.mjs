@@ -111,7 +111,7 @@ export const privacy = {
         <li><b>AI usage log:</b> 30 days, then deleted automatically.</li>
         <li><b>Apple code:</b> until you delete your account and the access is revoked.</li>
         <li><b>AI requests at OpenAI:</b> we ask that they are not stored. OpenAI keeps a log for up to 30 days to monitor abuse, or longer if the law requires it or if it considers it reasonably necessary to protect its services or other people. They are not used to train its models.</li>
-        <li><b>Shared songs:</b> they belong to the group. If you delete your account or leave the group, the songs you shared remain available to the other members, without your name. You can remove them from the group beforehand in <i>My songs</i> (⊘ button). A group and its songs are deleted when its last member leaves.</li>
+        <li><b>Shared songs:</b> they belong to the group. If you delete your account or leave the group, the songs you shared remain available to the other members, without your name. You can remove them from the group beforehand in the <i>Library</i> (⋯ › <i>Remove from group</i>). A group and its songs are deleted when its last member leaves.</li>
         <li><b>Technical connection data:</b> for the limited time our providers keep it for security.</li>
       </ul>
 
@@ -240,8 +240,8 @@ export const deleteAccount = {
       </ul>
       <h2>What remains</h2>
       <ul>
-        <li>Songs stored on your device (they stay there; delete them in <i>My songs</i> or by uninstalling the app).</li>
-        <li>Songs you shared with a group, which remain available to its members without your name. If you don’t want them to stay, remove them from the group first (<i>My songs</i>, ⊘ button). If you were the only member, the group and its songs are deleted.</li>
+        <li>Songs stored on your device (they stay there; delete them in the <i>Library</i> or by uninstalling the app).</li>
+        <li>Songs you shared with a group, which remain available to its members without your name. If you don’t want them to stay, remove them from the group first (<i>Library</i>, ⋯ › <i>Remove from group</i>). If you were the only member, the group and its songs are deleted.</li>
       </ul>`,
 };
 

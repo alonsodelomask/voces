@@ -13,7 +13,7 @@ async () => {
   const HUERFANA = 'cancion-que-ya-no-existe';
   const DATOS = 'prueba-letra-guardada';
   const T = await import('/src/audio/track.ts');
-  const { saveSong } = await import('/src/storage.ts');
+  const { saveSong } = window.voces.storage;
   const t = Array.from({ length: 13 }, (_, i) => 0.5 * i);
   const p = (texto, a, b) => ({ texto, a, b });
   const oido = () => [p('Mi', t[0] + 0.02, t[1] - 0.05), p('gato', t[1] + 0.03, t[2] + 0.15), p('escucha', t[2] + 0.2, t[5] - 0.05),
@@ -120,12 +120,13 @@ async () => {
       res.huerfanaLimpia = !(await T.heardIds()).includes(HUERFANA);
 
       // 3) «Duplicar» la canción: la copia se lleva lo oído (lo lee del dispositivo y lo guarda para ella) y se abre.
-      document.querySelector('#menu [data-act=library]').click();
-      await espera(() => document.querySelector('#library-list .lib-item.current [data-a=copy]'));
-      document.querySelector('#library-list .lib-item.current [data-a=copy]').click();
+      document.querySelector('#btn-library').click();
+      await espera(() => document.querySelector('#library-list .bib-row.current [data-more]'));
+      document.querySelector('#library-list .bib-row.current [data-more]').click();
+      document.querySelector('#dlg-library .bib-pop [data-a=copy]').click();
       await espera(() => /^Copia creada/.test(aviso() ?? ''));
-      const item = [...document.querySelectorAll('#library-list .lib-item')].find((x) => x.querySelector('b')?.textContent.includes(`${titulo} (copia)`));
-      item?.querySelector('.meta').click();
+      const item = [...document.querySelectorAll('#library-list .bib-row')].find((x) => x.querySelector('b')?.textContent.includes(`${titulo} (copia)`));
+      item?.querySelector('.bib-open').click();
       await espera(() => V.song.title === `${titulo} (copia)`);
       const c = V.song;
       let g = null;

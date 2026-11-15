@@ -29,6 +29,7 @@ Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Androi
 - **Tararear**: cantas y se convierte en notas (detección de tono YIN en el dispositivo), con metrónomo, cuenta atrás y la opción de oír las otras voces mientras grabas.
 - **Asistente**: revisión de voces (paralelas, cruces, saltos, registros), propuesta de acordes para una melodía y armonización automática.
 - **IA (OpenAI)**: pídele cambios en lenguaje natural; ves la propuesta antes de aplicarla.
+- **Biblioteca** (`library/`): pantalla completa con todas las canciones del dispositivo y las del grupo en la misma lista. Tiene buscador (título, voces y letra, sin tildes), filtros (dónde está, con grabación, con letra), orden (modificada, nombre o creada), selección de varias, **repertorios** con «Tocar todo seguido» y **papelera** de 30 días (la grabación se queda hasta borrar para siempre). Las canciones se guardan en IndexedDB, una por registro (`storage.ts`); al abrir la primera vez se traen las de `localStorage`.
 - **Grupos en la nube**: cuentas con código por email, grupos con código de invitación y canciones compartidas que se sincronizan en tiempo real.
 - **Exportar** MIDI, proyecto `.json` y vídeo vertical 1080×1920.
 
