@@ -976,6 +976,7 @@ const isAudio = (f: File) => isAudioFile(f.name) || (f.type.startsWith('audio/')
 
 /** Una partitura y una grabación a la vez: se abre la partitura y se pasa directo a mezclarlas. */
 async function openFiles(fs: File[]) {
+  closeLib();
   const scores = fs.filter((f) => !isAudio(f));
   const audios = fs.filter(isAudio);
   for (const f of scores) await openFile(f);
@@ -1122,6 +1123,10 @@ $<HTMLDialogElement>('#dlg-new').addEventListener('close', () => {
   switchView('edit');
 });
 
+function closeLib() {
+  const d = document.querySelector<HTMLDialogElement>('#dlg-library');
+  if (d?.open) d.close();
+}
 function openLib() {
   openLibrary({
     current: () => song,
@@ -1331,7 +1336,7 @@ $('#empty').addEventListener('click', (e) => {
 });
 
 const WELCOME_KEY = 'voces.bienvenida.v1';
-/** Al iniciar sesión se va a la biblioteca, para elegir la canción (las del grupo están ahí); la bienvenida ya no sale. */
+/** Al abrir y al iniciar sesión se va a la biblioteca, para elegir la canción (las del grupo están ahí); la bienvenida ya no sale. */
 function openLibAfterSignIn() {
   try {
     localStorage.setItem(WELCOME_KEY, '1');
@@ -1384,6 +1389,7 @@ function showWelcome() {
 // ---------------- Inicio ----------------
 
 const capturando = new URLSearchParams(location.search).has('captura');
+let abiertoDesdeFuera = false;
 onStorageError(() => toast('No se ha podido guardar en este dispositivo (¿almacenamiento lleno?).', true));
 
 void (async () => {
@@ -1410,12 +1416,11 @@ void (async () => {
     } catch {
       /* nada */
     }
+    // Se empieza en la biblioteca, para elegir canción (como en Flat). Solo la primera vez sin cuenta sale la bienvenida.
+    const inicio = () => (firstRun && !cloud.user() ? showWelcome() : openLibAfterSignIn());
     if (cloud.recoveryInUrl) showAuthScreen({ allowSkip: false, mode: 'newpass' });
-    else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando)
-      showAuthScreen({ allowSkip: true, onClose: (ok) => (ok ? openLibAfterSignIn() : firstRun && showWelcome()) });
-    // Con sesión, la primera vez se va a la biblioteca a elegir canción, no a la bienvenida.
-    else if (firstRun && cloud.user()) openLibAfterSignIn();
-    else if (firstRun) showWelcome();
+    else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando) showAuthScreen({ allowSkip: true, onClose: inicio });
+    else if (!capturando && !abiertoDesdeFuera) inicio();
     let signedIn = !!cloud.user();
     cloud.onAuth((u) => {
       // Al volver del enlace del correo (o al entrar con Apple), un aviso para que se note.
@@ -1437,7 +1442,12 @@ void (async () => {
 })();
 
 initNative();
-onNativeFile((f) => void openFile(f));
+onNativeFile((f) => {
+  // Un archivo que llega de fuera (compartido o abierto con Vocify) se abre, y no se tapa con la biblioteca.
+  abiertoDesdeFuera = true;
+  closeLib();
+  void openFile(f);
+});
 linkSitePages();
 if ('serviceWorker' in navigator && import.meta.env.PROD && !isNative) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
