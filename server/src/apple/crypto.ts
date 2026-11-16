@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 /**
  * Cifrado del refresh token de Apple antes de guardarlo en Supabase: AES-256-GCM con `APPLE_TOKEN_ENCRYPTION_KEY`
@@ -10,10 +10,15 @@ const AAD = Buffer.from('voces:apple-refresh-token:v1', 'utf8');
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-/** La clave en base64 (con o sin relleno, también base64url) o en hexadecimal, siempre de 32 bytes. null si no vale. */
+/**
+ * La clave en base64 (con o sin relleno, también base64url) o en hexadecimal, siempre de 32 bytes. También vale la que
+ * crea el botón «Generate» de Render (32 caracteres hexadecimales, 16 bytes al azar): se alarga a 32 bytes con SHA-256.
+ * null si no vale.
+ */
 export function parseEncryptionKey(raw: string): Buffer | null {
   const text = raw.trim();
   if (/^[0-9a-fA-F]{64}$/.test(text)) return Buffer.from(text, 'hex');
+  if (/^[0-9a-fA-F]{32}$/.test(text)) return createHash('sha256').update(`voces:apple-token-key:${text.toLowerCase()}`).digest();
   if (!/^[A-Za-z0-9+/_-]{43}={0,1}$/.test(text)) return null;
   const key = Buffer.from(text.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
   return key.length === 32 ? key : null;

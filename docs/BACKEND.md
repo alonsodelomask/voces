@@ -168,7 +168,7 @@ En App Store Connect › **TestFlight**, añádete como probador (y al resto del
 
 Apple exige que, al borrar la cuenta, se revoque también el acceso de «Iniciar sesión con Apple» (norma 5.1.1(v)). Ya está en el código y probado con un Apple simulado. Sin estas variables el servidor arranca igual, avisa en el registro y «Eliminar mi cuenta» funciona, pero sin revocar.
 
-**Estado (16/11/2026):** la clave está creada y Render ya tiene `APPLE_TEAM_ID` y `APPLE_KEY_ID` (guardadas con *Save only*, sin desplegar). Faltan el `.p8` (`APPLE_PRIVATE_KEY`), la clave de cifrado (`APPLE_TOKEN_ENCRYPTION_KEY`) y el despliegue: pasos b.3, c y d.
+**Estado (16/11/2026):** hecho. Render tiene las cuatro variables: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, el `.p8` en `APPLE_PRIVATE_KEY` y la clave de cifrado en `APPLE_TOKEN_ENCRYPTION_KEY`, creada con el botón **Generate** de Render. Falta la prueba del paso e.
 
 **a) Team ID:** `4QJ5C5WXM6`, el mismo que en Baulify (developer.apple.com › Membership details).
 
@@ -177,7 +177,7 @@ Apple exige que, al borrar la cuenta, se revoque también el acceso de «Iniciar
 2. Nombre «Vocify revocar Apple». Marca **Sign in with Apple** › **Configure** › *Primary App ID*: `es.vocify.app` (aparece tras la primera compilación con EAS) › **Save › Continue › Register**. *(Hecho el 16/11/2026: Key ID **`9BLRBZK3TV`**.)*
 3. Descarga el `.p8` (*Keys* › «Vocify revocar Apple» › **Download**). **Solo se descarga una vez**: guárdalo en tu gestor de contraseñas, **nunca** en la carpeta del proyecto, en Git ni en un chat. Si lo pierdes, revoca la clave y crea otra (y cambia `APPLE_KEY_ID`).
 
-**c) Clave de cifrado** (32 bytes al azar, sin que aparezca en pantalla). En PowerShell:
+**c) Clave de cifrado.** Lo más fácil: en Render, en la fila `APPLE_TOKEN_ENCRYPTION_KEY`, pulsa **Generate** (crea 32 caracteres hexadecimales al azar, que el servidor acepta). O bien, 32 bytes al azar sin que aparezcan en pantalla, en PowerShell:
 
 ```powershell
 node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))" | Set-Clipboard

@@ -7,7 +7,7 @@ import { SignJWT } from 'jose';
 import { AccountService } from '../src/account.ts';
 import { createSimulatedProvider, type AiProvider } from '../src/ai.ts';
 import { AppleCodeRejectedError, AppleUnavailableError, type AppleClient } from '../src/apple/client.ts';
-import { decryptToken } from '../src/apple/crypto.ts';
+import { decryptToken, encryptToken, parseEncryptionKey } from '../src/apple/crypto.ts';
 import { createApp } from '../src/app.ts';
 import { createVerifier } from '../src/auth.ts';
 import { loadConfig } from '../src/config.ts';
@@ -226,6 +226,19 @@ describe('Configuración', () => {
       assert.ok(!e.message.includes('no-es-una-url'));
       return true;
     });
+  });
+
+  it('la clave de cifrado vale en base64, en hexadecimal y como la crea «Generate» de Render; otra cosa, no', () => {
+    const b64 = randomBytes(32).toString('base64');
+    assert.equal(parseEncryptionKey(b64)?.length, 32);
+    assert.equal(parseEncryptionKey(randomBytes(32).toString('hex'))?.length, 32);
+    const render = randomBytes(16).toString('hex');
+    const k = parseEncryptionKey(render);
+    assert.equal(k?.length, 32);
+    assert.deepEqual(parseEncryptionKey(render.toUpperCase()), k);
+    assert.notDeepEqual(parseEncryptionKey(randomBytes(16).toString('hex')), k);
+    assert.equal(decryptToken(k!, encryptToken(k!, 'token-de-prueba')), 'token-de-prueba');
+    for (const mala of ['corta', randomBytes(16).toString('base64'), randomBytes(24).toString('hex'), 'z'.repeat(32)]) assert.equal(parseEncryptionKey(mala), null);
   });
 
   it('las variables vacías cuentan como no puestas y Apple queda desactivado sin sus cuatro claves', () => {
