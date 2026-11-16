@@ -3,8 +3,10 @@ async () => {
   // desarrollo): nombre y correo, contraseña (no deja guardar una corta o distinta), avisos de este dispositivo,
   // eliminar la cuenta y cerrar sesión. Sin sesión, el menú ofrece entrar. Persona y correo inventados.
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  // La pantalla de entrada se cierra con su botón (quitarla a mano la deja «abierta» por dentro), y después los diálogos.
+  { const a = document.querySelector('.auth'); (a?.querySelector('#a-close') ?? a?.querySelector('#a-skip'))?.click(); }
+  await wait(100);
   document.querySelectorAll('dialog[open]').forEach((d) => d.close());
-  document.querySelector('.auth')?.remove();
   const res = {};
   const llamadas = [];
   let nombre = 'Ana Pérez';

@@ -146,7 +146,11 @@ export function showAuthScreen(opts: AuthOptions): void {
   root.querySelector<HTMLElement>('#a-magic')?.addEventListener('click', () => setMode('magic'));
 
   let signedIn = false;
+  let closed = false;
   const close = () => {
+    // Al entrar, el aviso de sesión y el propio formulario lo cierran a la vez: una sola vez.
+    if (closed) return;
+    closed = true;
     cancelAnimationFrame(raf);
     unsub();
     root.remove();
@@ -158,6 +162,12 @@ export function showAuthScreen(opts: AuthOptions): void {
     if (e.key === 'Escape' && !opts.allowSkip) close();
   };
   document.addEventListener('keydown', onKey);
+  // Solo en desarrollo: las pruebas simulan que se ha entrado (sin cuenta de verdad).
+  if (import.meta.env.DEV)
+    (window as unknown as { __vocesEntrar?: () => void }).__vocesEntrar = () => {
+      signedIn = true;
+      close();
+    };
   root.querySelector<HTMLElement>('#a-close')?.addEventListener('click', close);
   root.querySelector<HTMLElement>('#a-skip')?.addEventListener('click', () => {
     try {

@@ -623,7 +623,7 @@ function openAccountSettings(section?: string) {
     {
       toast,
       openGroup: () => openGroups(),
-      openAuth: () => showAuthScreen({ allowSkip: false }),
+      openAuth: () => showAuthScreen({ allowSkip: false, onClose: (ok) => ok && openLibAfterSignIn() }),
     },
     section,
   );
@@ -632,7 +632,7 @@ initAccountMenu({
   openSettings: (section) => openAccountSettings(section),
   openGroup: () => openGroups(),
   openHelp: () => $<HTMLDialogElement>('#dlg-help').showModal(),
-  openAuth: () => showAuthScreen({ allowSkip: false }),
+  openAuth: () => showAuthScreen({ allowSkip: false, onClose: (ok) => ok && openLibAfterSignIn() }),
   toast,
 });
 
@@ -1331,6 +1331,15 @@ $('#empty').addEventListener('click', (e) => {
 });
 
 const WELCOME_KEY = 'voces.bienvenida.v1';
+/** Al iniciar sesión se va a la biblioteca, para elegir la canción (las del grupo están ahí); la bienvenida ya no sale. */
+function openLibAfterSignIn() {
+  try {
+    localStorage.setItem(WELCOME_KEY, '1');
+  } catch {
+    /* nada */
+  }
+  openLib();
+}
 function showWelcome() {
   const dlg = document.createElement('dialog');
   dlg.className = 'dlg';
@@ -1402,7 +1411,10 @@ void (async () => {
       /* nada */
     }
     if (cloud.recoveryInUrl) showAuthScreen({ allowSkip: false, mode: 'newpass' });
-    else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando) showAuthScreen({ allowSkip: true, onClose: () => firstRun && showWelcome() });
+    else if (cloud.cloudEnabled && !cloud.user() && !skipped && !capturando)
+      showAuthScreen({ allowSkip: true, onClose: (ok) => (ok ? openLibAfterSignIn() : firstRun && showWelcome()) });
+    // Con sesión, la primera vez se va a la biblioteca a elegir canción, no a la bienvenida.
+    else if (firstRun && cloud.user()) openLibAfterSignIn();
     else if (firstRun) showWelcome();
     let signedIn = !!cloud.user();
     cloud.onAuth((u) => {
