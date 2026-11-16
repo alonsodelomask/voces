@@ -29,10 +29,10 @@ Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión*
 **Lo que falta y tienes que hacer tú:**
 
 1. **Cuenta de demostración** (sección 3): créala en Supabase y escribe la contraseña en App Store Connect.
-2. **Datos de contacto** de *Información para el equipo de revisión de apps*: nombre, apellidos, teléfono y correo. Apple no deja guardar sin teléfono, así que se quedaron vacíos.
+2. **Datos de contacto** de *Información para el equipo de revisión de apps*: Apple no deja guardar la página sin teléfono. El 16/11/2026 se dejaron escritos (sin guardar, en una pestaña de Chrome) el nombre, los apellidos, el correo soporte@vocify.es y las notas nuevas de la sección 3; falta tu teléfono y la contraseña, y pulsar **Guardar**. Si esa pestaña se cerró, copia las notas de la sección 3.
 3. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
 4. Opcional: *Accesibilidad de la app* (sección 1).
-5. Probar la compilación 2 en TestFlight (sección 5) y, si todo va bien, **Añadir a revisión** y enviar.
+5. Probar en TestFlight (sección 5) y, si todo va bien, **Añadir a revisión** y enviar. La compilación 2 aún tiene la ruta antigua para borrar la cuenta (Menú › Grupo y cuenta); la nueva (Ajustes de cuenta › Tus datos) llega en la siguiente. Las notas para el revisor dan las dos: si envías una compilación nueva, cámbiala en *Compilación* y quita la línea de la compilación 2.
 
 ## 1. Privacidad de la app («App Privacy»)
 
@@ -160,12 +160,14 @@ No hace falta crearle grupo ni canciones: el revisor puede crear un grupo y usar
 ```
 Vocify works fully without an account: tap «Continuar sin cuenta» on the first screen, then load the sample (Menu ⋮ → Cargar ejemplo), play it, edit it, hum, or import a score or an audio recording.
 
-An account is only needed for shared groups and the AI assistant: use the demo account above on the first screen (email + password). Sign in with Apple is also available.
+An account is only needed for the group and the AI assistant: use the demo account above on the first screen (email + password). Sign in with Apple is also available.
 
 Microphone: Editar → Tararear converts singing into notes; audio is analysed on-device and never stored or sent.
 Audio import: Importar → choose a WAV/MP3 → converted on-device into voices; the file is not uploaded.
-Account deletion: Menu (⋮) → Grupo y cuenta → Eliminar mi cuenta (also revokes Sign in with Apple).
-Data download: Menu (⋮) → Grupo y cuenta → Descargar mis datos.
+
+Account deletion (also revokes Sign in with Apple): tap the circle with your initials (top right) → Ajustes de cuenta → Tus datos → Eliminar mi cuenta. Also reachable from Menu (⋮) → Ajustes de cuenta.
+Data download: same place → Descargar mis datos.
+In build 2 (1.0.0) these options are still under Menu (⋮) → Grupo y cuenta → Eliminar mi cuenta / Descargar mis datos.
 
 The app interface is in Spanish.
 ```
@@ -176,7 +178,7 @@ The app interface is in Spanish.
 | --- | --- |
 | 4.2 Funcionalidad mínima (no ser «una web en una app») | Funciona sin conexión (la web va dentro de la app), usa el micrófono, «Abrir con…» desde otras apps, el menú de compartir y «Iniciar sesión con Apple» nativos, y tiene editor, audio, transcripción y grabación |
 | 4.8 Iniciar sesión con Apple | Ofrecido en el iPhone junto al correo y la contraseña |
-| 5.1.1(v) Borrar la cuenta en la app | Grupo y cuenta › Eliminar mi cuenta → `DELETE /v1/account`, con revocación del token de Apple (si el servidor no responde, la función `delete_my_account` de Supabase) |
+| 5.1.1(v) Borrar la cuenta en la app | Círculo con las iniciales (o Menú) › Ajustes de cuenta › Tus datos › Eliminar mi cuenta (en la compilación 2: Menú › Grupo y cuenta) → `DELETE /v1/account`, con revocación del token de Apple (si el servidor no responde, la función `delete_my_account` de Supabase) |
 | 5.1.1 No exigir cuenta sin motivo | «Continuar sin cuenta» en la primera pantalla; todo funciona sin cuenta salvo grupos e IA |
 | 5.1.2 Datos y privacidad | Política en https://vocify.es/privacidad/, enlazada dentro de la app (Ayuda y pantalla de entrar); IA solo con texto de la canción |
 | 1.2 Contenido generado por usuarios | Solo se comparte dentro de grupos privados con código de invitación; no hay contenido público |

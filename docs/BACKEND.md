@@ -192,7 +192,7 @@ Pégala en Render (paso d) y vacía el portapapeles con `Set-Clipboard -Value ' 
 
 Pulsa **Save, rebuild, and deploy**. No guardes nunca una fila con el valor vacío: el servidor la toma como mal configurada y no arranca (mejor no crear la fila hasta tener el valor). Cuando termine el despliegue, en **Logs** debe salir `Apple: revocación activa`; si sale `sin revocación`, el aviso de arriba dice qué variable falta.
 
-**e) Prueba en TestFlight** con una cuenta de prueba: entra con Apple, borra la cuenta (Menú › Grupo y cuenta › Eliminar mi cuenta). En el iPhone, *Ajustes › [tu nombre] › Iniciar sesión con Apple* ya no debe mostrar Vocify.
+**e) Prueba en TestFlight** con una cuenta de prueba: entra con Apple, borra la cuenta (círculo con las iniciales, arriba a la derecha › Ajustes de cuenta › Tus datos › Eliminar mi cuenta; en la compilación 2, Menú › Grupo y cuenta › Eliminar mi cuenta). En el iPhone, *Ajustes › [tu nombre] › Iniciar sesión con Apple* ya no debe mostrar Vocify.
 
 ### 8. Ficha de la App Store
 
