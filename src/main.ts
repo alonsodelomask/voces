@@ -1135,6 +1135,8 @@ function openLib() {
   });
 }
 $('#btn-library').onclick = () => openLib();
+// El logo y la palabra «Vocify» llevan al inicio, que es la biblioteca (como el botón de los libros).
+$('#btn-home').onclick = () => openLib();
 
 // ---------------- Tocar un repertorio seguido ----------------
 

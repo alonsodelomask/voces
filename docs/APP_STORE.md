@@ -36,8 +36,10 @@ Declara solo lo comprobado: **Modo oscuro** (la app es siempre oscura) y **Contr
 
 | Campo | Propuesta |
 | --- | --- |
-| Nombre | **Vocify** (si está cogido: «Vocify – Voces del grupo») |
-| Subtítulo (30) | Ve y ensaya las voces del grupo |
+| Nombre (30) | **Vocify: Ensaya voces** (puesto en App Store Connect el 16/11/2026; «Vocify» a secas estaba cogido. El usuario quería «Vocify: Ensaya voces con tu grupo de música», que tiene 43 caracteres: se repartió entre nombre y subtítulo) |
+| Subtítulo (30) | **Con tu grupo de música** (puesto en App Store Connect) |
+| Idioma principal | Español (España); también hay ficha en inglés (EE. UU.) con el mismo nombre y subtítulo |
+| App Store Connect | ID de Apple `6835413894`, SKU `EX1794828482375` |
 | Categoría | Música (secundaria: Educación) |
 | Edad | 4+ |
 | URL de soporte | https://vocify.es/soporte/ |

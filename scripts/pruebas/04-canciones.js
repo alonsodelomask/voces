@@ -15,7 +15,8 @@ async () => {
   // Dos canciones guardadas: el ejemplo y una nueva.
   document.querySelector('#menu [data-act=demo]').click();
   await wait(200);
-  document.querySelector('#btn-library').click();
+  // El logo y la palabra «Vocify» llevan al inicio (la biblioteca), como el botón de los libros.
+  document.querySelector('#btn-home').click();
   await wait(200);
   res.abierta1 = lib.open;
   res.antes = filas().length;
