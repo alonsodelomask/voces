@@ -168,12 +168,14 @@ En App Store Connect › **TestFlight**, añádete como probador (y al resto del
 
 Apple exige que, al borrar la cuenta, se revoque también el acceso de «Iniciar sesión con Apple» (norma 5.1.1(v)). Ya está en el código y probado con un Apple simulado. Sin estas variables el servidor arranca igual, avisa en el registro y «Eliminar mi cuenta» funciona, pero sin revocar.
 
-**a) Team ID:** el mismo que en Baulify (developer.apple.com › Membership details).
+**Estado (16/11/2026):** la clave está creada y Render ya tiene `APPLE_TEAM_ID` y `APPLE_KEY_ID` (guardadas con *Save only*, sin desplegar). Faltan el `.p8` (`APPLE_PRIVATE_KEY`), la clave de cifrado (`APPLE_TOKEN_ENCRYPTION_KEY`) y el despliegue: pasos b.3, c y d.
+
+**a) Team ID:** `4QJ5C5WXM6`, el mismo que en Baulify (developer.apple.com › Membership details).
 
 **b) Clave «Sign in with Apple» (.p8):**
 1. developer.apple.com › **Certificates, Identifiers & Profiles › Keys › +**.
-2. Nombre «Vocify revocar Apple». Marca **Sign in with Apple** › **Configure** › *Primary App ID*: `es.vocify.app` (aparece tras la primera compilación con EAS) › **Save › Continue › Register**.
-3. Apunta el **Key ID** y descarga el `.p8`. **Solo se descarga una vez**: guárdalo en tu gestor de contraseñas, **nunca** en la carpeta del proyecto, en Git ni en un chat.
+2. Nombre «Vocify revocar Apple». Marca **Sign in with Apple** › **Configure** › *Primary App ID*: `es.vocify.app` (aparece tras la primera compilación con EAS) › **Save › Continue › Register**. *(Hecho el 16/11/2026: Key ID **`9BLRBZK3TV`**.)*
+3. Descarga el `.p8` (*Keys* › «Vocify revocar Apple» › **Download**). **Solo se descarga una vez**: guárdalo en tu gestor de contraseñas, **nunca** en la carpeta del proyecto, en Git ni en un chat. Si lo pierdes, revoca la clave y crea otra (y cambia `APPLE_KEY_ID`).
 
 **c) Clave de cifrado** (32 bytes al azar, sin que aparezca en pantalla). En PowerShell:
 
@@ -183,9 +185,14 @@ node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('b
 
 Pégala en Render (paso d) y vacía el portapapeles con `Set-Clipboard -Value ' '`. Guarda una copia en tu gestor y **no la cambies nunca**: con otra clave no se podrían descifrar los tokens ya guardados.
 
-**d) Render › `voces-api` › Environment:** `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (el `.p8` entero, con las líneas BEGIN y END) y `APPLE_TOKEN_ENCRYPTION_KEY`. Guarda. En **Logs** debe salir `Apple: revocación activa`.
+**d) Render › `voces-api` › Environment › Edit:** `APPLE_TEAM_ID` (`4QJ5C5WXM6`) y `APPLE_KEY_ID` (`9BLRBZK3TV`) ya están. Pulsa **Add variable** dos veces y añade:
 
-**e) Prueba en TestFlight** con una cuenta de prueba: entra con Apple, borra la cuenta (Menú › Grupo y cuenta › Eliminar mi cuenta). En el iPhone, *Ajustes › [tu nombre] › Iniciar sesión con Apple* ya no debe mostrar Voces.
+- `APPLE_PRIVATE_KEY`: abre el `.p8` con el Bloc de notas y pega el contenido entero, con las líneas `-----BEGIN PRIVATE KEY-----` y `-----END PRIVATE KEY-----`.
+- `APPLE_TOKEN_ENCRYPTION_KEY`: pega la clave del paso c.
+
+Pulsa **Save, rebuild, and deploy**. No guardes nunca una fila con el valor vacío: el servidor la toma como mal configurada y no arranca (mejor no crear la fila hasta tener el valor). Cuando termine el despliegue, en **Logs** debe salir `Apple: revocación activa`; si sale `sin revocación`, el aviso de arriba dice qué variable falta.
+
+**e) Prueba en TestFlight** con una cuenta de prueba: entra con Apple, borra la cuenta (Menú › Grupo y cuenta › Eliminar mi cuenta). En el iPhone, *Ajustes › [tu nombre] › Iniciar sesión con Apple* ya no debe mostrar Vocify.
 
 ### 8. Ficha de la App Store
 

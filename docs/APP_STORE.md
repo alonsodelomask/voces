@@ -9,6 +9,31 @@ Respuestas preparadas el 13/11/2026 a partir del código (la app se llamaba «Vo
 
 **Si cambia el código, revisa este documento** y la política (`scripts/sitio/es.mjs` y `en.mjs`). La compilación y la subida se explican en [BACKEND.md](BACKEND.md), paso 6.
 
+## 0. Estado en App Store Connect (16/11/2026)
+
+Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión**: eso se hace después de probar la compilación en TestFlight.
+
+**Ya está puesto:**
+
+- Ficha en español y en inglés (EE. UU.): texto promocional, descripción, palabras clave, URL de soporte y de marketing (secciones 2 y 2.1).
+- Copyright: `2026 Pablo M. Fdez. Alonso de Lomas`.
+- Capturas (sección 2.2): las 4, en orden, en el tamaño obligatorio y en el de 6,9″. Sirven para los dos idiomas.
+- Compilación **2 (1.0.0)** añadida a la versión. No pidió documentación de cifrado: `ITSAppUsesNonExemptEncryption` es `false` en `movil/app.json`.
+- *Información de la app*: categoría Música, secundaria Educación; derechos sobre el contenido «No contiene, muestra ni accede a contenido de terceros» (la canción de ejemplo es nuestra; lo que importa cada usuario es suyo); contrato de licencia estándar de Apple.
+- Clasificación por edades: todas las respuestas «No» o «Ninguna» → **4+**.
+- Precio y disponibilidad: país base España (EUR), **gratis**, los 175 países o regiones. China continental exige un número de registro ICP y permisos para la IA generativa; si Apple lo pide, quítala en *Gestionar disponibilidad*.
+- Publicación de la versión: **manual** (la publicas tú cuando Apple la apruebe).
+- Revisión de la app: «Es necesario iniciar sesión» marcado, usuario `revision.apple@vocify.es` y las notas de la sección 3.
+- Privacidad de la app: URL de la política en los dos idiomas y los 4 tipos de datos de la sección 1, guardados como borrador.
+
+**Lo que falta y tienes que hacer tú:**
+
+1. **Cuenta de demostración** (sección 3): créala en Supabase y escribe la contraseña en App Store Connect.
+2. **Datos de contacto** de *Información para el equipo de revisión de apps*: nombre, apellidos, teléfono y correo. Apple no deja guardar sin teléfono, así que se quedaron vacíos.
+3. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
+4. Opcional: *Accesibilidad de la app* (sección 1).
+5. Probar la compilación 2 en TestFlight (sección 5) y, si todo va bien, **Añadir a revisión** y enviar.
+
 ## 1. Privacidad de la app («App Privacy»)
 
 ### Respuesta general
@@ -28,6 +53,8 @@ Respuestas preparadas el 13/11/2026 a partir del código (la app se llamaba «Vo
 | Audio | **No** | — | — | Se analiza en el dispositivo (`src/hum/`, `src/import/audio.ts`) |
 | Uso, diagnóstico, ubicación, contactos, fotos | **No** | — | — | — |
 
+Ninguno se usa para seguimiento. Así está guardado (sin publicar) en App Store Connect desde el 16/11/2026; falta que pulses **Publicar** en *Privacidad de la app*.
+
 ### Accesibilidad («Accessibility Nutrition Labels», opcional)
 
 Declara solo lo comprobado: **Modo oscuro** (la app es siempre oscura) y **Contraste suficiente**. VoiceOver funciona en menús y diálogos (botones con nombre), pero el visualizador y el editor son gráficos: no lo declares todavía.
@@ -42,14 +69,17 @@ Declara solo lo comprobado: **Modo oscuro** (la app es siempre oscura) y **Contr
 | App Store Connect | ID de Apple `6835413894`, SKU `EX1794828482375` |
 | Categoría | Música (secundaria: Educación) |
 | Edad | 4+ |
-| URL de soporte | https://vocify.es/soporte/ |
-| URL de marketing | https://vocify.es/conoce/ |
-| URL de privacidad | https://vocify.es/privacidad/ |
+| URL de soporte | https://vocify.es/soporte/ (inglés: https://vocify.es/en/support/) |
+| URL de marketing | https://vocify.es/conoce/ (inglés: https://vocify.es/en/) |
+| URL de privacidad | https://vocify.es/privacidad/ (inglés: https://vocify.es/en/privacy/) |
+| Texto promocional (170) | Ve cada voz de tu grupo con su color, escucha tu parte sola, ensaya en bucle y compón tarareando. Sin anuncios y sin rastreo. |
 | Contrato de licencia | El estándar de Apple (las condiciones propias están en https://vocify.es/condiciones/) |
 | Palabras clave (100) | `coro,a cappella,armonía,voces,partitura,musicxml,midi,ensayo,tararear,acordes,transcribir` |
-| Copyright | 2026 (el nombre del titular, el mismo de las páginas legales) |
+| Copyright | 2026 Pablo M. Fdez. Alonso de Lomas (el titular de las páginas legales) |
 
-Las URL funcionan cuando el dominio apunte a Render ([DOMINIO.md](DOMINIO.md)). Mientras tanto, las mismas páginas están en `https://voces-web.onrender.com/soporte/`, `/privacidad/`…
+Las seis URL respondían bien el 16/11/2026.
+
+«Novedades de esta versión» no aparece en la primera versión; se rellena a partir de la 1.0.1.
 
 ### Descripción
 
@@ -67,9 +97,37 @@ Las URL funcionan cuando el dominio apunte a Render ([DOMINIO.md](DOMINIO.md)). 
 >
 > Sin anuncios y sin rastreo. Funciona sin cuenta y sin conexión. La cuenta solo hace falta para compartir con el grupo y usar la IA.
 
-### Capturas (iPhone de 6,9", 1320×2868)
+### 2.1 Ficha en inglés (EE. UU.)
 
-Generadas con `node scripts/capturas.mjs` (con `npm run dev` en marcha) en `docs/capturas-app-store/`:
+Mismo nombre y subtítulo. La app solo está en español, y la descripción lo dice al final.
+
+**Texto promocional:**
+
+> See each voice of your group in its own color, hear your part alone, loop the hard bars and compose by humming. No ads, no tracking.
+
+**Palabras clave:** `choir,a cappella,harmony,vocal,voices,sheet music,musicxml,midi,rehearsal,hum,chords,transcribe`
+
+**Descripción:**
+
+> Vocify turns your group's scores and recordings into colored lines that move with the music, like a synthesizer: each voice in its own color, the exact note at every moment and the chord that is sounding.
+>
+> • Import MusicXML or MIDI from MuseScore, Flat, Sibelius or Finale. Repeats are respected.
+> • Only have a recording? Import the audio (WAV, MP3, M4A…) and Vocify turns it into voices, right on your phone.
+> • Listen to each voice solo or mute it, slow it down and loop the hard bars with a metronome.
+> • Compose by humming: you sing and Vocify turns it into notes.
+> • Edit notes and chords with your finger, transpose and undo whenever you like.
+> • The assistant checks the voices, suggests chords and creates harmonies. With AI, ask for changes in plain words.
+> • If you play, it shows how to play each chord on guitar, ukulele or piano.
+> • Create your group, invite with a code and work together on the same song, synced instantly.
+> • Export to MIDI or record a vertical video for social media.
+>
+> No ads and no tracking. Works without an account and offline. You only need an account to share with your group and to use the AI.
+>
+> The app is currently in Spanish.
+
+### 2.2 Capturas
+
+Generadas con `node scripts/capturas.mjs` (con `npm run dev` en marcha) en `docs/capturas-app-store/`, a 1320×2868 (iPhone de 6,9″):
 
 1. `visualizar.png` — el visualizador con un acorde («Cada voz, su color»).
 2. `voces.png` — el panel de voces con Solo y Silencio («Ensaya tu parte»).
@@ -78,22 +136,38 @@ Generadas con `node scripts/capturas.mjs` (con `npm run dev` en marcha) en `docs
 
 Si quieres más: `ESCENAS=entrada,guitarra,piano node scripts/capturas.mjs`.
 
+**Ojo con los tamaños (cambió en 2026):** en el *Gestor de recursos multimedia* el hueco **obligatorio** es ahora «iPhone con Dynamic Island (pantalla mediana)», de 6,1″ o 6,3″, y solo admite 1179×2556 o **1206×2622**. El de 6,9″ (1320×2868) es opcional («pantalla grande»). El 16/11/2026 se subieron:
+
+- al hueco obligatorio, las 4 capturas reducidas a 1206×2622 (misma proporción; se redujeron con alta calidad, sin recortar);
+- a «pantalla grande», las 4 originales de 1320×2868, para que se vean nítidas en los iPhone grandes.
+
+Las de 1206×2622 no están en el repositorio. Si rehaces las capturas, genera también ese tamaño (o redúcelas) antes de subirlas.
+
 ## 3. Notas para el revisor (App Review Information)
 
-Crea en Supabase un usuario de demostración con contraseña: *Authentication › Users › Add user › Create new user*, marcando *Auto Confirm User*. Ponlo en **Sign-in required**:
+### Cuenta de demostración
+
+Correo: **`revision.apple@vocify.es`** (ficticio, de tu dominio; con *Auto Confirm* no hace falta que el buzón exista. Si algún día Apple pide recuperar la contraseña, crea ese buzón en Hostinger).
+
+1. **Supabase** › proyecto Voces › *Authentication › Users › Add user › Create new user*. Correo `revision.apple@vocify.es`, una contraseña nueva y larga (guárdala en tu gestor), **Auto Confirm User** marcado › *Create user*.
+2. **App Store Connect** › Vocify › App para iOS 1.0 › *Información para el equipo de revisión de apps*. «Es necesario iniciar sesión» ya está marcado y el usuario ya está escrito: escribe la **Contraseña**, rellena los **Datos de contacto** (nombre, apellidos, teléfono y correo, por ejemplo soporte@vocify.es) y pulsa **Guardar**.
+3. Prueba a entrar con esa cuenta en la app de TestFlight antes de enviar.
+
+No hace falta crearle grupo ni canciones: el revisor puede crear un grupo y usar la IA (límite diario de `VOCES_AI_DAILY_LIMIT`).
+
+### Notas (ya puestas en App Store Connect)
 
 ```
-Email: (el de la cuenta de demostración)
-Password: (su contraseña)
+Vocify works fully without an account: tap «Continuar sin cuenta» on the first screen, then load the sample (Menu ⋮ → Cargar ejemplo), play it, edit it, hum, or import a score or an audio recording.
 
-Vocify works fully without an account: tap «Continuar sin cuenta» on the first screen, then load the sample
-(Menu ⋮ → Cargar ejemplo), play it, edit it, hum, or import a score or an audio recording.
-An account is only needed for shared groups and the AI assistant: use the demo account above on the first screen
-(email + password). Sign in with Apple is also available.
+An account is only needed for shared groups and the AI assistant: use the demo account above on the first screen (email + password). Sign in with Apple is also available.
+
 Microphone: Editar → Tararear converts singing into notes; audio is analysed on-device and never stored or sent.
 Audio import: Importar → choose a WAV/MP3 → converted on-device into voices; the file is not uploaded.
 Account deletion: Menu (⋮) → Grupo y cuenta → Eliminar mi cuenta (also revokes Sign in with Apple).
 Data download: Menu (⋮) → Grupo y cuenta → Descargar mis datos.
+
+The app interface is in Spanish.
 ```
 
 ## 4. Lista de comprobación de requisitos de Apple
