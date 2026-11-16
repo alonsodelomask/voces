@@ -129,7 +129,8 @@ async () => {
   res.muestra = { viz: V.viz.opts.showLyrics, editor: V.roll.showLyrics, recordada: localStorage.getItem('voces.letra') };
   const ayuda = document.querySelector('#dlg-help .help').textContent.replace(/\s+/g, ' ');
   res.ayudaCasilla = /casilla Letra del panel de voces la muestra o la oculta \(no la borra\)/i.test(ayuda);
-  res.ayudaSinAjustes = !/ajustes/i.test(ayuda);
+  // «Ajustes de cuenta» sí existen (16/11/2026); unos ajustes de la letra, no.
+  res.ayudaSinAjustes = !/ajustes(?! de cuenta)/i.test(ayuda);
   res.ayudaQuitar = /Quitar la letra la quita también de ellas/.test(ayuda);
 
   const nada = '· · · · · · · · · · · ·';

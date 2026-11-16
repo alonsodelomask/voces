@@ -124,7 +124,7 @@ export const privacidad = {
       </ul>
 
       <h2>7. Descargar tus datos y borrar tu cuenta</h2>
-      <p>En la app: <i>Menú → Grupo y cuenta</i>.</p>
+      <p>En la app: el círculo con tus iniciales (arriba a la derecha) → <i>Ajustes de cuenta → Tus datos</i>.</p>
       <ul>
         <li><b>Descargar mis datos</b> te da un archivo con tu cuenta, tus grupos y las canciones compartidas.</li>
         <li><b>Eliminar mi cuenta</b> borra tu correo, tu nombre, tu pertenencia a los grupos y el registro de uso de la IA, y revoca el acceso de «Iniciar sesión con Apple» si lo usaste. Las canciones guardadas solo en tu dispositivo no se tocan.</li>
@@ -210,11 +210,11 @@ export const soporte = {
       <details><summary>¿Qué archivos puedo importar?</summary><p>Partituras en <b>MusicXML</b> (.musicxml, .xml, .mxl) y <b>MIDI</b> (.mid), y grabaciones de audio (<b>WAV, MP3, M4A, AAC, OGG, OPUS, FLAC, AIFF</b>…). Desde MuseScore: <i>Archivo → Exportar → MusicXML</i>. En el iPhone también puedes abrir una partitura o un audio desde WhatsApp, Mail o Archivos con «Compartir → Vocify».</p></details>
       <details><summary>¿Cómo convierto una grabación en voces?</summary><p>Pulsa <i>Importar</i> y elige el audio. Indica cuántas voces se oyen (o deja que Vocify lo averigüe) y espera un poco: el análisis se hace en tu dispositivo. Funciona mejor con voces solas (a cappella), sin instrumentos y con poco eco. El resultado es un punto de partida: corrige en el editor las notas que no hayan salido bien.</p><p>Si cada cantante graba su voz por separado (empezando todos en el mismo punto), importa la primera y después las demás eligiendo <i>Añadir a «…» como voz nueva</i>: quedan juntas en la misma canción y salen mucho mejor que con todo el grupo en una sola pista.</p><p><b>Lo que mejor funciona</b> es <i>Mezclar grabación y partitura</i> (en el menú, o eligiendo los dos archivos a la vez): las notas las pone la partitura, que están bien, y el ritmo, el tono y la octava los pone la grabación. Además puede añadir una voz con lo que se canta de verdad y dejar la grabación sonando junto a las voces.</p></details>
       <details><summary>¿Cómo ensayo solo mi voz?</summary><p>En el panel de voces, toca <b>S</b> (solo) en tu voz o baja el volumen de las demás. Con el botón de ensayo (⇄) repites unos compases en bucle, con metrónomo, cuenta atrás y velocidad lenta.</p></details>
-      <details><summary>¿Cómo comparto canciones con mi grupo?</summary><p>Crea una cuenta, ve a <i>Menú → Grupo y cuenta</i>, crea el grupo y manda el código de invitación. Después, con la canción abierta, pulsa <i>Compartir «…» con el grupo</i> en ese mismo panel. Los cambios se sincronizan solos.</p></details>
+      <details><summary>¿Cómo comparto canciones con mi grupo?</summary><p>Crea una cuenta, ve a <i>Menú → Tu grupo</i>, crea el grupo y manda el código de invitación. Después, en la <i>Biblioteca</i>, ⋯ de la canción → <i>Compartir con el grupo</i>. Los cambios se sincronizan solos.</p></details>
       <details><summary>¿Necesito conexión a Internet?</summary><p>No para ver, escuchar, editar ni tararear: todo eso funciona sin conexión. Para convertir audio, en la app funciona siempre sin conexión; en el navegador hace falta conexión la primera vez, para descargar el modelo. Para sacar la letra de una grabación hace falta conexión la primera vez (se descargan unos 80 MB). Sí para compartir con el grupo y para el asistente con IA.</p></details>
       <details><summary>No se oye nada en el iPhone</summary><p>Sube el volumen y comprueba que ninguna voz está en silencio en el panel de voces. En la app de iPhone suena aunque el interruptor de silencio esté activado; en el navegador del iPhone, quita el modo silencio.</p></details>
       <details><summary>¿La IA tiene límite?</summary><p>Sí, un número de peticiones al día por persona, para que el servicio siga siendo gratis. Las funciones del asistente que no usan IA no tienen límite.</p></details>
-      <details><summary>¿Cómo descargo mis datos o borro mi cuenta?</summary><p>En <i>Menú → Grupo y cuenta</i>: <b>Descargar mis datos</b> o <b>Eliminar mi cuenta</b>. Más detalles en <a href="../borrar-cuenta/">borrar la cuenta</a>.</p></details>
+      <details><summary>¿Cómo descargo mis datos o borro mi cuenta?</summary><p>En el círculo con tus iniciales (arriba a la derecha) → <i>Ajustes de cuenta → Tus datos</i>: <b>Descargar mis datos</b> o <b>Eliminar mi cuenta</b>. Más detalles en <a href="../borrar-cuenta/">borrar la cuenta</a>.</p></details>
 
       <h2>Más información</h2>
       <p><a href="../privacidad/">Política de privacidad</a> · <a href="../condiciones/">Condiciones de uso</a></p>`,
@@ -230,7 +230,7 @@ export const borrar = {
       <h2>Desde la app (lo más rápido)</h2>
       <ol>
         <li>Abre Vocify (en el iPhone o en <a href="../">el navegador</a>) e inicia sesión.</li>
-        <li>Ve a <i>Menú → Grupo y cuenta</i>.</li>
+        <li>Pulsa el círculo con tus iniciales, arriba a la derecha, y entra en <i>Ajustes de cuenta → Tus datos</i> (también en <i>Menú → Ajustes de cuenta</i>).</li>
         <li>Pulsa <b>Eliminar mi cuenta</b> y confirma.</li>
       </ol>
       <p>Si quieres conservar una copia, pulsa antes <b>Descargar mis datos</b>.</p>

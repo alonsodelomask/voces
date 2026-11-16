@@ -11,9 +11,11 @@ export interface GroupDeps {
   toast: (msg: string, error?: boolean) => void;
   /** Pantalla de entrada (cuando no hay sesión). */
   openAuth: () => void;
+  /** Ajustes de cuenta (nombre, contraseña, tus datos, eliminar la cuenta). */
+  openSettings: () => void;
 }
 
-/** Panel «Grupo y cuenta»: iniciar sesión, crear/unirse a grupos, invitar y compartir canciones. */
+/** Panel «Tu grupo»: crear/unirse a grupos, invitar y compartir canciones. Lo de la cuenta está en Ajustes de cuenta. */
 export async function openGroupPanel(deps: GroupDeps) {
   const dlg = document.createElement('dialog');
   dlg.className = 'dlg group-dlg';
@@ -27,7 +29,7 @@ export async function openGroupPanel(deps: GroupDeps) {
 
   async function render() {
     if (!cloud.cloudEnabled) {
-      dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Esta instalación de Vocify todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/BACKEND.md</code>).</p>${close}`;
+      dlg.innerHTML = `<h2>Tu grupo</h2><p class="intro">Esta instalación de Vocify todavía no tiene la nube configurada, así que las canciones se guardan solo en este dispositivo. Para compartir con tu grupo hay que conectar un proyecto de Supabase (ver <code>docs/BACKEND.md</code>).</p>${close}`;
       return wireClose();
     }
     if (!cloud.user()) {
@@ -35,7 +37,7 @@ export async function openGroupPanel(deps: GroupDeps) {
       deps.openAuth();
       return;
     }
-    dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="intro">Cargando…</p>`;
+    dlg.innerHTML = `<h2>Tu grupo</h2><p class="intro">Cargando…</p>`;
     try {
       const [name, groups] = await Promise.all([cloud.getProfileName(), cloud.myGroups()]);
       if (!name) {
@@ -45,13 +47,11 @@ export async function openGroupPanel(deps: GroupDeps) {
       if (!selected && groups.length) selected = groups[0].id;
       const g = groups.find((x) => x.id === selected) ?? null;
       dlg.innerHTML = `
-        <h2>Grupo y cuenta</h2>
+        <h2>Tu grupo</h2>
         <div class="acct">
           <span>👤 <b>${esc(name || cloud.user()?.email || '')}</b> <small>${esc(cloud.user()?.email ?? '')}</small></span>
           <span class="acct-btns">
-            <button class="btn small" id="g-rename">Cambiar nombre</button>
-            <button class="btn small" id="g-pass">Cambiar contraseña</button>
-            <button class="btn small" id="g-export">Descargar mis datos</button>
+            <button class="btn small" id="g-settings">⚙ Ajustes de cuenta</button>
             <button class="btn small" id="g-out">Cerrar sesión</button>
           </span>
         </div>
@@ -62,63 +62,23 @@ export async function openGroupPanel(deps: GroupDeps) {
         </div>
         <div id="g-body">${g ? '' : '<p class="intro">Aún no estás en ningún grupo. Crea uno para tu banda o únete con el código que te pase alguien.</p>'}</div>
         <div class="row end">
-          <button class="btn danger" id="g-delete" style="margin-right:auto">Eliminar mi cuenta</button>
           <button class="btn" data-close>Cerrar</button>
         </div>`;
       wireClose();
       dlg.querySelectorAll<HTMLButtonElement>('[data-g]').forEach((b) => (b.onclick = () => ((selected = b.dataset.g!), render())));
       dlg.querySelector<HTMLButtonElement>('#g-new')!.onclick = createGroup;
       dlg.querySelector<HTMLButtonElement>('#g-join')!.onclick = joinGroup;
-      dlg.querySelector<HTMLButtonElement>('#g-export')!.onclick = async () => {
-        try {
-          await saveFile(await cloud.exportMyData(), 'voces-mis-datos.json');
-        } catch (e) {
-          deps.toast((e as Error).message, true);
-        }
-      };
-      dlg.querySelector<HTMLButtonElement>('#g-pass')!.onclick = async () => {
-        const r = await form({
-          title: 'Cambiar contraseña',
-          fields: [
-            { name: 'a', label: 'Contraseña nueva (mínimo 8 caracteres)', type: 'password' },
-            { name: 'b', label: 'Repítela', type: 'password' },
-          ],
-          okLabel: 'Guardar',
-        });
-        if (!r) return;
-        if (r.values.a.length < 8) return deps.toast('La contraseña necesita al menos 8 caracteres.', true);
-        if (r.values.a !== r.values.b) return deps.toast('Las dos contraseñas no coinciden.', true);
-        try {
-          await cloud.updatePassword(r.values.a);
-          deps.toast('Contraseña cambiada.');
-        } catch (e) {
-          deps.toast((e as Error).message, true);
-        }
+      dlg.querySelector<HTMLButtonElement>('#g-settings')!.onclick = () => {
+        dlg.close();
+        deps.openSettings();
       };
       dlg.querySelector<HTMLButtonElement>('#g-out')!.onclick = async () => {
         await cloud.signOut();
         render();
       };
-      dlg.querySelector<HTMLButtonElement>('#g-rename')!.onclick = async () => {
-        const r = await form({ title: 'Tu nombre', fields: [{ name: 'n', label: 'Nombre', value: name }], okLabel: 'Guardar' });
-        if (r?.values.n.trim()) {
-          await cloud.setProfileName(r.values.n.trim());
-          render();
-        }
-      };
-      dlg.querySelector<HTMLButtonElement>('#g-delete')!.onclick = async () => {
-        if (!(await confirmDialog('Eliminar cuenta', 'Se borrará tu cuenta y saldrás de todos tus grupos. Las canciones de este dispositivo no se tocan. Esto no se puede deshacer.', 'Eliminar cuenta'))) return;
-        try {
-          await cloud.deleteAccount();
-          deps.toast('Cuenta eliminada.');
-          render();
-        } catch (e) {
-          deps.toast((e as Error).message, true);
-        }
-      };
       if (g) await renderGroup(g, dlg.querySelector<HTMLElement>('#g-body')!);
     } catch (e) {
-      dlg.innerHTML = `<h2>Grupo y cuenta</h2><p class="err">${esc((e as Error).message)}</p>${close}`;
+      dlg.innerHTML = `<h2>Tu grupo</h2><p class="err">${esc((e as Error).message)}</p>${close}`;
       wireClose();
     }
   }

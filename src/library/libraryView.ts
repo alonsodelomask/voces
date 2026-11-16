@@ -881,7 +881,7 @@ async function playRep(r: Repertorio) {
 async function pickGroup(): Promise<cloud.Group | null> {
   const groups = await nube().myGroups();
   if (!groups.length) {
-    deps.toast('Aún no estás en ningún grupo: créalo o únete en Menú › Grupo y cuenta.', true);
+    deps.toast('Aún no estás en ningún grupo: créalo o únete en Menú › Tu grupo.', true);
     return null;
   }
   if (groups.length === 1) return groups[0];

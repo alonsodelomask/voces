@@ -30,6 +30,7 @@ Funciona en el navegador, se instala como app (PWA) y tiene app de iPhone/Androi
 - **Asistente**: revisión de voces (paralelas, cruces, saltos, registros), propuesta de acordes para una melodía y armonización automática.
 - **IA (OpenAI)**: pídele cambios en lenguaje natural; ves la propuesta antes de aplicarla.
 - **Biblioteca** (`library/`): pantalla completa con todas las canciones del dispositivo y las del grupo en la misma lista. Tiene buscador (título, voces y letra, sin tildes), filtros (dónde está, con grabación, con letra), orden (modificada, nombre o creada), selección de varias, **repertorios** con «Tocar todo seguido» y **papelera** de 30 días (la grabación se queda hasta borrar para siempre). Las canciones se guardan en IndexedDB, una por registro (`storage.ts`); al abrir la primera vez se traen las de `localStorage`.
+- **Cuenta** (`account/`): un círculo con las iniciales, arriba a la derecha, con su menú (Ajustes de cuenta, Tu grupo, Contáctanos, Ayuda, Cerrar sesión). Ajustes de cuenta tiene Perfil (nombre, correo y con qué entras), Contraseña, Avisos del grupo (de este dispositivo), Funciones de IA y Tus datos (descargar, eliminar la cuenta).
 - **Grupos en la nube**: cuentas con código por email, grupos con código de invitación y canciones compartidas que se sincronizan en tiempo real.
 - **Exportar** MIDI, proyecto `.json` y vídeo vertical 1080×1920.
 

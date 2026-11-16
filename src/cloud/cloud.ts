@@ -149,6 +149,22 @@ export async function updatePassword(password: string) {
 export async function signOut() {
   await need().auth.signOut();
 }
+
+/**
+ * Cambia el correo de la cuenta. Supabase manda un enlace a la dirección nueva (plantilla «Confirma tu nuevo correo en
+ * Vocify») y el cambio vale cuando se pulsa; hasta entonces se sigue entrando con el de antes.
+ */
+export async function changeEmail(email: string) {
+  const { error } = await need().auth.updateUser({ email: email.trim() }, { emailRedirectTo: returnUrl() });
+  if (error) fail(error);
+}
+
+/** Con qué se puede entrar en esta cuenta: «email» (correo y contraseña o enlace) y/o «apple». */
+export function signInMethods(): string[] {
+  const ids = currentUser?.identities?.map((i) => i.provider) ?? [];
+  const prov = (currentUser?.app_metadata?.providers as string[] | undefined) ?? [];
+  return [...new Set([...ids, ...prov])];
+}
 export async function deleteAccount() {
   let viaServer = false;
   if (API) {

@@ -21,6 +21,9 @@ import { linkSitePages } from './site';
 import { allSongIds, getLast, getSong, initStorage, loadSongs, onStorageError, purgeOldTrash, saveSong, setLast } from './storage';
 import * as storage from './storage';
 import { openLibrary } from './library/libraryView';
+import { initAccountMenu } from './account/accountMenu';
+import { openSettings } from './account/settingsView';
+import { loadPrefs } from './account/prefs';
 import { forgetSong } from './library/repertorios';
 import { Visualizer } from './viz/visualizer';
 import type { Instrument } from './viz/chordShapes';
@@ -145,13 +148,21 @@ async function onRemoteChange(ev: { type: string; id: string; updated_by?: strin
     if (local === song) {
       renderPanel();
       watchCurrent();
-      toast('Esta canción se ha quitado del grupo. Sigue guardada en tu dispositivo.');
+      if (loadPrefs().groupNotices) toast('Esta canción se ha quitado del grupo. Sigue guardada en tu dispositivo.');
     }
     return;
   }
   if (ev.id !== song.id || ev.updated_by === cloud.user()?.id) return;
   if (ev.updated_at && ev.updated_at === song.remoteUpdatedAt) return;
-  if (dirty) return toast('Otra persona ha cambiado esta canción. Al guardar se quedará tu versión.');
+  const prefs = loadPrefs();
+  if (dirty) return void (prefs.groupNotices && toast('Otra persona ha cambiado esta canción. Al guardar se quedará tu versión.'));
+  // Ajustes de cuenta › Avisos: sin «ponerla al día sola», se avisa con un botón para hacerlo.
+  if (!prefs.autoUpdate) return void toast('Otra persona del grupo ha cambiado esta canción.', false, { label: 'Ver su versión', run: () => void pullRemote() });
+  await pullRemote(prefs.groupNotices);
+}
+
+/** Trae la versión del grupo de la canción abierta (conserva la grabación, que es de este dispositivo). */
+async function pullRemote(notice = true) {
   try {
     const t = engine.time;
     const remote = await cloud.fetchSong(song.id);
@@ -160,7 +171,7 @@ async function onRemoteChange(ev: { type: string; id: string; updated_by?: strin
     setSong(remote);
     saveSong(remote);
     engine.seek(t);
-    toast('Canción actualizada por tu grupo.');
+    if (notice) toast('Canción actualizada por tu grupo.');
   } catch {
     /* sin conexión: se ignora */
   }
@@ -606,8 +617,28 @@ const assistDeps = {
   openAccount: () => openGroups(),
 };
 $('#ed-assist').onclick = () => openAssistant(assistDeps);
+/** Ajustes de cuenta (perfil, contraseña, avisos, IA y tus datos). */
+function openAccountSettings(section?: string) {
+  openSettings(
+    {
+      toast,
+      openGroup: () => openGroups(),
+      openAuth: () => showAuthScreen({ allowSkip: false }),
+    },
+    section,
+  );
+}
+initAccountMenu({
+  openSettings: (section) => openAccountSettings(section),
+  openGroup: () => openGroups(),
+  openHelp: () => $<HTMLDialogElement>('#dlg-help').showModal(),
+  openAuth: () => showAuthScreen({ allowSkip: false }),
+  toast,
+});
+
 function openGroups() {
   openGroupPanel({
+    openSettings: () => openAccountSettings(),
     song: () => song,
     openSong: (s) => {
       setSong(s);
@@ -1048,6 +1079,9 @@ menu.addEventListener('click', (e) => {
     case 'group':
       openGroups();
       break;
+    case 'settings':
+      openAccountSettings();
+      break;
     case 'assistant':
       openAssistant(assistDeps);
       break;
@@ -1373,7 +1407,7 @@ void (async () => {
     let signedIn = !!cloud.user();
     cloud.onAuth((u) => {
       // Al volver del enlace del correo (o al entrar con Apple), un aviso para que se note.
-      if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Grupo y cuenta para tu grupo.`);
+      if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Tu grupo para tu grupo.`);
       signedIn = !!u;
       watchCurrent();
     });

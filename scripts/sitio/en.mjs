@@ -118,7 +118,7 @@ export const privacy = {
       </ul>
 
       <h2>7. Download your data and delete your account</h2>
-      <p>In the app: <i>Menu → Group and account</i>.</p>
+      <p>In the app: the circle with your initials (top right) → <i>Account settings → Your data</i> (“Ajustes de cuenta → Tus datos”).</p>
       <ul>
         <li><b>Download my data</b> gives you a file with your account, your groups and the shared songs.</li>
         <li><b>Delete my account</b> deletes your email, name, group memberships and AI usage log, and revokes Sign in with Apple if you used it. Songs stored only on your device are not touched.</li>
@@ -205,11 +205,11 @@ export const support = {
       <details><summary>Which files can I import?</summary><p>Scores in <b>MusicXML</b> (.musicxml, .xml, .mxl) and <b>MIDI</b> (.mid), and audio recordings (<b>WAV, MP3, M4A, AAC, OGG, OPUS, FLAC, AIFF</b>…). From MuseScore: <i>File → Export → MusicXML</i>. On iPhone you can also open a score or audio from WhatsApp, Mail or Files with “Share → Vocify”.</p></details>
       <details><summary>How do I turn a recording into voices?</summary><p>Tap <i>Import</i> and pick the audio. Say how many voices can be heard (or let Vocify guess) and wait a moment: the analysis runs on your device. It works best with voices alone (a cappella), no instruments and little reverb. The result is a starting point: fix any wrong notes in the editor.</p><p>If each singer records their part separately (all starting at the same point), import the first one and then the others choosing <i>Add to “…” as a new voice</i>: they end up together in one song, and come out much better than the whole group on a single track.</p><p><b>What works best</b> is <i>Blend recording and score</i> (in the menu, or by picking both files at once): the notes come from the score, which are right, and the timing, key and octave come from the recording. It can also add a voice with what is actually sung, and keep the recording playing alongside the voices.</p></details>
       <details><summary>How do I rehearse just my voice?</summary><p>In the voices panel, tap <b>S</b> (solo) on your voice or turn the others down. The rehearse button (⇄) loops a few bars, with metronome, count-in and slow speed.</p></details>
-      <details><summary>How do I share songs with my group?</summary><p>Create an account, go to <i>Menu → Group and account</i>, create the group and send the invite code. Then, with the song open, tap <i>Share “…” with the group</i> in that same panel. Changes sync automatically.</p></details>
+      <details><summary>How do I share songs with my group?</summary><p>Create an account, go to <i>Menu → Your group</i> (“Tu grupo”), create the group and send the invite code. Then, in the <i>Library</i>, a song’s ⋯ → <i>Share with the group</i>. Changes sync automatically.</p></details>
       <details><summary>Do I need an Internet connection?</summary><p>Not to view, play, edit or hum: all of that works offline. Audio conversion always works offline in the app; in the browser it needs a connection the first time, to download the model. Getting the lyrics from a recording needs a connection the first time (about 80 MB is downloaded). Sharing with the group and the AI assistant need a connection.</p></details>
       <details><summary>No sound on iPhone</summary><p>Turn the volume up and check no voice is muted in the voices panel. The iPhone app plays even with the silent switch on; in the iPhone browser, turn silent mode off.</p></details>
       <details><summary>Is there an AI limit?</summary><p>Yes, a number of requests per person per day, so the service can stay free. The assistant features that don’t use AI have no limit.</p></details>
-      <details><summary>How do I download my data or delete my account?</summary><p>In <i>Menu → Group and account</i>: <b>Download my data</b> or <b>Delete my account</b>. More details on <a href="../delete-account/">deleting your account</a>.</p></details>
+      <details><summary>How do I download my data or delete my account?</summary><p>In the circle with your initials (top right) → <i>Account settings → Your data</i>: <b>Download my data</b> or <b>Delete my account</b>. More details on <a href="../delete-account/">deleting your account</a>.</p></details>
 
       <h2>More information</h2>
       <p><a href="../privacy/">Privacy policy</a> · <a href="../terms/">Terms of use</a></p>`,
@@ -225,7 +225,7 @@ export const deleteAccount = {
       <h2>From the app (fastest)</h2>
       <ol>
         <li>Open Vocify (on iPhone or in <a href="../../">the browser</a>) and sign in.</li>
-        <li>Go to <i>Menu → Group and account</i> (“Grupo y cuenta”).</li>
+        <li>Tap the circle with your initials (top right) and open <i>Account settings → Your data</i> (“Ajustes de cuenta → Tus datos”; also in <i>Menu → Account settings</i>).</li>
         <li>Tap <b>Delete my account</b> (“Eliminar mi cuenta”) and confirm.</li>
       </ol>
       <p>If you want to keep a copy, tap <b>Download my data</b> (“Descargar mis datos”) first.</p>

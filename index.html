@@ -32,13 +32,17 @@
           <button id="btn-voices" class="btn icon" title="Voces" aria-label="Panel de voces">
             <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
           </button>
+          <!-- Menú de la cuenta (src/account/accountMenu.ts): iniciales con sesión, silueta sin ella. -->
+          <button id="btn-account" class="acc-avatar" aria-haspopup="menu" aria-expanded="false" aria-label="Entrar o crear cuenta"></button>
         </div>
+        <div id="account-menu" class="acc-menu" role="menu" hidden></div>
         <div id="menu" class="menu" hidden>
           <button data-act="new">Nueva canción</button>
           <button data-act="mix">Mezclar grabación y partitura</button>
           <button data-act="library">Biblioteca</button>
           <button data-act="save">Guardar</button>
-          <button data-act="group">Grupo y cuenta</button>
+          <button data-act="group">Tu grupo</button>
+          <button data-act="settings">Ajustes de cuenta</button>
           <button data-act="assistant">Asistente e IA</button>
           <hr />
           <button data-act="export-midi">Exportar MIDI</button>
@@ -181,6 +185,8 @@
 
       <!-- La biblioteca (src/library/libraryView.ts) se construye al abrirla. -->
       <dialog id="dlg-library" class="bib-dlg" aria-label="Biblioteca"></dialog>
+      <!-- Ajustes de cuenta (src/account/settingsView.ts), también a pantalla completa. -->
+      <dialog id="dlg-settings" class="bib-dlg" aria-label="Ajustes de cuenta"></dialog>
 
       <dialog id="dlg-new" class="dlg">
         <h2>Nueva canción</h2>
@@ -217,7 +223,8 @@
           <li><b>Tararear:</b> canta y se convierte en notas. <b>Asistente:</b> revisa las voces, propone acordes y crea armonías.</li>
           <li><b>Letra</b> (en Editar): pone la letra sobre las notas de la voz elegida, una sílaba en cada nota (canto <i>silábico</i>); si una sílaba se alarga varias notas es un <i>melisma</i>, y si dos vocales de palabras distintas van en una nota (<i>se‿a</i>) es una <i>sinalefa</i>. Hay dos maneras: <b>en orden</b>, escribes la letra y cada sílaba va a la nota siguiente (se separan solas, o sepáralas tú con guiones; un <b>_</b> alarga la sílaba anterior una nota más), o, si la grabación de la canción está en este dispositivo, <b>donde se oye</b>: pulsa <b>🎧 Escribir lo que se oye</b> y la app escucha lo que se canta (la primera vez descarga unos 80 MB; el audio no sale de tu dispositivo, y lo que oye se guarda con la grabación para no tener que escucharla otra vez), corrige lo que haya entendido mal, pulsa <i>Poner la letra</i> y cada sílaba va a la nota en que se canta. Las que no están claras salen en ámbar para que las revises (un <b>?</b> ámbar bajo una nota avisa de que quizá le falta sílaba); si están bien, marca <i>Dar por buenas las sílabas en ámbar</i>. Al <b>mezclar</b> puedes marcar <i>Poner la letra</i> para que lo haga solo. Con <i>La misma sílaba en las voces que van al mismo ritmo</i>, las voces que van a su ritmo en cada frase llevan la misma sílaba y se corrigen con ella, y <b>Quitar la letra</b> la quita también de ellas (sin esa casilla, solo de la voz elegida); una voz que en una frase canta su propia letra no se toca. Si la voz ya tiene letra, se abre tal cual para corregirla.</li>
           <li><b>Ver la letra:</b> la casilla <b>Letra</b> del panel de voces la muestra o la oculta (no la borra): con letra, en el editor cada sílaba va bajo su nota y, al reproducir, se ve como un karaoke; sin letra, solo las notas. Si la partitura trae letra, ya viene puesta.</li>
-          <li><b>Grupo:</b> crea el grupo de tu banda y comparte canciones que se sincronizan solas.</li>
+          <li><b>Grupo:</b> crea el grupo de tu banda y comparte canciones que se sincronizan solas (<i>Menú › Tu grupo</i>).</li>
+          <li><b>Tu cuenta</b> (el círculo con tus iniciales, arriba a la derecha): <i>Ajustes de cuenta</i> para cambiar tu nombre, tu correo o tu contraseña, elegir los avisos del grupo, ver qué hace la IA, descargar tus datos o eliminar la cuenta. También <i>Contáctanos</i>, <i>Ayuda</i> y <i>Cerrar sesión</i>. El logo y la palabra «Vocify» llevan a la biblioteca.</li>
           <li><b>Biblioteca</b> (el botón de los libros, arriba): todas tus canciones y las de tu grupo, con buscador (título, voz o letra), filtros, orden, <b>repertorios</b> para un concierto o un ensayo (con «Tocar todo seguido») y <b>papelera</b>: lo que borras se puede recuperar durante 30 días, con su grabación. Con un grupo: lo que se quita del grupo va a su papelera (cualquiera puede recuperarlo 30 días), cada canción compartida tiene <b>historial de versiones</b> (⋯ › Historial: abrir una como copia o volver a ella, para todos) y los repertorios se pueden compartir (⋯ del repertorio › Compartir con el grupo). Marca varias para añadirlas a un repertorio, duplicarlas o borrarlas de una vez.</li>
           <li><b>Grabar vídeo:</b> genera un vídeo vertical listo para redes.</li>
           <li>Atajos: <kbd>Espacio</kbd> reproducir/pausa · <kbd>←</kbd>/<kbd>→</kbd> saltar 5 s · <kbd>Ctrl+Z</kbd> deshacer · <kbd>Ctrl+Y</kbd> rehacer.</li>
