@@ -1,4 +1,5 @@
 import type { Song } from './model';
+import { OWNER_DEVICE_ONLY } from './model';
 
 /**
  * Las canciones de este dispositivo.
@@ -217,9 +218,31 @@ export function getSong(id: string): Song | undefined {
   return s && snapshot(s);
 }
 
-/** Guarda la foto `copy` (que ya no se toca desde fuera) y la pone la primera. */
-function store(copy: Song): boolean {
-  cache = [copy, ...cache.filter((s) => s.id !== copy.id)];
+// Quien sincroniza con la cuenta (cloud/personalSync.ts) se entera de lo que cambia aquí.
+const storedListeners = new Set<(s: Song) => void>();
+const deletedListeners = new Set<(s: Song) => void>();
+/** Avisa cada vez que se guarda, se manda a la papelera o se recupera una canción (no con `putSynced`/`setOwner`). */
+export function onSongStored(f: (s: Song) => void) {
+  storedListeners.add(f);
+}
+/** Avisa cuando una canción se borra del todo (no con `deleteSong(id, { silent: true })`). */
+export function onSongDeleted(f: (s: Song) => void) {
+  deletedListeners.add(f);
+}
+const tell = (set: Set<(s: Song) => void>, s: Song) =>
+  set.forEach((f) => {
+    try {
+      f(s);
+    } catch (e) {
+      console.warn('[voces]', e);
+    }
+  });
+
+/** Guarda la foto `copy` (que ya no se toca desde fuera) y la pone la primera (o en su sitio, con `inPlace`). */
+function store(copy: Song, inPlace = false): boolean {
+  const i = inPlace ? cache.findIndex((s) => s.id === copy.id) : -1;
+  if (i >= 0) cache = cache.map((s, j) => (j === i ? copy : s));
+  else cache = [copy, ...cache.filter((s) => s.id !== copy.id)];
   if (mode === 'local') return writeLocal();
   pending.set(copy.id, copy);
   void queue(async () => {
@@ -230,42 +253,75 @@ function store(copy: Song): boolean {
 }
 
 /** Guarda una canción (y la pone la primera: es la más reciente). Devuelve false si no ha cabido. */
+/**
+ * La marca de un cambio: ahora, pero siempre después de la marca que ya tenía la canción. Así un cambio hecho aquí gana
+ * aunque la versión anterior viniera de otro dispositivo con el reloj adelantado (canciones de la cuenta).
+ */
+function nextStamp(id: string, also = 0): number {
+  const prev = cache.find((s) => s.id === id);
+  return Math.max(Date.now(), (prev?.updatedAt ?? 0) + 1, (prev?.deletedAt ?? 0) + 1, also + 1);
+}
+
 export function saveSong(song: Song): boolean {
-  song.updatedAt = Date.now();
+  song.updatedAt = nextStamp(song.id, song.updatedAt);
   // Una canción abierta nunca está en la papelera: guardarla la saca de allí si lo estaba.
   delete song.deletedAt;
-  return store(snapshot(song));
+  const copy = snapshot(song);
+  const ok = store(copy);
+  tell(storedListeners, copy);
+  return ok;
+}
+
+/**
+ * Para la sincronización con la cuenta: guarda la canción tal como llega (sin tocar sus marcas de tiempo, que son las
+ * del dispositivo donde se cambió) y sin avisar a `onSongStored`, para no volver a subirla.
+ */
+export function putSynced(song: Song): boolean {
+  return store(snapshot(song), true);
+}
+
+/** Apunta de qué cuenta es una canción (sin cambiar sus marcas de tiempo ni su sitio en la lista). */
+export function setOwner(id: string, ownerId: string) {
+  const s = cache.find((x) => x.id === id);
+  if (!s || s.ownerId === ownerId) return;
+  store({ ...s, ownerId }, true);
 }
 
 /** Manda una canción a la papelera. La grabación se queda: si se recupera, vuelve con ella. */
 export function trashSong(id: string) {
   const s = cache.find((x) => x.id === id);
   if (!s) return;
-  store({ ...s, deletedAt: Date.now() });
+  const copy = { ...s, deletedAt: nextStamp(id) };
+  store(copy);
+  tell(storedListeners, copy);
 }
 
 /** La saca de la papelera tal como estaba (la pone la primera de la biblioteca). */
 export function restoreSong(id: string) {
   const s = cache.find((x) => x.id === id);
   if (!s) return;
-  const back = { ...s, updatedAt: Date.now() };
+  const back = { ...s, updatedAt: nextStamp(id) };
   delete back.deletedAt;
+  if (back.ownerId === OWNER_DEVICE_ONLY) delete back.ownerId; // vuelve a ser normal (y a la cuenta)
   store(back);
+  tell(storedListeners, back);
 }
 
 /** Borra una canción del todo (la grabación se borra aparte, con `delTrack`). */
-export function deleteSong(id: string) {
+export function deleteSong(id: string, opts: { silent?: boolean } = {}) {
+  const gone = cache.find((s) => s.id === id);
   cache = cache.filter((s) => s.id !== id);
   pending.delete(id);
   if (mode === 'local') writeLocal();
   else void queue(() => tx('readwrite', (s) => s.delete(id)));
+  if (gone && !opts.silent) tell(deletedListeners, gone);
 }
 
 /** Borra del todo lo que lleva en la papelera más de `TRASH_DAYS` días. Devuelve sus ids. */
 export function purgeOldTrash(now = Date.now()): string[] {
   const limit = now - TRASH_DAYS * 86_400_000;
   const old = cache.filter((s) => s.deletedAt && s.deletedAt < limit).map((s) => s.id);
-  old.forEach(deleteSong);
+  old.forEach((id) => deleteSong(id));
   return old;
 }
 

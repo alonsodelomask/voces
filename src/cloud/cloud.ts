@@ -250,8 +250,8 @@ export async function signInWithApple(): Promise<'signed-in' | 'cancelled'> {
 }
 
 /**
- * «Descargar mis datos» (derecho de portabilidad): perfil, grupos, miembros de cada grupo y las canciones compartidas,
- * en un JSON. Las canciones que solo están en el dispositivo se exportan aparte (Exportar proyecto).
+ * «Descargar mis datos» (derecho de portabilidad): perfil, canciones de la cuenta, grupos, miembros de cada grupo y las
+ * canciones compartidas, en un JSON. Las grabaciones, que solo están en el dispositivo, no van (Exportar proyecto).
  */
 export async function exportMyData(): Promise<Blob> {
   const db = need();
@@ -264,9 +264,16 @@ export async function exportMyData(): Promise<Blob> {
     if (songs.error) fail(songs.error);
     detail.push({ grupo: { id: g.id, nombre: g.name, codigo: g.invite_code, maximo: g.max_members, rol: g.role }, miembros: mem, canciones: songs.data });
   }
+  const propias = await db
+    .from('personal_songs')
+    .select('id, title, data, song_updated_ms, song_deleted_ms, updated_at')
+    .eq('owner_id', currentUser.id)
+    .not('data', 'is', null);
+  if (propias.error) fail(propias.error);
   const data = {
     exportado: new Date().toISOString(),
     cuenta: { id: currentUser.id, correo: currentUser.email ?? null, nombre: name, creada: currentUser.created_at, proveedores: currentUser.app_metadata?.providers ?? [] },
+    canciones_de_la_cuenta: propias.data,
     grupos: detail,
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -351,7 +358,9 @@ export async function groupSongs(groupId: string): Promise<RemoteSongMeta[]> {
 export async function fetchSong(id: string): Promise<Song> {
   const { data, error } = await need().from('songs').select('data, group_id, updated_at').eq('id', id).single();
   if (error) fail(error);
-  return { ...(data.data as Song), id, groupId: data.group_id, remoteUpdatedAt: data.updated_at };
+  const song: Song = { ...(data.data as Song), id, groupId: data.group_id, remoteUpdatedAt: data.updated_at };
+  delete song.ownerId;
+  return song;
 }
 /** La canción ya no está en el grupo (la quitó alguien). */
 export class RemovedFromGroup extends Error {
@@ -364,7 +373,8 @@ export class RemovedFromGroup extends Error {
 export async function pushSong(song: Song): Promise<string> {
   if (!song.groupId || !currentUser) throw new Error('La canción no está en ningún grupo.');
   // La grabación está guardada en este dispositivo y no viaja al grupo, así que su ficha tampoco.
-  const data: Song = { ...song, remoteUpdatedAt: undefined, audioTrack: undefined };
+  // Tampoco viaja de quién es en este dispositivo (canciones de la cuenta) ni si está en su papelera.
+  const data: Song = { ...song, remoteUpdatedAt: undefined, audioTrack: undefined, ownerId: undefined, deletedAt: undefined };
   // Ya estaba en el grupo: solo se actualiza. Si alguien la quitó mientras tanto, no se vuelve a crear.
   if (song.remoteUpdatedAt) {
     const { data: rows, error } = await need()
@@ -482,6 +492,119 @@ export function watchGroup(groupId: string, cb: (ev: { type: string; id: string;
     .on('postgres_changes', { event: '*', schema: 'public', table: 'songs', filter: `group_id=eq.${groupId}` }, (p) => {
       const row = (p.new && Object.keys(p.new).length ? p.new : p.old) as { id: string; updated_by?: string; updated_at?: string; deleted_at?: string | null };
       cb({ type: p.eventType, id: row.id, updated_by: row.updated_by, updated_at: row.updated_at, deleted_at: row.deleted_at });
+    })
+    .subscribe();
+  return () => {
+    sb!.removeChannel(ch);
+  };
+}
+
+// ---------- Canciones de la cuenta (005_canciones_cuenta.sql) ----------
+// Las que no están en un grupo, para verlas en cualquier dispositivo de la misma cuenta. Quién gana si cambian en dos
+// sitios lo decide `cloud/personalSync.ts`; aquí solo se leen y se escriben. La grabación nunca se sube.
+
+export interface PersonalRow {
+  id: string;
+  title: string;
+  song_updated_ms: number;
+  song_deleted_ms: number | null;
+  moved_to_group: string | null;
+  purged: boolean;
+  updated_at: string;
+}
+export interface PersonalPut {
+  id: string;
+  title: string;
+  data: Song;
+  song_updated_ms: number;
+  song_deleted_ms: number | null;
+}
+const PERSONAL_BATCH = 20;
+const chunks = <T>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+/**
+ * Cada llamada lleva la cuenta para la que se planificó (`owner`): si mientras tanto se ha cambiado de cuenta, se para
+ * (y las reglas de acceso tampoco dejarían escribir en otra).
+ */
+function ownerOk(owner: string) {
+  if (!currentUser || currentUser.id !== owner) throw new Error('Ha cambiado la sesión.');
+}
+
+/** Lo que hay en la cuenta (sin el contenido de las canciones, que puede pesar). */
+export async function personalList(owner: string): Promise<PersonalRow[]> {
+  ownerOk(owner);
+  const { data, error } = await need()
+    .from('personal_songs')
+    .select('id, title, song_updated_ms, song_deleted_ms, moved_to_group, purged, updated_at')
+    .eq('owner_id', owner);
+  if (error) fail(error);
+  return ((data ?? []) as PersonalRow[]).map((r) => ({
+    ...r,
+    song_updated_ms: Number(r.song_updated_ms),
+    song_deleted_ms: r.song_deleted_ms == null ? null : Number(r.song_deleted_ms),
+  }));
+}
+/** El contenido de esas canciones (de 20 en 20). */
+export async function personalFetch(owner: string, ids: string[]): Promise<{ id: string; data: Song }[]> {
+  const out: { id: string; data: Song }[] = [];
+  for (const part of chunks(ids, PERSONAL_BATCH)) {
+    ownerOk(owner);
+    const { data, error } = await need().from('personal_songs').select('id, data').eq('owner_id', owner).in('id', part).not('data', 'is', null);
+    if (error) fail(error);
+    out.push(...((data ?? []) as { id: string; data: Song }[]));
+  }
+  return out;
+}
+/** Sube (o pone al día) canciones de la cuenta. También devuelve a la cuenta una que estaba en un grupo o borrada. */
+export async function personalPut(owner: string, rows: PersonalPut[]) {
+  for (const part of chunks(rows, PERSONAL_BATCH)) {
+    ownerOk(owner);
+    const { error } = await need()
+      .from('personal_songs')
+      .upsert(part.map((r) => ({ owner_id: owner, ...r, moved_to_group: null, purged: false })), { onConflict: 'owner_id,id' });
+    if (error) fail(error);
+  }
+}
+/** Estas canciones han pasado a un grupo: dejan de ser de la cuenta (los otros dispositivos las buscarán allí). */
+export async function personalMoved(owner: string, moves: { id: string; group: string; stamp: number }[]) {
+  for (const m of moves) {
+    ownerOk(owner);
+    const { error } = await need()
+      .from('personal_songs')
+      .update({ data: null, moved_to_group: m.group, purged: false, song_updated_ms: m.stamp, song_deleted_ms: null })
+      .eq('owner_id', owner)
+      .eq('id', m.id);
+    if (error) fail(error);
+  }
+}
+/** Borradas del todo: se quedan como lápidas (sin datos), para que otro dispositivo no las vuelva a subir. */
+export async function personalPurge(owner: string, ids: string[], stamp: number) {
+  for (const part of chunks(ids, 100)) {
+    ownerOk(owner);
+    const { error } = await need()
+      .from('personal_songs')
+      .update({ data: null, purged: true, moved_to_group: null, song_updated_ms: stamp, song_deleted_ms: null })
+      .eq('owner_id', owner)
+      .in('id', part);
+    if (error) fail(error);
+  }
+}
+/** Quita lápidas viejas. */
+export async function personalDrop(owner: string, ids: string[]) {
+  for (const part of chunks(ids, 100)) {
+    ownerOk(owner);
+    const { error } = await need().from('personal_songs').delete().eq('owner_id', owner).eq('purged', true).in('id', part);
+    if (error) fail(error);
+  }
+}
+/** Avisa cuando cambia algo de la cuenta en otro dispositivo. */
+export function watchPersonal(owner: string, cb: () => void): () => void {
+  if (!sb) return () => {};
+  const ch: RealtimeChannel = sb
+    .channel('personal-' + owner)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'personal_songs', filter: `owner_id=eq.${owner}` }, (p) => {
+      // Los avisos de borrado no se filtran en el servidor: solo cuentan los de esta cuenta.
+      const row = (p.new && Object.keys(p.new).length ? p.new : p.old) as { owner_id?: string };
+      if (row?.owner_id === owner) cb();
     })
     .subscribe();
   return () => {

@@ -20,7 +20,9 @@ import { initNative, isNative, onNativeFile } from './native';
 import { linkSitePages } from './site';
 import { allSongIds, getLast, getSong, initStorage, loadSongs, onStorageError, purgeOldTrash, saveSong, setLast } from './storage';
 import * as storage from './storage';
-import { openLibrary } from './library/libraryView';
+import { openLibrary, refreshLibrary } from './library/libraryView';
+import { initPersonalSync, personalAuthChanged } from './cloud/personalSync';
+import * as personalSync from './cloud/personalSync';
 import { initAccountMenu } from './account/accountMenu';
 import { openSettings } from './account/settingsView';
 import { loadPrefs } from './account/prefs';
@@ -176,6 +178,28 @@ async function pullRemote(notice = true) {
     /* sin conexión: se ignora */
   }
 }
+
+// ---------------- Canciones de la cuenta (en todos los dispositivos) ----------------
+
+initPersonalSync({
+  current: () => song,
+  isDirty: () => dirty,
+  replaceCurrent: (s) => {
+    const update = () => {
+      const t = engine.time;
+      setSong(s);
+      engine.seek(t);
+    };
+    // Sonando no se corta: se avisa con un botón.
+    if (engine.playing) return void toast('Esta canción ha cambiado en otro dispositivo.', false, { label: 'Ver la nueva', run: update });
+    update();
+    toast('Canción actualizada desde otro dispositivo.');
+  },
+  changed: ({ added }) => {
+    refreshLibrary();
+    if (added) toast(added === 1 ? 'Una canción de tu cuenta se ha añadido a la biblioteca.' : `${added} canciones de tu cuenta se han añadido a la biblioteca.`);
+  },
+});
 
 /** Llamar tras cualquier edición de notas. */
 function changed() {
@@ -1409,6 +1433,7 @@ void (async () => {
   cloud.onPasswordRecovery(() => showAuthScreen({ allowSkip: false, mode: 'newpass' }));
   cloud.initAuth().then(() => {
     watchCurrent();
+    personalAuthChanged();
     // Pantalla de entrada al abrir: con la nube activa, sin sesión y si no se eligió antes «Continuar sin cuenta».
     let skipped = false;
     try {
@@ -1427,6 +1452,7 @@ void (async () => {
       if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Tu grupo para tu grupo.`);
       signedIn = !!u;
       watchCurrent();
+      personalAuthChanged();
     });
   });
   const saved = loadSongs();
@@ -1473,4 +1499,4 @@ if (import.meta.env.DEV) {
 
 // Para depurar desde la consola.
 // `storage`: el mismo módulo que usa la app (con el servidor de desarrollo, importarlo aparte puede dar otra copia).
-(window as unknown as Record<string, unknown>).voces = { engine, viz, roll, openFile, storage, get song() { return song; } };
+(window as unknown as Record<string, unknown>).voces = { engine, viz, roll, openFile, storage, personalSync, get song() { return song; } };

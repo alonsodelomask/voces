@@ -34,6 +34,7 @@ Navegador ─────────▶ voces-web (Render, sitio estático): la
 | `groups` | Nombre, código de invitación, máximo de miembros | Miembros |
 | `group_members` | Quién está en cada grupo y si es propietario | Miembros |
 | `songs` | Canciones compartidas (notas, acordes, título) | Miembros del grupo |
+| `personal_songs` | Canciones de la cuenta, las que no están en un grupo (notas, letra, acordes, título; nunca el audio), para verlas en todos los dispositivos | Solo la persona dueña |
 | `ai_usage` | Fecha de cada petición a la IA (para el límite diario) | Solo el servidor |
 | `apple_tokens` | Token de Apple **cifrado** (AES-256-GCM) para revocarlo al borrar la cuenta | Solo el servidor |
 | `apple_revocations` | Revocaciones pendientes si Apple no respondía (sin datos de la persona) | Solo el servidor |
@@ -93,7 +94,8 @@ Todas las rutas `/v1` exigen la sesión de Supabase (JWT verificado con las clav
 3. Nueva consulta con `supabase/migrations/002_servidor.sql` › **Run**. Es **aditiva** e idempotente.
 3 bis. Nueva consulta con `supabase/migrations/003_nombre_registro.sql` › **Run** (13/11/2026: el perfil toma el nombre que se escribe al registrarse). Idempotente; solo cambia una función.
 3 ter. Nueva consulta con `supabase/migrations/004_biblioteca_grupo.sql` › **Run** (15/11/2026: historial de versiones, papelera del grupo y repertorios compartidos). Aditiva e idempotente: dos columnas vacías en `songs`, las tablas `song_versions` y `group_setlists` y funciones. **Va antes de publicar la web de esa fecha**, porque la web ya pide `deleted_at`. Probada con PGlite: `server/test/sql/biblioteca-grupo.test.ts`.
-4. **Table Editor**: deben aparecer `profiles`, `groups`, `group_members`, `songs`, `ai_usage`, `apple_tokens` y `apple_revocations`, todas con «RLS enabled».
+3 quater. Nueva consulta con `supabase/migrations/005_canciones_cuenta.sql` › **Run** (17/11/2026: las canciones que no están en un grupo se guardan también en la cuenta y se ven en todos los dispositivos). Aditiva e idempotente: la tabla `personal_songs`, con RLS (cada persona solo ve las suyas) y tiempo real. **Va antes de publicar la web de esa fecha** (sin ella la web sigue funcionando, pero no sincroniza). Probada con PGlite: `server/test/sql/canciones-cuenta.test.ts`. **Aplicada en producción el 17/11/2026.**
+4. **Table Editor**: deben aparecer `profiles`, `groups`, `group_members`, `songs`, `personal_songs`, `ai_usage`, `apple_tokens` y `apple_revocations`, todas con «RLS enabled».
 5. **Authentication › Sign In / Providers › Email**: activado. Para que llegue un **código** en vez de un enlace, en **Authentication › Emails › Templates** cambia *Magic Link* y *Confirm signup* para que incluyan `{{ .Token }}`, por ejemplo:
 
    ```html

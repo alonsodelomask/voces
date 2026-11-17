@@ -50,7 +50,7 @@ export const privacy = {
       ${fecha}
       <p class="muted">This is a translation; if there is any discrepancy, the <a href="../../privacidad/">Spanish version</a> prevails.</p>
 
-      <div class="box"><b>In short:</b> you can use Vocify without an account, and then everything stays on your device. The microphone and the recordings you import are analysed on your device and never uploaded. If you create an account, we keep only what the group features and the AI need. No ads, no tracking, and we don’t sell data. You can download your data and delete your account from the app.</div>
+      <div class="box"><b>In short:</b> you can use Vocify without an account, and then everything stays on your device. The microphone and the recordings you import are analysed on your device and never uploaded. If you create an account, we store your songs in it so you have them on all your devices, plus only what the group features and the AI need. No ads, no tracking, and we don’t sell data. You can download your data and delete your account from the app.</div>
 
       <h2>1. Controller</h2>
       <p>The controller is ${titular(L)}, tax ID ${nif(L)}, address ${domicilio(L)} (“Vocify”, “we”). For any privacy matter, write to ${correo()}.</p>
@@ -71,6 +71,7 @@ export const privacy = {
         <li><b>Display name</b>, visible to the members of your groups.</li>
         <li>If you use <b>Sign in with Apple</b>: the identifier Apple gives us, the email Apple shares (it may be a private Apple relay address) and your name the first time. We also keep, <b>encrypted</b>, an Apple code used only to revoke that access when you delete your account.</li>
         <li>The <b>groups</b> you belong to, your role (creator or member) and the invite code.</li>
+        <li><b>Your account’s songs:</b> while you are signed in, your songs (title, notes, lyrics, chords, voice names and colours) are also stored in your account, so you can see them on any device where you sign in. Audio recordings are not uploaded: they stay on the device where they are.</li>
         <li><b>Songs you share with a group</b> (title, notes, chords, voice names and colours) and who last changed them.</li>
         <li><b>AI usage</b>: the date and time of each request, only to enforce the daily limit.</li>
       </ul>
@@ -82,7 +83,7 @@ export const privacy = {
       <h2>3. Purposes and legal bases</h2>
       <div class="table-wrap"><table>
         <tr><th>Purpose</th><th>Legal basis (GDPR)</th></tr>
-        <tr><td>Creating and keeping your account, groups and shared songs</td><td>Performance of the contract you accept when signing up (Art. 6(1)(b))</td></tr>
+        <tr><td>Creating and keeping your account, your account’s songs, groups and shared songs</td><td>Performance of the contract you accept when signing up (Art. 6(1)(b))</td></tr>
         <tr><td>Answering your AI requests</td><td>Performance of the contract (Art. 6(1)(b))</td></tr>
         <tr><td>AI daily limit, security and abuse prevention</td><td>Legitimate interest in a stable and secure service (Art. 6(1)(f))</td></tr>
         <tr><td>Microphone use</td><td>Your permission on the device, which you can withdraw at any time in settings</td></tr>
@@ -108,6 +109,7 @@ export const privacy = {
       <h2>6. How long we keep data</h2>
       <ul>
         <li><b>Account, name and groups:</b> while you have the account. They are deleted with it.</li>
+        <li><b>Your account’s songs:</b> while you have the account. Songs you move to the trash are deleted for good after 30 days (or sooner if you delete them), and all of them are deleted with your account.</li>
         <li><b>AI usage log:</b> 30 days, then deleted automatically.</li>
         <li><b>Apple code:</b> until you delete your account and the access is revoked.</li>
         <li><b>AI requests at OpenAI:</b> we ask that they are not stored. OpenAI keeps a log for up to 30 days to monitor abuse, or longer if the law requires it or if it considers it reasonably necessary to protect its services or other people. They are not used to train its models.</li>
@@ -120,8 +122,8 @@ export const privacy = {
       <h2>7. Download your data and delete your account</h2>
       <p>In the app: the circle with your initials (top right) → <i>Account settings → Your data</i> (“Ajustes de cuenta → Tus datos”).</p>
       <ul>
-        <li><b>Download my data</b> gives you a file with your account, your groups and the shared songs.</li>
-        <li><b>Delete my account</b> deletes your email, name, group memberships and AI usage log, and revokes Sign in with Apple if you used it. Songs stored only on your device are not touched.</li>
+        <li><b>Download my data</b> gives you a file with your account, your account’s songs, your groups and the shared songs.</li>
+        <li><b>Delete my account</b> deletes your email, name, your account’s songs, group memberships and AI usage log, and revokes Sign in with Apple if you used it. Songs stored only on your device are not touched.</li>
       </ul>
       <p>If you can’t get into the app, follow the steps to <a href="../delete-account/">delete your account</a>.</p>
 
@@ -129,7 +131,7 @@ export const privacy = {
       <p>You can exercise your rights of access, rectification, erasure, objection, restriction and portability by writing to ${correo()} from your account’s email address. We will reply within one month. If you think we haven’t handled your request properly, you can complain to the Spanish Data Protection Agency (<a href="https://www.aepd.es">www.aepd.es</a>) or your local authority.</p>
 
       <h2>9. Security</h2>
-      <p>All connections are encrypted (HTTPS). The database enforces row-level access rules: each person can only read their own groups and those groups’ songs. Server keys never leave the server, and the Apple code is stored encrypted.</p>
+      <p>All connections are encrypted (HTTPS). The database enforces row-level access rules: each person can only read their own songs, their own groups and those groups’ songs. Server keys never leave the server, and the Apple code is stored encrypted.</p>
 
       <h2>10. Ads and tracking</h2>
       <p>Vocify shows no ads, uses no third-party analytics, doesn’t track you across apps or websites and uses no tracking cookies. It only uses the device’s local storage for your songs, settings and session.</p>
@@ -236,6 +238,7 @@ export const deleteAccount = {
       <h2>What is deleted</h2>
       <ul>
         <li>Your email, password and display name.</li>
+        <li>The songs stored in your account.</li>
         <li>Your membership of all groups.</li>
         <li>The AI usage log.</li>
         <li>Sign in with Apple access, which is revoked with Apple.</li>

@@ -56,7 +56,7 @@ export const privacidad = {
       <h1>Política de privacidad</h1>
       ${fecha}
 
-      <div class="box"><b>En pocas palabras:</b> puedes usar Vocify sin cuenta y entonces todo se queda en tu dispositivo. El micrófono y las grabaciones que importas se analizan en tu dispositivo y no se envían a ningún sitio. Si creas una cuenta, guardamos lo justo para que funcionen el grupo y la IA. No hay publicidad, no hay rastreo y no vendemos datos. Puedes descargar tus datos y borrar tu cuenta desde la app.</div>
+      <div class="box"><b>En pocas palabras:</b> puedes usar Vocify sin cuenta y entonces todo se queda en tu dispositivo. El micrófono y las grabaciones que importas se analizan en tu dispositivo y no se envían a ningún sitio. Si creas una cuenta, guardamos tus canciones en ella para que las tengas en todos tus dispositivos, y lo justo para que funcionen el grupo y la IA. No hay publicidad, no hay rastreo y no vendemos datos. Puedes descargar tus datos y borrar tu cuenta desde la app.</div>
 
       <h2>1. Quién es el responsable</h2>
       <p>El responsable del tratamiento es ${titular(L)}, con NIF ${nif(L)} y domicilio en ${domicilio(L)} (en adelante, «Vocify» o «nosotros»). Para cualquier asunto de privacidad, escríbenos a ${correo()}.</p>
@@ -77,6 +77,7 @@ export const privacidad = {
         <li><b>Nombre visible</b>, que ven los miembros de tus grupos.</li>
         <li>Si entras con <b>«Iniciar sesión con Apple»</b>: el identificador que nos da Apple, el correo que Apple comparta (puede ser una dirección privada de Apple) y tu nombre la primera vez. También guardamos <b>cifrado</b> un código de Apple que solo sirve para revocar ese acceso cuando borras la cuenta.</li>
         <li><b>Grupos</b> a los que perteneces, tu papel (creador o miembro) y el código de invitación.</li>
+        <li><b>Canciones de tu cuenta:</b> con la sesión iniciada, tus canciones (título, notas, letra, acordes, nombres y colores de las voces) se guardan también en tu cuenta, para que las veas en cualquier dispositivo donde entres. Las grabaciones de audio no se suben: se quedan en el dispositivo donde están.</li>
         <li><b>Canciones que compartes con un grupo</b> (título, notas, acordes, nombres y colores de las voces) y quién las modificó por última vez.</li>
         <li><b>Uso de la IA</b>: la fecha y hora de cada petición, solo para aplicar el límite diario.</li>
       </ul>
@@ -88,7 +89,7 @@ export const privacidad = {
       <h2>3. Para qué y con qué base legal</h2>
       <div class="table-wrap"><table>
         <tr><th>Finalidad</th><th>Base legal (RGPD)</th></tr>
-        <tr><td>Crear y mantener tu cuenta, tus grupos y las canciones compartidas</td><td>Ejecución del contrato que aceptas al registrarte (art. 6.1.b)</td></tr>
+        <tr><td>Crear y mantener tu cuenta, las canciones de tu cuenta, tus grupos y las canciones compartidas</td><td>Ejecución del contrato que aceptas al registrarte (art. 6.1.b)</td></tr>
         <tr><td>Responder a tus peticiones a la IA</td><td>Ejecución del contrato (art. 6.1.b)</td></tr>
         <tr><td>Límite diario de la IA, seguridad y prevención de abusos</td><td>Interés legítimo en mantener el servicio estable y seguro (art. 6.1.f)</td></tr>
         <tr><td>Uso del micrófono</td><td>Tu permiso en el dispositivo, que puedes retirar en cualquier momento en los ajustes</td></tr>
@@ -114,6 +115,7 @@ export const privacidad = {
       <h2>6. Cuánto tiempo los guardamos</h2>
       <ul>
         <li><b>Cuenta, nombre y grupos:</b> mientras tengas la cuenta. Al borrarla se eliminan.</li>
+        <li><b>Canciones de tu cuenta:</b> mientras tengas la cuenta. Las que mandas a la papelera se borran del todo a los 30 días (o antes, si las borras tú), y todas se eliminan al borrar la cuenta.</li>
         <li><b>Registro de uso de la IA:</b> 30 días; después se borra automáticamente.</li>
         <li><b>Código de Apple:</b> hasta que borres la cuenta y se revoque el acceso.</li>
         <li><b>Peticiones a la IA en OpenAI:</b> pedimos que no se guarden. OpenAI conserva un registro hasta 30 días para vigilar abusos, o más si la ley le obliga o si lo considera razonablemente necesario para proteger su servicio o a otras personas. No las usa para entrenar sus modelos.</li>
@@ -126,8 +128,8 @@ export const privacidad = {
       <h2>7. Descargar tus datos y borrar tu cuenta</h2>
       <p>En la app: el círculo con tus iniciales (arriba a la derecha) → <i>Ajustes de cuenta → Tus datos</i>.</p>
       <ul>
-        <li><b>Descargar mis datos</b> te da un archivo con tu cuenta, tus grupos y las canciones compartidas.</li>
-        <li><b>Eliminar mi cuenta</b> borra tu correo, tu nombre, tu pertenencia a los grupos y el registro de uso de la IA, y revoca el acceso de «Iniciar sesión con Apple» si lo usaste. Las canciones guardadas solo en tu dispositivo no se tocan.</li>
+        <li><b>Descargar mis datos</b> te da un archivo con tu cuenta, las canciones de tu cuenta, tus grupos y las canciones compartidas.</li>
+        <li><b>Eliminar mi cuenta</b> borra tu correo, tu nombre, las canciones guardadas en tu cuenta, tu pertenencia a los grupos y el registro de uso de la IA, y revoca el acceso de «Iniciar sesión con Apple» si lo usaste. Las canciones guardadas solo en tu dispositivo no se tocan.</li>
       </ul>
       <p>Si no puedes entrar en la app, sigue los pasos de <a href="../borrar-cuenta/">borrar la cuenta</a>.</p>
 
@@ -135,7 +137,7 @@ export const privacidad = {
       <p>Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición, limitación del tratamiento y portabilidad escribiendo a ${correo()} desde el correo de tu cuenta. Te responderemos en un plazo máximo de un mes. Si crees que no hemos atendido bien tu solicitud, puedes reclamar ante la Agencia Española de Protección de Datos (<a href="https://www.aepd.es">www.aepd.es</a>).</p>
 
       <h2>9. Seguridad</h2>
-      <p>Todas las conexiones van cifradas (HTTPS). La base de datos aplica reglas de acceso por fila: cada persona solo puede leer sus grupos y las canciones de esos grupos. Las claves del servidor no salen de él y el código de Apple se guarda cifrado.</p>
+      <p>Todas las conexiones van cifradas (HTTPS). La base de datos aplica reglas de acceso por fila: cada persona solo puede leer sus canciones, sus grupos y las canciones de esos grupos. Las claves del servidor no salen de él y el código de Apple se guarda cifrado.</p>
 
       <h2>10. Publicidad y rastreo</h2>
       <p>Vocify no muestra publicidad, no usa herramientas de analítica de terceros, no te rastrea entre apps o webs y no usa cookies de seguimiento. Solo usa el almacenamiento local del dispositivo para guardar tus canciones, tus ajustes y tu sesión.</p>
@@ -241,6 +243,7 @@ export const borrar = {
       <h2>Qué se borra</h2>
       <ul>
         <li>Tu correo, tu contraseña y tu nombre visible.</li>
+        <li>Las canciones guardadas en tu cuenta.</li>
         <li>Tu pertenencia a todos los grupos.</li>
         <li>El registro de uso de la IA.</li>
         <li>El acceso de «Iniciar sesión con Apple», que se revoca ante Apple.</li>

@@ -51,6 +51,13 @@ export interface AudioTrack {
   solo: boolean;
 }
 
+/**
+ * `ownerId` de una canción que se queda solo en este dispositivo y no va a ninguna cuenta: una con grabación que se
+ * borró del todo en otro dispositivo (la grabación solo estaba aquí, así que va a la papelera de aquí en vez de borrarse).
+ * Al recuperarla de la papelera vuelve a ser una canción normal.
+ */
+export const OWNER_DEVICE_ONLY = 'solo-este-dispositivo';
+
 export interface Song {
   id: string;
   title: string;
@@ -68,6 +75,11 @@ export interface Song {
   groupId?: string;
   /** Marca de tiempo de la última versión conocida en la nube. */
   remoteUpdatedAt?: string;
+  /**
+   * Cuenta en la que se guarda (canciones de la cuenta, `cloud/personalSync.ts`). Sin ella, la canción aún no se ha
+   * subido: la adopta la primera cuenta que entra en este dispositivo. Con la de otra persona, no se sube a la tuya.
+   */
+  ownerId?: string;
   /**
    * Si salió de una grabación (convertida o mezclada): el segundo del archivo en que cae el 0 de la canción (puede ser
    * negativo). Sirve para añadir después otra pista grabada a la vez y que caiga en su sitio.

@@ -269,6 +269,11 @@ const groupName = (id?: string) => (id ? (groupNames.get(id) ?? 'Grupo') : '');
 
 // ---------------- Pintar ----------------
 
+/** Si la biblioteca está abierta, la vuelve a pintar (han llegado canciones de la cuenta desde otro dispositivo). */
+export function refreshLibrary() {
+  if (dlg?.open) render();
+}
+
 function render() {
   const reps = loadRepertorios();
   if (section.startsWith('rep:') && !repOf(section)) section = 'all';

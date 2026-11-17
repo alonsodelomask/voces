@@ -9,7 +9,7 @@ export const DATOS = {
   titular: 'Pablo M. Fdez. Alonso de Lomas',
   nif: '44690585K',
   domicilio: { es: 'Goienkale 5, 48260 Ermua (Bizkaia), España', en: 'Goienkale 5, 48260 Ermua (Bizkaia), Spain' },
-  actualizado: { es: '15 de noviembre de 2026', en: 'November 15, 2026' },
+  actualizado: { es: '17 de noviembre de 2026', en: 'November 17, 2026' },
 };
 
 export const pendiente = (txt) => `<span class="pendiente">${txt}</span>`;
