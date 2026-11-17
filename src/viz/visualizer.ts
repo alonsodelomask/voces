@@ -21,6 +21,8 @@ export interface VizOptions {
   showNames: boolean;
   /** Mostrar la letra: la sílaba junto al nombre de la nota y la línea tipo karaoke. */
   showLyrics: boolean;
+  /** Líneas horizontales de pentagrama detrás de las voces, para ver mejor cuánto sube o baja cada una. */
+  showStaff?: boolean;
   watermark: string;
   /** Diagrama del acorde actual abajo (opcional). */
   chordDiagram?: Instrument;
@@ -57,7 +59,7 @@ export class Visualizer {
   private lastFrame = performance.now();
   private flash = new Map<string, number>();
   song: Song | null = null;
-  opts: VizOptions = { zoom: 1, showTitle: true, showChord: true, showNames: true, showLyrics: true, watermark: '' };
+  opts: VizOptions = { zoom: 1, showTitle: true, showChord: true, showNames: true, showLyrics: true, showStaff: true, watermark: '' };
   /** Si se fija, el lienzo no se adapta a la ventana (para grabar en 1080x1920). */
   fixedSize: { w: number; h: number } | null = null;
   /** Tramo de ensayo: se marcan su principio y su final. */
@@ -144,6 +146,7 @@ export class Visualizer {
     const t1 = time + (w - headX) / pps + 0.5;
 
     this.drawBackground(w, h, headX);
+    if (this.opts.showStaff !== false) this.drawStaff(w, Y, yTop, yBot, u);
 
     const song = this.song;
     if (!song) {
@@ -439,6 +442,33 @@ export class Visualizer {
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.fillText(m === null ? '×' : pcName(m), x, y0 + rows * fs + 18 * u);
     });
+    ctx.restore();
+  }
+
+  /**
+   * Líneas de pentagrama: una cada tercera (las notas que en una partitura van en línea: … Sol2 Si2 Re3 Fa3 La3 · Do4 ·
+   * Mi4 Sol4 Si4 Re5 Fa5 …). Las de las claves de fa y de sol, algo más marcadas; el Do central, a trazos. Como el eje
+   * vertical va por semitonos, quedan a la distancia de cada intervalo y se ve cuánto sube o baja cada voz.
+   */
+  private drawStaff(w: number, Y: (m: number) => number, yTop: number, yBot: number, u: number) {
+    const ctx = this.ctx;
+    const SEMIS = [0, 2, 4, 5, 7, 9, 11];
+    const midiOf = (d: number) => 12 * (Math.floor(d / 7) + 1) + SEMIS[((d % 7) + 7) % 7];
+    const margin = 24 * u;
+    ctx.save();
+    ctx.lineWidth = Math.max(1, u);
+    // Posiciones diatónicas (Do0 = 0): las líneas son las pares. Do4 = 28; clave de fa 18–26, de sol 30–38.
+    for (let d = 0; d <= 74; d += 2) {
+      const y = Math.round(Y(midiOf(d))) + 0.5;
+      if (y < yTop - margin || y > yBot + margin) continue;
+      const clave = (d >= 18 && d <= 26) || (d >= 30 && d <= 38);
+      ctx.strokeStyle = d === 28 ? 'rgba(255,255,255,0.24)' : clave ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)';
+      ctx.setLineDash(d === 28 ? [6 * u, 6 * u] : []);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

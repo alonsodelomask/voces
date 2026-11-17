@@ -531,6 +531,24 @@ $<HTMLInputElement>('#opt-names').onchange = (e) => (viz.opts.showNames = (e.tar
     }
   };
 }
+// Líneas de pentagrama en el visualizador (se recuerda en este dispositivo).
+{
+  const box = $<HTMLInputElement>('#opt-staff');
+  try {
+    box.checked = localStorage.getItem('voces.pentagrama') !== 'no';
+  } catch {
+    /* nada */
+  }
+  viz.opts.showStaff = box.checked;
+  box.onchange = () => {
+    viz.opts.showStaff = box.checked;
+    try {
+      localStorage.setItem('voces.pentagrama', box.checked ? 'si' : 'no');
+    } catch {
+      /* nada */
+    }
+  };
+}
 $<HTMLInputElement>('#opt-loop').onchange = (e) => (engine.loop = (e.target as HTMLInputElement).checked);
 $<HTMLInputElement>('#opt-watermark').oninput = (e) => (viz.opts.watermark = (e.target as HTMLInputElement).value);
 
