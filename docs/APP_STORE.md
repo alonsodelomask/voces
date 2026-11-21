@@ -9,30 +9,38 @@ Respuestas preparadas el 13/11/2026 a partir del código (la app se llamaba «Vo
 
 **Si cambia el código, revisa este documento** y la política (`scripts/sitio/es.mjs` y `en.mjs`). La compilación y la subida se explican en [BACKEND.md](BACKEND.md), paso 6.
 
-## 0. Estado en App Store Connect (16/11/2026)
+## 0. Estado en App Store Connect (21/11/2026)
 
-Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión**: eso se hace después de probar la compilación en TestFlight.
+Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.** Revisado el 21/11/2026 en App Store Connect, TestFlight, Render, Supabase y Expo (solo lectura, con una segunda pasada que lo contrastó).
 
 **Ya está puesto:**
 
 - Ficha en español y en inglés (EE. UU.): texto promocional, descripción, palabras clave, URL de soporte y de marketing (secciones 2 y 2.1).
 - Copyright: `2026 Pablo M. Fdez. Alonso de Lomas`.
 - Capturas (sección 2.2): las 4, en orden, en el tamaño obligatorio y en el de 6,9″. Sirven para los dos idiomas.
-- Compilación **2 (1.0.0)** añadida a la versión. No pidió documentación de cifrado: `ITSAppUsesNonExemptEncryption` es `false` en `movil/app.json`.
+- **Compilación 5 (1.0.0)** elegida en la versión 1.0 (21/11/2026; antes estaba la 2, que no tenía «Ajustes de cuenta» y no cuadraba con las notas). La 5 se subió el 17/11 desde `35f071d` (canciones de la cuenta en todos los dispositivos); no lleva las líneas de pentagrama de `6283eba`. En TestFlight las compilaciones 2 a 5 están «Lista para enviar», validadas y con «Encriptación no exenta: No».
 - *Información de la app*: categoría Música, secundaria Educación; derechos sobre el contenido «No contiene, muestra ni accede a contenido de terceros» (la canción de ejemplo es nuestra; lo que importa cada usuario es suyo); contrato de licencia estándar de Apple.
-- Clasificación por edades: todas las respuestas «No» o «Ninguna» → **4+**.
-- Precio y disponibilidad: país base España (EUR), **gratis**, los 175 países o regiones. China continental exige un número de registro ICP y permisos para la IA generativa; si Apple lo pide, quítala en *Gestionar disponibilidad*.
+- Clasificación por edades: todas las respuestas «No» o «Ninguna» → **4+**. Las dos preguntas nuevas de Apple (ubicación compartida; citas y relaciones) respondidas «No» el 21/11/2026.
+- Precio y disponibilidad: país base España (EUR), **gratis**, los 175 países o regiones (China continental incluida; ver «Lo que falta», punto 1).
 - Publicación de la versión: **manual** (la publicas tú cuando Apple la apruebe).
-- Revisión de la app: «Es necesario iniciar sesión» marcado, usuario `revision.apple@vocify.es` y las notas de la sección 3.
-- Privacidad de la app: URL de la política en los dos idiomas y los 4 tipos de datos de la sección 1, guardados como borrador.
+- Revisión de la app: «Es necesario iniciar sesión» marcado, usuario `revision.apple@vocify.es`, datos de contacto y las notas de la sección 3 (con la ruta nueva para borrar la cuenta).
+- Privacidad de la app: URL de la política en los dos idiomas y los 4 tipos de datos de la sección 1, **guardados pero sin publicar**.
+- Acuerdos de Apple (apps gratuitas y de pago), banca, impuestos y comerciante del Reglamento de Servicios Digitales: todo «Activo».
+- Revocación de «Iniciar sesión con Apple»: clave `9BLRBZK3TV` creada y Render arranca con `Apple: revocación activa` (último arranque visto: 21/11/2026).
 
-**Lo que falta y tienes que hacer tú** (al 16/11/2026, noche):
+**Lo que falta** (al 21/11/2026). Al pulsar «Añadir a revisión», Apple contesta «No se ha podido añadir a revisión» por los puntos 1 a 3:
 
-1. **Cuenta de demostración** (sección 3): créala en Supabase y escribe su contraseña en *Información de inicio de sesión* (página de la versión 1.0) › **Guardar**. El teléfono y los datos de contacto ya están guardados.
+1. **China continental**: Apple pide para China un informe de evaluación de seguridad y una declaración de servicios de IA generativa (AIGC) con su registro (*Cumplimiento normativo de la app*, las dos filas «Falta información»), y además un número de licencia ICP. Lo práctico es quitar China continental en *Precio y disponibilidad › Gestionar disponibilidad*; se puede volver a añadir cuando se tengan esos papeles. **Lo decide el titular.**
 2. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
-3. Opcional: *Accesibilidad de la app* (sección 1).
-4. **Compilación 4 (1.0.0)**: lleva todo lo de la web del 16/11 (biblioteca, menú y ajustes de cuenta, se abre en la biblioteca). Pruébala en TestFlight (sección 5) y comprueba que es la elegida en *Compilación* de la versión 1.0.
-5. **Añadir a revisión** y enviar. Las notas para el revisor ya están al día (sin la ruta antigua de la compilación 2).
+3. **Cuenta de demostración** (sección 3): no existe todavía en Supabase (el 21/11 hay 2 usuarios). Créala y escribe su contraseña en *Información de inicio de sesión* (página de la versión 1.0) › **Guardar**.
+4. **Probar la compilación 5 en TestFlight** (sección 5): el único probador interno sigue «Invitado» desde el 16/11 y ninguna compilación tiene instalaciones. Acepta la invitación en el iPhone, instálala y prueba sobre todo entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta.
+5. Opcional: *Accesibilidad de la app* (sección 1).
+6. **Añadir a revisión** y enviar.
+
+**Riesgos conocidos que piden una compilación nueva** (no bloquean el envío; detalles en la sección 6):
+
+- La ficha mostrará el idioma **inglés**: el binario no declara el español.
+- Con el servidor dormido (plan gratuito de Render), el código de «Iniciar sesión con Apple» puede no llegar al servidor y entonces borrar la cuenta no revocaría el acceso.
 
 ## 1. Privacidad de la app («App Privacy»)
 
@@ -150,7 +158,7 @@ Las de 1206×2622 no están en el repositorio. Si rehaces las capturas, genera t
 Correo: **`revision.apple@vocify.es`** (ficticio, de tu dominio; con *Auto Confirm* no hace falta que el buzón exista. Si algún día Apple pide recuperar la contraseña, crea ese buzón en Hostinger).
 
 1. **Supabase** › proyecto Voces › *Authentication › Users › Add user › Create new user*. Correo `revision.apple@vocify.es`, una contraseña nueva y larga (guárdala en tu gestor), **Auto Confirm User** marcado › *Create user*.
-2. **App Store Connect** › Vocify › App para iOS 1.0 › *Información para el equipo de revisión de apps*. «Es necesario iniciar sesión» ya está marcado y el usuario ya está escrito: escribe la **Contraseña**, rellena los **Datos de contacto** (nombre, apellidos, teléfono y correo, por ejemplo soporte@vocify.es) y pulsa **Guardar**.
+2. **App Store Connect** › Vocify › App para iOS 1.0 › *Información para el equipo de revisión de apps*. «Es necesario iniciar sesión», el usuario y los datos de contacto ya están guardados: escribe la **Contraseña** y pulsa **Guardar**.
 3. Prueba a entrar con esa cuenta en la app de TestFlight antes de enviar.
 
 No hace falta crearle grupo ni canciones: el revisor puede crear un grupo y usar la IA (límite diario de `VOCES_AI_DAILY_LIMIT`).
@@ -193,3 +201,20 @@ The app interface is in Spanish.
 - **Sonido con el iPhone en silencio** (`playsInSilentMode`).
 - **Grabar vídeo** (MediaRecorder en iOS) y compartirlo.
 - **Rotación**: la app admite horizontal; si algo se ve mal, cambia `orientation` a `portrait` en `movil/app.json`.
+- **Entrar con la cuenta de demostración** y con **«Iniciar sesión con Apple»**, y **borrar la cuenta** por la ruta de las notas. Hazlo también una vez con el servidor dormido (sin usar la app ni la IA un buen rato) y comprueba después en *Ajustes › [tu nombre] › Iniciar sesión con Apple* que Vocify ya no aparece (sección 6).
+
+## 6. Riesgos conocidos (21/11/2026)
+
+Ninguno impide enviar la app a revisión; los dos piden una compilación nueva para arreglarlos.
+
+### La ficha dirá que la app está en inglés
+
+En TestFlight, los metadatos de las compilaciones 2 a 5 dicen «Información del Store › Idiomas: inglés». La App Store saca los idiomas de las localizaciones del binario, y `movil/app.json` no declara el español: solo tiene `CFBundleAllowMixedLocalizations: true`, sin `CFBundleDevelopmentRegion`, `CFBundleLocalizations` ni `locales`, así que queda el inglés que pone Expo por defecto. Arreglo: declarar el español en `movil/app.json` (mira cómo en la documentación de localización de Expo SDK 57) y compilar de nuevo. Comprueba después en TestFlight › compilación › *Metadatos de la compilación* que dice «español».
+
+### «Iniciar sesión con Apple» con el servidor dormido
+
+- `voces-api` está en el plan gratuito de Render: se duerme tras unos minutos sin uso y tarda unos 50 s o más en despertar. Del 16 al 21/11 solo arrancó una vez.
+- Al entrar con Apple, la app manda el código de autorización a `POST /v1/apple/authorization` con un límite de **20 s** y sin avisar si falla (`signInWithApple` en `src/cloud/cloud.ts`). Ninguna otra llamada despierta antes al servidor: la app solo lo usa para eso, para la IA y para borrar la cuenta.
+- Si el servidor está dormido, lo normal es que esa petición se corte. Entonces no se guarda el token de Apple y «Eliminar mi cuenta» borra la cuenta, pero **no puede revocar** el acceso de Apple (norma 5.1.1(v)). Borrar la cuenta no tiene el problema, porque espera hasta 150 s.
+- No queda rastro: un canje rechazado por Apple (por ejemplo, con una `.p8` o un Key ID mal puestos) no se escribe en el registro, y en Render no se ve ningún canje ni ninguna revocación. Que salga `Apple: revocación activa` solo dice que las cuatro variables están puestas.
+- Arreglos posibles: despertar el servidor al abrir la pantalla de entrar y dar a esa petición el mismo margen que a borrar la cuenta (el código de Apple vale 5 minutos), o reintentarla; escribir en el registro los fallos del canje, sin datos personales; y, mientras dure la revisión, tener `voces-api` despierto (plan de pago de Render, o una llamada periódica a `/health`). Los dos primeros piden compilación nueva.
