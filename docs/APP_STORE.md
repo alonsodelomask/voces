@@ -21,21 +21,20 @@ Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.
 - **Compilación 5 (1.0.0)** elegida en la versión 1.0 (21/11/2026; antes estaba la 2, que no tenía «Ajustes de cuenta» y no cuadraba con las notas). La 5 se subió el 17/11 desde `35f071d` (canciones de la cuenta en todos los dispositivos); no lleva las líneas de pentagrama de `6283eba`. En TestFlight las compilaciones 2 a 5 están «Lista para enviar», validadas y con «Encriptación no exenta: No».
 - *Información de la app*: categoría Música, secundaria Educación; derechos sobre el contenido «No contiene, muestra ni accede a contenido de terceros» (la canción de ejemplo es nuestra; lo que importa cada usuario es suyo); contrato de licencia estándar de Apple.
 - Clasificación por edades: todas las respuestas «No» o «Ninguna» → **4+**. Las dos preguntas nuevas de Apple (ubicación compartida; citas y relaciones) respondidas «No» el 21/11/2026.
-- Precio y disponibilidad: país base España (EUR), **gratis**, los 175 países o regiones (China continental incluida; ver «Lo que falta», punto 1).
+- Precio y disponibilidad: país base España (EUR), **gratis**, **174 países o regiones**. China continental se quitó el 21/11/2026 (decisión del titular): para China, Apple pide un informe de evaluación de seguridad, una declaración de servicios de IA generativa (AIGC) con su registro y una licencia ICP, y su ayuda los ata a que la app esté disponible allí. Hong Kong, Macao y Taiwán siguen. Se puede volver a añadir en *Gestionar disponibilidad* cuando se tengan esos papeles.
 - Publicación de la versión: **manual** (la publicas tú cuando Apple la apruebe).
 - Revisión de la app: «Es necesario iniciar sesión» marcado, usuario `revision.apple@vocify.es`, datos de contacto y las notas de la sección 3 (con la ruta nueva para borrar la cuenta).
 - Privacidad de la app: URL de la política en los dos idiomas y los 4 tipos de datos de la sección 1, **guardados pero sin publicar**.
 - Acuerdos de Apple (apps gratuitas y de pago), banca, impuestos y comerciante del Reglamento de Servicios Digitales: todo «Activo».
 - Revocación de «Iniciar sesión con Apple»: clave `9BLRBZK3TV` creada y Render arranca con `Apple: revocación activa` (último arranque visto: 21/11/2026).
 
-**Lo que falta** (al 21/11/2026). Al pulsar «Añadir a revisión», Apple contesta «No se ha podido añadir a revisión» por los puntos 1 a 3:
+**Lo que falta** (al 21/11/2026). El 21/11, al pulsar «Añadir a revisión», Apple contestó «No se ha podido añadir a revisión» por China continental (ya quitada), la privacidad sin publicar y la contraseña vacía:
 
-1. **China continental**: Apple pide para China un informe de evaluación de seguridad y una declaración de servicios de IA generativa (AIGC) con su registro (*Cumplimiento normativo de la app*, las dos filas «Falta información»), y además un número de licencia ICP. Lo práctico es quitar China continental en *Precio y disponibilidad › Gestionar disponibilidad*; se puede volver a añadir cuando se tengan esos papeles. **Lo decide el titular.**
-2. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
-3. **Cuenta de demostración** (sección 3): no existe todavía en Supabase (el 21/11 hay 2 usuarios). Créala y escribe su contraseña en *Información de inicio de sesión* (página de la versión 1.0) › **Guardar**.
-4. **Probar la compilación 5 en TestFlight** (sección 5): el único probador interno sigue «Invitado» desde el 16/11 y ninguna compilación tiene instalaciones. Acepta la invitación en el iPhone, instálala y prueba sobre todo entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta.
-5. Opcional: *Accesibilidad de la app* (sección 1).
-6. **Añadir a revisión** y enviar.
+1. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
+2. **Cuenta de demostración** (sección 3): no existe todavía en Supabase (el 21/11 hay 2 usuarios). Créala y escribe su contraseña en *Información de inicio de sesión* (página de la versión 1.0) › **Guardar**.
+3. **Probar la compilación 5 en TestFlight** (sección 5): el único probador interno sigue «Invitado» desde el 16/11 y ninguna compilación tiene instalaciones. Acepta la invitación en el iPhone, instálala y prueba sobre todo entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta.
+4. Opcional: *Accesibilidad de la app* (sección 1).
+5. **Añadir a revisión** y enviar. Si Apple sigue pidiendo lo de China, espera: avisa de que los cambios de disponibilidad tardan hasta 24 horas. *Cumplimiento normativo de la app* sigue mostrando las dos filas de China con «Falta información»; no hace falta rellenarlas mientras la app no esté en China.
 
 **Riesgos conocidos que piden una compilación nueva** (no bloquean el envío; detalles en la sección 6):
 
