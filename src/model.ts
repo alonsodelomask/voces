@@ -93,6 +93,27 @@ export interface Song {
   barStarts?: number[];
   /** Si está en la papelera: cuándo se mandó allí (se borra del todo a los 30 días; ver `storage.ts`). */
   deletedAt?: number;
+  /** Número de formato de la canción (`SONG_FORMAT`). Sin él, es el 1. */
+  format?: number;
+}
+
+/**
+ * El formato de canción más nuevo que entiende esta versión de la app. Una canción con un número mayor la ha guardado
+ * una versión más nueva de Vocify: aquí solo se puede ver (no se guarda, no se edita, no se sube), porque al cambiarla
+ * se estropearía lo que esta versión no entiende. Se sube solo cuando un campo nuevo dejaría mal la canción si la edita
+ * una app más vieja; para un campo que una app vieja puede ignorar sin problema, no hace falta.
+ */
+export const SONG_FORMAT = 1;
+export const NEWER_FORMAT_MSG = 'Esta canción se hizo con una versión más nueva de Vocify. Actualiza la app para editarla.';
+
+/** El número de formato de una canción (sin él, o si no es un número válido, el 1). */
+export function songFormat(s: { format?: unknown } | null | undefined): number {
+  const f = s?.format;
+  return typeof f === 'number' && Number.isInteger(f) && f >= 1 ? f : 1;
+}
+/** ¿La guardó una versión más nueva de la app? Entonces aquí solo se ve. */
+export function isNewerFormat(s: { format?: unknown } | null | undefined): boolean {
+  return songFormat(s) > SONG_FORMAT;
 }
 
 // Colores neón, ordenados de la voz más aguda a la más grave.
@@ -137,6 +158,7 @@ export function makeSong(partial: Partial<Song> = {}): Song {
     chordsAuto: true,
     createdAt: now,
     updatedAt: now,
+    format: SONG_FORMAT,
     ...partial,
   };
 }

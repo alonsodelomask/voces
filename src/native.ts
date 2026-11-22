@@ -2,7 +2,8 @@
 // navegador no puede hacer: guardar/compartir archivos, «Iniciar sesión con Apple» y abrir enlaces fuera de la app.
 // En el navegador normal todo funciona sin puente.
 
-type NativeInfo = { platform: 'ios' | 'android'; apple: boolean; version: string };
+// `build` y `restarts` solo los mandan las compilaciones nuevas: las primeras de TestFlight pasaban una versión fija «1.0.0».
+type NativeInfo = { platform: 'ios' | 'android'; apple: boolean; version: string; build?: string; restarts?: number };
 type Reply = { id: string; ok: boolean; result?: unknown; error?: string; cancelled?: boolean };
 
 declare global {
@@ -18,6 +19,9 @@ export const isNative = typeof window !== 'undefined' && !!window.ReactNativeWeb
 export const platform: 'ios' | 'android' | 'web' = (isNative && window.VocesNative?.platform) || 'web';
 /** «Iniciar sesión con Apple» nativo disponible (iPhone con la app instalada). */
 export const appleSignInAvailable = isNative && window.VocesNative?.apple === true;
+/** Versión y compilación de la app instalada (null en el navegador): para saber qué tiene cada teléfono. */
+export const appVersion: { version: string; build: string } | null =
+  isNative && window.VocesNative ? { version: window.VocesNative.version || '?', build: window.VocesNative.build || '?' } : null;
 
 export class NativeCancelled extends Error {
   constructor() {
@@ -124,4 +128,47 @@ export function initNative() {
       openExternal(a.href);
     }
   });
+}
+
+// Lo que se estaba haciendo cuando el teléfono se quedó sin memoria. Si el sistema cierra la web, no queda ningún
+// rastro (no cuenta como cierre de la app); con esta marca, al volver se puede explicar qué ha pasado.
+const HEAVY = 'voces.tareaPesada';
+
+/**
+ * Marca el comienzo de una tarea que gasta mucha memoria («convertía el audio en notas»…). Devuelve la función que
+ * la desmarca al terminar (bien o mal). Solo en la app: en el navegador no hay quien vuelva a abrir la web.
+ */
+export function heavyTask(what: string): () => void {
+  if (!isNative) return () => {};
+  try {
+    localStorage.setItem(HEAVY, what);
+  } catch {
+    /* sin almacenamiento: no pasa nada */
+  }
+  return () => {
+    try {
+      if (localStorage.getItem(HEAVY) === what) localStorage.removeItem(HEAVY);
+    } catch {
+      /* igual */
+    }
+  };
+}
+
+/**
+ * Al arrancar: si la app ha vuelto a abrir la web porque el sistema la cerró, el aviso que hay que dar; si no, null.
+ * La marca se borra siempre, para que no salga más tarde por una tarea vieja.
+ */
+export function restartNotice(): { text: string; error: boolean } | null {
+  if (!isNative) return null;
+  let what: string | null = null;
+  try {
+    what = localStorage.getItem(HEAVY);
+    localStorage.removeItem(HEAVY);
+  } catch {
+    /* sin almacenamiento */
+  }
+  if (!((window.VocesNative?.restarts ?? 0) > 0)) return null;
+  if (what) return { text: `Vocify se ha reiniciado porque el teléfono se quedó sin memoria mientras ${what}.`, error: true };
+  // Sin tarea pesada lo normal es que iOS cerrara la web con la app en segundo plano: no es un fallo, no se alarma.
+  return { text: 'Vocify se ha vuelto a abrir.', error: false };
 }

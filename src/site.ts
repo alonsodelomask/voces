@@ -14,3 +14,11 @@ export function siteUrl(path: string): string {
 export function linkSitePages(root: ParentNode = document) {
   root.querySelectorAll<HTMLAnchorElement>('a[data-site]').forEach((a) => (a.href = siteUrl(a.dataset.site ?? '')));
 }
+
+/**
+ * Enlace que acompaña a una invitación al grupo. Dentro de la app nativa la página es `https://app.voces.invalid/`, que
+ * no existe fuera del teléfono: el invitado recibiría un enlace roto. Ahí se manda la web pública.
+ */
+export function inviteUrl(): string {
+  return isNative ? SITE : location.href.split('#')[0];
+}

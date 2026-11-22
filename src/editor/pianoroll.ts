@@ -42,6 +42,8 @@ export class PianoRoll {
   song: Song | null = null;
   activeVoiceId: string | null = null;
   tool: Tool = 'draw';
+  /** Solo ver (una canción de una versión más nueva de la app): se puede mover la vista y oír notas, no cambiarlas. */
+  readOnly = false;
   /** Duración por defecto de las notas nuevas, en pulsos. */
   noteLen = 1;
   /** Rejilla en pulsos. */
@@ -85,14 +87,14 @@ export class PianoRoll {
     });
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      const n = this.hit(this.pos(e));
+      const n = this.readOnly ? null : this.hit(this.pos(e));
       if (n) {
         this.onBeforeEdit?.();
         this.remove(n);
       }
     });
     canvas.addEventListener('dblclick', (e) => {
-      const n = this.hit(this.pos(e));
+      const n = this.readOnly ? null : this.hit(this.pos(e));
       if (n) {
         this.onBeforeEdit?.();
         this.remove(n);
@@ -258,7 +260,7 @@ export class PianoRoll {
     }
     const p = this.pos(e);
     const base = { startX: p.x, startY: p.y, origStart: 0, origDur: 0, origMidi: 0, scrollX: this.scrollX, scrollY: this.scrollY, moved: false };
-    if (p.y >= BAR_H && p.y < TOP && p.x >= KEYS_W) {
+    if (p.y >= BAR_H && p.y < TOP && p.x >= KEYS_W && !this.readOnly) {
       // Fila de acordes.
       const t = this.chordTimeAt(p.x);
       this.onChordClick?.(t.time, t.index);
@@ -269,7 +271,7 @@ export class PianoRoll {
       this.onSeek?.(Math.max(0, this.xToBeat(p.x)) * this.spb);
       return;
     }
-    if (this.tool === 'pan' || e.button === 1 || p.x < KEYS_W) {
+    if (this.tool === 'pan' || this.readOnly || e.button === 1 || p.x < KEYS_W) {
       if (p.x < KEYS_W && this.tool !== 'pan') {
         const v = this.activeVoice;
         if (v) this.onPreview?.(this.yToMidi(p.y), v);

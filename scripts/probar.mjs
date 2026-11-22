@@ -66,7 +66,10 @@ for (const archivo of readdirSync(DIR).filter((f) => f.endsWith('.js') && f.incl
   let script;
   if (archivo.includes('nativa')) {
     script = await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: "window.__msgs=[];window.ReactNativeWebView={postMessage:function(m){window.__msgs.push(JSON.parse(m));}};window.VocesNative={platform:'ios',apple:true,version:'1.0.0'};",
+      // `restarts` imita a la app cuando vuelve a montar la web tras un cierre por falta de memoria (lo fija la prueba).
+      source:
+        "window.__msgs=[];window.ReactNativeWebView={postMessage:function(m){window.__msgs.push(JSON.parse(m));}};" +
+        "window.VocesNative={platform:'ios',apple:true,version:'1.0.0',build:'12',restarts:Number(sessionStorage.getItem('__reinicios')||0)};",
     });
   }
   const codigo = readFileSync(join(DIR, archivo), 'utf8');

@@ -1,9 +1,10 @@
 import type { Song } from '../model';
-import { OWNER_DEVICE_ONLY, uid } from '../model';
+import { isNewerFormat, OWNER_DEVICE_ONLY, uid } from '../model';
 import { getTrack, putTrack } from '../audio/track';
 import { deleteSong, getSong, onSongDeleted, onSongStored, peekSongs, peekTrash, putSynced, saveSong, setOwner, TRASH_DAYS } from '../storage';
 import * as cloud from './cloud';
 import { localStamp, planSync, remoteStamp, type Plan } from './syncPlan';
+import { keepLocalMix } from './mix';
 
 export { planSync } from './syncPlan';
 
@@ -262,8 +263,8 @@ export async function syncPersonal(): Promise<void> {
         if (isCurrent(id) || !notNewer(id)) return;
         const s = getSong(id)!;
         if (s.audioTrack) {
-          const g = await n.fetchSong(id);
-          g.audioTrack = s.audioTrack;
+          // Con la grabación y la mezcla de ensayo de aquí (no viajan al grupo).
+          const g = keepLocalMix(await n.fetchSong(id), s);
           silently(() => putSynced(g));
         } else silently(() => deleteSong(id, { silent: true }));
         removed++;
@@ -285,6 +286,8 @@ export async function syncPersonal(): Promise<void> {
     for (const id of p.push) {
       const s = getSong(id);
       if (!s || s.groupId || !mine(s, owner)) continue;
+      // De una versión más nueva de la app: aquí solo se ve, y no se sube encima de lo que haya en la cuenta.
+      if (isNewerFormat(s)) continue;
       const data: Song = { ...s };
       delete data.audioTrack;
       delete data.remoteUpdatedAt;

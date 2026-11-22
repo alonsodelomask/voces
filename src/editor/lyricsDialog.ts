@@ -69,7 +69,8 @@ interface Deps {
   /** Segundo del cabezal. */
   time: () => number;
   /** Aplica un cambio que se puede deshacer. */
-  edit: (fn: () => void) => void;
+  /** Devuelve false si no se ha hecho el cambio (canción de solo ver). */
+  edit: (fn: () => void) => boolean;
   toast: (s: string) => void;
 }
 
@@ -213,7 +214,8 @@ export async function openLyrics(deps: Deps): Promise<void> {
   let rellenado = area?.value ?? '';
   /** La letra que se coloca según lo oído: null = lo oído tal cual (cuadro vacío o sin tocar). */
   const textoAColocar = (texto: string) => (!texto.trim() || texto === textoOido ? null : texto);
-  const nombre = (n: Note) => prettyAccidentals(n.name ?? midiToName(n.midi, song.keyFifths));
+  // Va dentro de HTML (la vista previa): el nombre guardado en la nota viene de la canción, que puede llegar de fuera.
+  const nombre = (n: Note) => esc(prettyAccidentals(n.name ?? midiToName(n.midi, song.keyFifths)));
   /** Si al aceptar se quita la marca ámbar desde la nota de inicio. */
   const daPorBuenas = () => !!buenas?.checked && !filaBuenas?.hidden;
   const muestraBuenas = () => {
@@ -438,7 +440,7 @@ export async function openLyrics(deps: Deps): Promise<void> {
     const otrasVoces = song.voices.filter((v) => v !== voice && !isSung(v));
     const conSilaba = () => otrasVoces.reduce((s, v) => s + v.notes.filter((n) => n.lyric).length, 0);
     const habia = conSilaba();
-    deps.edit(() => assignLyrics(song, voice, [], k, !!r.checks.otras));
+    if (!deps.edit(() => assignLyrics(song, voice, [], k, !!r.checks.otras))) return;
     const quitadas = habia - conSilaba();
     return deps.toast(`Letra quitada de «${voice.name}»${quitadas ? ` y de ${cuenta(quitadas, 'nota', 'notas')} de las otras voces` : ''}${desdeTxt}.`);
   }

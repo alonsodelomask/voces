@@ -1,7 +1,8 @@
-import { uid, type Song } from '../model';
+import { isNewerFormat, NEWER_FORMAT_MSG, uid, type Song } from '../model';
 import { confirmDialog, esc, form } from '../ui/dialog';
 import * as cloud from './cloud';
 import { saveFile } from '../native';
+import { inviteUrl } from '../site';
 
 export interface GroupDeps {
   song: () => Song;
@@ -13,6 +14,20 @@ export interface GroupDeps {
   openAuth: () => void;
   /** Ajustes de cuenta (nombre, contraseña, tus datos, eliminar la cuenta). */
   openSettings: () => void;
+}
+
+/**
+ * Botón «Compartir» del grupo: el menú de compartir del dispositivo o, si no hay, copia la invitación. Aparte del panel
+ * para poder probarlo sin nube (scripts/pruebas/35-nativa-invitar.js).
+ */
+export async function shareInvite(g: { name: string; invite_code: string }, toast: (msg: string) => void) {
+  const text = `Únete a «${g.name}» en Vocify con el código ${g.invite_code}`;
+  if (navigator.share) await navigator.share({ title: 'Vocify', text, url: inviteUrl() }).catch(() => {});
+  else {
+    // Sin menú de compartir, el enlace va en el propio texto: si no, el invitado no sabe dónde entrar.
+    await navigator.clipboard?.writeText(`${text}: ${inviteUrl()}`);
+    toast('Invitación copiada.');
+  }
 }
 
 /** Panel «Tu grupo»: crear/unirse a grupos, invitar y compartir canciones. Lo de la cuenta está en Ajustes de cuenta. */
@@ -131,18 +146,11 @@ export async function openGroupPanel(deps: GroupDeps) {
         }
       };
     });
-    const inviteText = `Únete a «${g.name}» en Vocify con el código ${g.invite_code}`;
     box.querySelector<HTMLButtonElement>('#g-copy')!.onclick = async () => {
       await navigator.clipboard?.writeText(g.invite_code);
       deps.toast('Código copiado.');
     };
-    box.querySelector<HTMLButtonElement>('#g-share')!.onclick = async () => {
-      if (navigator.share) await navigator.share({ title: 'Vocify', text: inviteText, url: location.href.split('#')[0] }).catch(() => {});
-      else {
-        await navigator.clipboard?.writeText(inviteText);
-        deps.toast('Invitación copiada.');
-      }
-    };
+    box.querySelector<HTMLButtonElement>('#g-share')!.onclick = () => shareInvite(g, deps.toast);
     box.querySelector<HTMLButtonElement>('#g-regen')?.addEventListener('click', async () => {
       await cloud.regenerateInvite(g.id);
       render();
@@ -166,6 +174,9 @@ export async function openGroupPanel(deps: GroupDeps) {
     box.querySelector<HTMLButtonElement>('#g-upload')!.onclick = async () => {
       const s = deps.song();
       if (s.groupId === g.id) return;
+      // Una canción de una versión más nueva no se sube (cloud.pushSong la rechaza): se avisa antes de marcarla como
+      // del grupo o de hacerle una copia, para no decir «compartida» sin haberlo hecho.
+      if (isNewerFormat(s)) return deps.toast(NEWER_FORMAT_MSG, true);
       try {
         if (s.groupId && s.groupId !== g.id) {
           // Ya está en otro grupo: se comparte una copia.

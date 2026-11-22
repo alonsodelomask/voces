@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
@@ -13,12 +14,28 @@ function stripWebOnlyLinks(): Plugin {
 // con esta condición no se mete en la compilación su WASM de 27 MB, que además no es el que usamos.
 const resolve = { conditions: ['onnxruntime-web-use-extern-wasm', ...defaultClientConditions] };
 
+// Commit y fecha de la compilación, para enseñarlos al pie de la Ayuda (src/version.ts). Render y EAS dan el commit en
+// una variable; en el PC se le pregunta a Git. Si no se sabe, va vacío y la web dice solo «Versión web».
+function webBuild() {
+  let commit = process.env.RENDER_GIT_COMMIT || process.env.EAS_BUILD_GIT_COMMIT_HASH || '';
+  if (!commit) {
+    try {
+      commit = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch {
+      /* sin Git */
+    }
+  }
+  return { commit: commit.slice(0, 7), date: new Date().toISOString().slice(0, 10) };
+}
+const define = { __VOCES_WEB__: JSON.stringify(webBuild()) };
+
 export default defineConfig(({ mode }) =>
   mode === 'movil'
     ? {
         // Versión para la app de iPhone/Android: un único HTML con todo dentro (scripts/build-movil.mjs).
         base: './',
         resolve,
+        define,
         plugins: [viteSingleFile(), stripWebOnlyLinks()],
         build: { outDir: 'dist-movil', emptyOutDir: true, copyPublicDir: false },
         worker: { format: 'es' },
@@ -26,6 +43,7 @@ export default defineConfig(({ mode }) =>
     : {
         base: './',
         resolve,
+        define,
         server: { host: true, port: 5173 },
         // El que escucha la letra (Whisper) se prepara al arrancar: si no, la primera vez que se usa Vite recarga la página.
         optimizeDeps: { include: ['@huggingface/transformers'] },

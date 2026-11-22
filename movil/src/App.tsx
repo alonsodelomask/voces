@@ -1,11 +1,12 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Application from 'expo-application';
 import { setAudioModeAsync } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
@@ -17,6 +18,10 @@ import VOCES_HTML from './generated/voces-html';
  *  - «save»: guardar/compartir un archivo (MIDI, proyecto, vídeo) con el menú de compartir del sistema;
  *  - «apple-sign-in»: «Iniciar sesión con Apple» nativo (el nonce lo genera la web, como en Baulify);
  *  - «open-url»: abrir un enlace fuera de la app.
+ *
+ * Si el sistema cierra la web por falta de memoria (pasa en el iPhone al convertir audio, cargar el modelo de la letra
+ * o grabar vídeo), el WebView se vuelve a montar: recargarlo no sirve, porque la dirección es inventada y el HTML va
+ * inyectado, y la pantalla se quedaría en blanco. La web recibe cuántas veces ha pasado para explicárselo a quien la usa.
  *
  * Origen fijo `https://app.voces.invalid`: es un contexto seguro (micrófono y Web Crypto), conserva el almacenamiento
  * entre aperturas y nunca resuelve a ningún servidor. El servidor de Render lo admite en CORS.
@@ -35,6 +40,29 @@ export default function App() {
   // Partituras abiertas desde otra app («Abrir con… Vocify»): esperan a que la web esté lista.
   const webReady = useRef(false);
   const pendingFiles = useRef<{ name: string; base64: string }[]>([]);
+  // Veces que el sistema ha cerrado la web en esta sesión: cambia la `key` del WebView y lo monta de nuevo.
+  const [restarts, setRestarts] = useState(0);
+  // Si la web se cae nada más abrirse (p. ej. al reabrir una canción que agota la memoria), montarla otra vez sería un
+  // bucle sin fin: tras 3 cierres en un minuto se para y se ofrece reintentar a mano.
+  const recentCrashes = useRef<number[]>([]);
+  const [gaveUp, setGaveUp] = useState(false);
+
+  function remount() {
+    // La web nueva tiene que volver a decir «ready» antes de recibir partituras.
+    webReady.current = false;
+    const now = Date.now();
+    recentCrashes.current = [...recentCrashes.current.filter((t) => now - t < 60_000), now];
+    if (recentCrashes.current.length >= 3) {
+      setGaveUp(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }
+    setRestarts((n) => n + 1);
+  }
+
+  function retry() {
+    recentCrashes.current = [];
+    setGaveUp(false);
+  }
 
   function deliverFiles() {
     if (!webReady.current) return;
@@ -67,11 +95,18 @@ export default function App() {
     if (Platform.OS === 'ios') AppleAuthentication.isAvailableAsync().then(setApple).catch(() => setApple(false));
   }, []);
 
-  // Se inyecta antes de cargar la web: así la web sabe que está en la app y qué puede pedir.
-  const bootstrap = useMemo(
-    () => `window.VocesNative = ${JSON.stringify({ platform: Platform.OS, apple: apple === true, version: '1.0.0' })}; true;`,
-    [apple],
-  );
+  // Se inyecta antes de cargar la web: así la web sabe que está en la app, qué puede pedir, qué versión y compilación
+  // tiene este teléfono (para el soporte) y si viene de un cierre por falta de memoria.
+  const bootstrap = useMemo(() => {
+    const info = {
+      platform: Platform.OS,
+      apple: apple === true,
+      version: Application.nativeApplicationVersion ?? '?',
+      build: Application.nativeBuildVersion ?? '?',
+      restarts,
+    };
+    return `window.VocesNative = ${JSON.stringify(info)}; true;`;
+  }, [apple, restarts]);
 
   function reply(message: Reply) {
     web.current?.injectJavaScript(`window.__vocesNativeReply && window.__vocesNativeReply(${JSON.stringify(message)}); true;`);
@@ -135,14 +170,27 @@ export default function App() {
       <StatusBar style="light" />
       <SafeAreaView style={styles.root} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.root}>
-          {apple !== null && (
+          {gaveUp && (
+            <View style={styles.stopped}>
+              <Text style={styles.stoppedText}>Vocify no ha podido abrirse por falta de memoria.</Text>
+              <Text style={styles.stoppedHint}>Cierra otras apps y vuelve a intentarlo.</Text>
+              <Pressable onPress={retry} style={styles.retry} accessibilityRole="button">
+                <Text style={styles.retryText}>Reintentar</Text>
+              </Pressable>
+            </View>
+          )}
+          {apple !== null && !gaveUp && (
           <WebView
+            key={restarts}
             ref={web}
             source={{ html: VOCES_HTML, baseUrl: ORIGIN }}
             originWhitelist={['*']}
             injectedJavaScriptBeforeContentLoaded={bootstrap}
             onMessage={onMessage}
             onLoadEnd={() => SplashScreen.hideAsync().catch(() => {})}
+            // El sistema ha cerrado la web (iPhone: sin memoria; Android: el proceso que la dibuja). Sin esto, pantalla en blanco.
+            onContentProcessDidTerminate={remount}
+            onRenderProcessGone={remount}
             // Solo la propia app se abre dentro; cualquier otro enlace va al navegador del teléfono.
             onShouldStartLoadWithRequest={(req) => {
               if (req.url.startsWith(ORIGIN) || req.url.startsWith('about:') || req.url.startsWith('data:') || req.url.startsWith('blob:')) return true;
@@ -173,4 +221,10 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#14041a' },
   web: { flex: 1, backgroundColor: '#14041a' },
+  // Mismos colores que la web (src/styles.css: --text, --muted, --accent).
+  stopped: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  stoppedText: { color: '#f1eaf5', fontSize: 18, textAlign: 'center' },
+  stoppedHint: { color: '#b7a3c2', fontSize: 15, textAlign: 'center' },
+  retry: { marginTop: 8, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 999, backgroundColor: '#e940d6' },
+  retryText: { color: '#14041a', fontSize: 16, fontWeight: '600' },
 });

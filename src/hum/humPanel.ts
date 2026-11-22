@@ -10,8 +10,8 @@ export interface HumDeps {
   song: () => Song;
   activeVoiceId: () => string | null;
   setActiveVoice: (id: string) => void;
-  /** Aplica un cambio con deshacer y refresco. */
-  apply: (fn: () => void) => void;
+  /** Aplica un cambio con deshacer y refresco. Devuelve false si no se ha hecho (canción de solo ver). */
+  apply: (fn: () => void) => boolean;
   toast: (msg: string, error?: boolean) => void;
   snapBeats: () => number;
 }
@@ -25,7 +25,7 @@ export async function openHumPanel(deps: HumDeps) {
   const dlg = document.createElement('dialog');
   dlg.className = 'dlg hum-dlg';
   const voiceOpts = song.voices
-    .map((v) => `<option value="${v.id}" ${v.id === deps.activeVoiceId() ? 'selected' : ''}>${esc(v.name)}</option>`)
+    .map((v) => `<option value="${esc(v.id)}" ${v.id === deps.activeVoiceId() ? 'selected' : ''}>${esc(v.name)}</option>`)
     .join('');
   const savedLat = (() => {
     try {
@@ -193,10 +193,10 @@ export async function openHumPanel(deps: HumDeps) {
       const used = new Set(s.voices.map((v) => v.color));
       const v = makeVoice(`Tarareo ${s.voices.length + 1}`, s.voices.length);
       v.color = VOICE_COLORS.find((c) => !used.has(c)) ?? v.color;
-      deps.apply(() => s.voices.push(v));
+      if (!deps.apply(() => s.voices.push(v))) return; // canción de solo ver: no se graba
       voiceId = v.id;
       const sel = $<HTMLSelectElement>('hum-voice');
-      sel.insertAdjacentHTML('afterbegin', `<option value="${v.id}">${esc(v.name)}</option>`);
+      sel.insertAdjacentHTML('afterbegin', `<option value="${esc(v.id)}">${esc(v.name)}</option>`);
       sel.value = v.id;
     }
     deps.setActiveVoice(voiceId);
@@ -271,11 +271,12 @@ export async function openHumPanel(deps: HumDeps) {
       return;
     }
     const end = frames.length ? frames[frames.length - 1].t : recStart;
-    deps.apply(() => {
+    const hecho = deps.apply(() => {
       // Sustituye lo que hubiera en el tramo grabado.
       voice.notes = voice.notes.filter((n) => n.start + n.dur <= recStart + 1e-6 || n.start >= end - 1e-6);
       for (const n of notes) voice.notes = insertMonophonic(voice.notes, n);
     });
+    if (!hecho) return; // canción de solo ver: se queda el aviso
     try {
       localStorage.setItem(LAT_KEY, $<HTMLInputElement>('hum-lat').value);
     } catch {

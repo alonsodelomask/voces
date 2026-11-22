@@ -1,5 +1,6 @@
 import { strFromU8, unzipSync } from 'fflate';
 import type { Song } from '../model';
+import { checkSong, checkSongOrFail } from '../songCheck';
 import { parseMidi } from './midi';
 import { parseMusicXML } from './musicxml';
 
@@ -7,7 +8,13 @@ export const AUDIO_EXT = ['wav', 'mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'fla
 export const isAudioFile = (name: string) => AUDIO_EXT.includes((name.split('.').pop() ?? '').toLowerCase());
 export const ACCEPTED = '.musicxml,.xml,.mxl,.mid,.midi,.json,.voces,' + AUDIO_EXT.map((e) => '.' + e).join(',') + ',audio/*';
 
+/** Lee una partitura o un proyecto. Lo que sale se revisa siempre (`songCheck.ts`): el archivo puede venir de cualquiera. */
 export async function importFile(file: File): Promise<Song> {
+  const s = await readFile(file);
+  return checkSong(s) ?? s;
+}
+
+async function readFile(file: File): Promise<Song> {
   const name = file.name;
   const base = name.replace(/\.[^.]+$/, '');
   const ext = (name.split('.').pop() ?? '').toLowerCase();
@@ -16,9 +23,13 @@ export async function importFile(file: File): Promise<Song> {
   if (ext === 'musicxml' || ext === 'xml') return parseMusicXML(await file.text(), base);
   if (ext === 'mxl') return parseMusicXML(readMxl(new Uint8Array(await file.arrayBuffer())), base);
   if (ext === 'json' || ext === 'voces') {
-    const data = JSON.parse(await file.text());
-    if (!data || !Array.isArray(data.voices)) throw new Error('El archivo no es un proyecto de Vocify.');
-    return data as Song;
+    let data: unknown;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      throw new Error('El archivo no es un proyecto de Vocify.');
+    }
+    return checkSongOrFail(data);
   }
   if (ext === 'mscz' || ext === 'mscx') {
     throw new Error('Los archivos de MuseScore no se leen directamente. En MuseScore: Archivo → Exportar → MusicXML, y sube ese archivo.');

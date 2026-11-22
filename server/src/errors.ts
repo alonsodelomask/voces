@@ -16,10 +16,16 @@ export type ApiErrorCode = keyof typeof errorStatus;
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
-  constructor(code: ApiErrorCode, message: string) {
+  /**
+   * La IA no ha llegado a trabajar (OpenAI rechazó o no recibió la petición): no cuenta para el cupo diario. Una
+   * respuesta que sí se generó (aunque llegue cortada o mal) cuesta dinero y cuenta.
+   */
+  readonly free: boolean;
+  constructor(code: ApiErrorCode, message: string, opts: { free?: boolean } = {}) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
+    this.free = opts.free ?? false;
   }
   get status(): number {
     return errorStatus[this.code];

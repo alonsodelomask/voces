@@ -34,6 +34,27 @@ export function createApp(deps: AppDeps) {
   const burst = new RateLimiter(6, 60_000, now); // como mucho 6 peticiones a la IA por minuto y persona
   const accountLimiter = new RateLimiter(10, 60_000, now);
 
+  // Comprobar el cupo diario y apuntar la petición, de una en una por persona: si dos peticiones simultáneas
+  // comprobaran a la vez, las dos verían el mismo contador y se colarían por encima del límite.
+  const aiQueue = new Map<string, Promise<number>>();
+  function reserveAi(userId: string): Promise<number> {
+    const turn = (aiQueue.get(userId) ?? Promise.resolve(0))
+      .catch(() => 0)
+      .then(async () => {
+        const since = new Date(now() - 24 * 3600_000).toISOString();
+        if ((await deps.store.aiUsageSince(userId, since)) >= deps.aiDailyLimit) {
+          throw new ApiError('rate-limited', `Has llegado al límite de ${deps.aiDailyLimit} peticiones a la IA por día.`);
+        }
+        // Se apunta antes de preguntar a la IA (reserva el cupo), no al terminar: si no, durante lo que tarda OpenAI
+        // las demás peticiones verían el contador viejo.
+        return deps.store.recordAiUsage(userId);
+      });
+    aiQueue.set(userId, turn);
+    // Cuando termina el último turno de esa persona, se olvida (para que el mapa no crezca).
+    void turn.catch(() => 0).then(() => aiQueue.get(userId) === turn && aiQueue.delete(userId));
+    return turn;
+  }
+
   app.use('*', secureHeaders());
   app.use(
     '*',
@@ -80,12 +101,16 @@ export function createApp(deps: AppDeps) {
     const userId = c.get('userId');
     burst.hit(userId);
     const request = await body(c, aiRequest);
-    const since = new Date(now() - 24 * 3600_000).toISOString();
-    if ((await deps.store.aiUsageSince(userId, since)) >= deps.aiDailyLimit) {
-      throw new ApiError('rate-limited', `Has llegado al límite de ${deps.aiDailyLimit} peticiones a la IA por día.`);
+    const usageId = await reserveAi(userId);
+    let answer;
+    try {
+      answer = await deps.ai.arrange(request);
+    } catch (error) {
+      // La IA ni siquiera ha contestado (`free`): se devuelve el apunte y no cuenta. Si eso falla, se da el error original.
+      if (error instanceof ApiError && error.free) await deps.store.refundAiUsage(usageId).catch(() => {});
+      throw error;
     }
-    await deps.store.recordAiUsage(userId);
-    return c.json(await deps.ai.arrange(request));
+    return c.json(answer);
   });
 
   /** Tras «Iniciar sesión con Apple»: guarda el token para poder revocarlo al borrar la cuenta. */

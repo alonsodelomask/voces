@@ -6,6 +6,25 @@ Han revisado la app nueve auditores, cada uno en un área. Después, tres invest
 
 > **Importante para el iPhone:** la web va metida dentro de la app. Por eso **cualquier arreglo de la web solo llega al iPhone con una compilación nueva** en EAS, que haces tú. Los cambios en Supabase (migraciones), en Render o en App Store Connect no necesitan compilar.
 
+
+## Estado (22/11/2026): lo urgente ya arreglado
+
+Aplicado esa misma noche, con pruebas y una revisión independiente de cada tanda. Pasan las 481 pruebas unitarias, las 45 del servidor, las 37 de navegador (ordenador y móvil), y `expo-doctor` da 21 de 21:
+
+- **1 · La mezcla de ensayo es de cada uno.** Solo, Silencio, Ocultar y el volumen ya no se suben al grupo ni se pierden al llegar otra versión. La canción compartida sigue llevando esos campos con sus valores normales, para que la 1.0 suene (`src/cloud/mix.ts`).
+- **2 · Ediciones a la vez.** La subida solo se hace si nadie ha cambiado la canción desde que la viste. Si choca, tus cambios se guardan aparte como «… (mis cambios)» y te queda la versión del grupo, con un aviso claro. Al abrir una canción del grupo se trae la versión más nueva. Las subidas que fallan se reintentan (`src/cloud/groupSync.ts`).
+- **3 · Número de formato.** Si una canción la hizo una versión más nueva de la app, se abre en modo «solo ver» con el aviso «Actualiza la app para editarla». Falta el aviso de versión mínima de la app, que pide servidor o web pública: está pendiente.
+- **5, 6 y 7 · Canciones de fuera.** Se revisan al entrar (`src/songCheck.ts`): no pueden ejecutar código ni congelar el visualizador. Un proyecto que ya existe se abre como copia y no machaca el tuyo.
+- **8 · Se guarda al momento** al cambiar de canción, al abrir la biblioteca y al salir o pasar a segundo plano.
+- **9 · iPhone.** Si iOS cierra la web, la app la vuelve a abrir, como mucho 3 veces por minuto, y avisa. La app muestra su versión y su compilación reales (al pie de la Ayuda).
+- **13 · Invitar desde el iPhone** comparte `https://vocify.es/`.
+- **14 · IA.** «Afinar con IA» ya cabe en el límite del servidor. Aplicar una propuesta conserva la letra. Con el servidor dormido dice «se está despertando» y la petición fallida no gasta cupo. El cupo diario ya no se puede saltar con peticiones a la vez.
+- **15 · Cambiar el tempo** mueve también los inicios de compás.
+- **17 · Correo real** quitado de `docs/BACKEND.md`. Sigue en el historial de Git: borrarlo de ahí exige reescribirlo y es decisión tuya.
+- **18 · Servidor:** Hono y Zod al día. `npm audit` da 0 vulnerabilidades.
+
+**Pendiente** (decisión o mano tuya): 4 (TestFlight con el cuarteto), 10 (vídeo en el iPhone), 11 (revocación de Apple, migración 006), 12 (contraste), 16 (presupuesto en OpenAI) y, del punto 3, la versión mínima de la app. Todo lo de la web solo llega al iPhone con una compilación nueva.
+
 ---
 
 ## 1. En pocas palabras

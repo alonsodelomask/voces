@@ -6,6 +6,7 @@ import modelJsonUrl from '@spotify/basic-pitch/model/model.json?url';
 import weightsUrl from '@spotify/basic-pitch/model/group1-shard1of1.bin?url';
 import { makeSong, makeVoice, VOICE_COLORS, type Note, type Song } from '../model';
 import { computeChords } from '../music';
+import { heavyTask } from '../native';
 
 export { AUDIO_EXT, isAudioFile } from './index';
 
@@ -106,18 +107,24 @@ async function loadModel(): Promise<import('@tensorflow/tfjs').GraphModel> {
 
 /** Pasa el audio por el modelo (lo lento). */
 export async function basicPitchOutputs(samples: Float32Array, onProgress?: (f: number) => void): Promise<BpOutputs> {
-  // Un fallo al descargar el modelo no es cosa de la tarjeta gráfica: se avisa tal cual, sin pasar al procesador.
-  const model = await loadModel();
+  // Lo que más memoria gasta: si el iPhone cierra la web a medias, al volver se explica por qué (src/native.ts).
+  const unmark = heavyTask('convertía el audio en notas');
   try {
-    return await basicPitchOnce(model, samples, onProgress);
-  } catch (e) {
-    // Si la tarjeta gráfica (WebGL) falla al escuchar, se repite en el procesador: más lento, pero funciona en cualquier equipo.
-    const tf = await import('@tensorflow/tfjs');
-    if (tf.getBackend() === 'cpu') throw e;
-    console.warn('[voces] WebGL no disponible para la transcripción; se usa el procesador', e);
-    await tf.setBackend('cpu');
-    modelPromise = null;
-    return basicPitchOnce(await loadModel(), samples, onProgress);
+    // Un fallo al descargar el modelo no es cosa de la tarjeta gráfica: se avisa tal cual, sin pasar al procesador.
+    const model = await loadModel();
+    try {
+      return await basicPitchOnce(model, samples, onProgress);
+    } catch (e) {
+      // Si la tarjeta gráfica (WebGL) falla al escuchar, se repite en el procesador: más lento, pero funciona en cualquier equipo.
+      const tf = await import('@tensorflow/tfjs');
+      if (tf.getBackend() === 'cpu') throw e;
+      console.warn('[voces] WebGL no disponible para la transcripción; se usa el procesador', e);
+      await tf.setBackend('cpu');
+      modelPromise = null;
+      return basicPitchOnce(await loadModel(), samples, onProgress);
+    }
+  } finally {
+    unmark();
   }
 }
 

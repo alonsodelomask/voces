@@ -11,7 +11,10 @@ export type PendingRevocation = { id: number; token: string; attempts: number };
 export interface Store {
   /** Peticiones a la IA de esa persona desde `since` (ISO). */
   aiUsageSince(userId: string, since: string): Promise<number>;
-  recordAiUsage(userId: string): Promise<void>;
+  /** Apunta una petición a la IA y devuelve el id del apunte (para devolverlo con `refundAiUsage`). */
+  recordAiUsage(userId: string): Promise<number>;
+  /** Quita un apunte de `recordAiUsage`: la IA no llegó a contestar y no ha costado nada. */
+  refundAiUsage(id: number): Promise<void>;
   /** Borra el registro de uso de la IA anterior a `before` (ISO). Devuelve cuántas filas. */
   purgeAiUsage(before: string): Promise<number>;
   /** El `sub` de la identidad de Apple vinculada a la cuenta, o null si no entró con Apple. */
@@ -43,8 +46,13 @@ export class SupabaseStore implements Store {
     return count ?? 0;
   }
   async recordAiUsage(userId: string) {
-    const { error } = await this.db.from('ai_usage').insert({ user_id: userId });
+    const { data, error } = await this.db.from('ai_usage').insert({ user_id: userId }).select('id').single();
     SupabaseStore.check(error, 'ai-usage-insert');
+    return Number((data as { id: number | string }).id);
+  }
+  async refundAiUsage(id: number) {
+    const { error } = await this.db.from('ai_usage').delete().eq('id', id);
+    SupabaseStore.check(error, 'ai-usage-refund');
   }
   async purgeAiUsage(before: string) {
     const { count, error } = await this.db.from('ai_usage').delete({ count: 'exact' }).lt('created_at', before);
@@ -106,7 +114,8 @@ export class UnconfiguredStore implements Store {
     throw new ApiError('not-configured', 'El servidor de Vocify aún no está conectado a la base de datos. Vuelve a probar más tarde.');
   }
   aiUsageSince(): Promise<number> { return this.fail(); }
-  recordAiUsage(): Promise<void> { return this.fail(); }
+  recordAiUsage(): Promise<number> { return this.fail(); }
+  refundAiUsage(): Promise<void> { return this.fail(); }
   async purgeAiUsage(): Promise<number> { return 0; }
   appleIdentity(): Promise<string | null> { return this.fail(); }
   saveAppleToken(): Promise<void> { return this.fail(); }
@@ -120,7 +129,7 @@ export class UnconfiguredStore implements Store {
 
 /** En memoria: pruebas y desarrollo sin proyecto de Supabase. */
 export class MemoryStore implements Store {
-  usage: { userId: string; at: string }[] = [];
+  usage: { id?: number; userId: string; at: string }[] = [];
   appleIdentities = new Map<string, string>();
   appleTokens = new Map<string, string>();
   revocations: (PendingRevocation & { nextAt: number })[] = [];
@@ -131,7 +140,12 @@ export class MemoryStore implements Store {
     return this.usage.filter((u) => u.userId === userId && u.at >= since).length;
   }
   async recordAiUsage(userId: string) {
-    this.usage.push({ userId, at: new Date().toISOString() });
+    const id = this.nextId++;
+    this.usage.push({ id, userId, at: new Date().toISOString() });
+    return id;
+  }
+  async refundAiUsage(id: number) {
+    this.usage = this.usage.filter((u) => u.id !== id);
   }
   async purgeAiUsage(before: string) {
     const n = this.usage.length;

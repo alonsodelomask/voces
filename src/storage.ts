@@ -1,5 +1,6 @@
 import type { Song } from './model';
-import { OWNER_DEVICE_ONLY } from './model';
+import { isNewerFormat, OWNER_DEVICE_ONLY } from './model';
+import { checkSong } from './songCheck';
 
 /**
  * Las canciones de este dispositivo.
@@ -167,6 +168,11 @@ export async function initStorage(): Promise<void> {
     } else cache = stored;
     await applyPending();
     addEventListener('pagehide', savePending);
+    // En el iPhone la app pasa a segundo plano sin `pagehide` y iOS puede cerrarla después: también al ocultarse.
+    // (main.ts guarda lo pendiente antes: su aviso se apuntó primero.)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') savePending();
+    });
     // La copia de antes del traslado se quita pasados los días de la papelera.
     const when = Number(localStorage.getItem(MIGRATED));
     if (localStorage.getItem(BACKUP) && when && Date.now() - when > TRASH_DAYS * 86_400_000) localStorage.removeItem(BACKUP);
@@ -175,6 +181,9 @@ export async function initStorage(): Promise<void> {
     mode = 'local';
     cache = readLocal();
   }
+  // Lo guardado también se revisa (solo en memoria): una canción rota guardada antes no debe colgar la app en cada
+  // arranque, que abre la última canción. Se arregla de verdad en disco la próxima vez que se guarde.
+  cache = cache.map((s) => checkSong(s)).filter((s): s is Song => !!s);
   cache.sort((a, b) => b.updatedAt - a.updatedAt);
   ready = true;
 }
@@ -263,6 +272,9 @@ function nextStamp(id: string, also = 0): number {
 }
 
 export function saveSong(song: Song): boolean {
+  // Una canción de una versión más nueva de la app aquí solo se ve: se guarda tal como llegó (para poder abrirla), sin
+  // marca nueva y sin avisar a la sincronización, así que no se sube a la cuenta ni al grupo.
+  if (isNewerFormat(song)) return store(snapshot(song));
   song.updatedAt = nextStamp(song.id, song.updatedAt);
   // Una canción abierta nunca está en la papelera: guardarla la saca de allí si lo estaba.
   delete song.deletedAt;

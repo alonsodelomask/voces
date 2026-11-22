@@ -10,6 +10,7 @@ import { AppleCodeRejectedError, AppleUnavailableError, type AppleClient } from 
 import { decryptToken, encryptToken, parseEncryptionKey } from '../src/apple/crypto.ts';
 import { createApp } from '../src/app.ts';
 import { createVerifier } from '../src/auth.ts';
+import { ApiError } from '../src/errors.ts';
 import { loadConfig } from '../src/config.ts';
 import { MemoryStore } from '../src/store.ts';
 
@@ -115,7 +116,60 @@ describe('API de Voces', () => {
     const t = await token(ALICE);
     assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: '', song: SONG } })).status, 400);
     assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'x', song: SONG, extra: 1 } })).status, 400);
-    assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'x'.repeat(2001), song: SONG } })).status, 400);
+    assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'x'.repeat(16_001), song: SONG } })).status, 400);
+    // «Afinar con IA» de la app 1.0 manda la lista de diferencias en la petición: unos 10.000 caracteres caben.
+    assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'c.12 pulso 3.00: partitura Mi4, se oye Fa4 (+1)\n'.repeat(200), song: SONG } })).status, 200);
+  });
+
+  it('un fallo de la IA no gasta el cupo si no llegó a contestar; si contestó (aunque mal), sí', async () => {
+    let fallo: ApiError | null = new ApiError('ai-unavailable', 'La IA está saturada; prueba en un minuto.', { free: true });
+    const ai: AiProvider = {
+      name: 'IA de pruebas',
+      async arrange() {
+        if (fallo) throw fallo;
+        return { reply: 'Hecho.', chords: [], voices: [] };
+      },
+    };
+    const { app, store } = setup({ ai });
+    const t = await token(ALICE);
+    const r = await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'hola', song: SONG } });
+    assert.equal(r.status, 503);
+    assert.equal(store.usage.length, 0);
+    fallo = new ApiError('ai-failed', 'La respuesta era demasiado larga.');
+    assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'hola', song: SONG } })).status, 502);
+    assert.equal(store.usage.length, 1);
+    fallo = null;
+    assert.equal((await call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'hola', song: SONG } })).status, 200);
+    assert.equal(store.usage.length, 2);
+  });
+
+  it('dos peticiones a la vez cuando queda una en el cupo: solo pasa una', async () => {
+    // La IA tarda (como OpenAI): mientras la primera está esperando, la segunda ya debe ver el cupo gastado.
+    let soltar: () => void = () => {};
+    const espera = new Promise<void>((r) => (soltar = r));
+    const ai: AiProvider = {
+      name: 'IA lenta de pruebas',
+      async arrange() {
+        await espera;
+        return { reply: 'Hecho.', chords: [], voices: [] };
+      },
+    };
+    const { app, store } = setup({ ai, limit: 2 });
+    store.usage.push({ userId: ALICE, at: new Date().toISOString() });
+    // Y contar en la base tarda (como Supabase): sin turnos, las dos contarían a la vez y verían el mismo número.
+    const contar = store.aiUsageSince.bind(store);
+    store.aiUsageSince = async (...args) => {
+      const n = await contar(...args);
+      await new Promise((r) => setTimeout(r, 10));
+      return n;
+    };
+    const t = await token(ALICE);
+    const a = call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'una', song: SONG } });
+    const b = call(app, 'POST', '/v1/ai', { auth: t, body: { prompt: 'otra', song: SONG } });
+    setTimeout(soltar, 20);
+    const estados = (await Promise.all([a, b])).map((r) => r.status).sort();
+    assert.deepEqual(estados, [200, 429]);
+    assert.equal(store.usage.length, 2);
   });
 
   it('sin IA configurada responde 503 sin gastar el cupo', async () => {

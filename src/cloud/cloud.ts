@@ -1,7 +1,10 @@
 // Nube con Supabase: cuentas (código por email), grupos de música y canciones compartidas.
 // Si no hay configuración (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY), la app funciona solo en local.
 import { createClient, type RealtimeChannel, type SupabaseClient, type User } from '@supabase/supabase-js';
-import type { Song } from '../model';
+import { isNewerFormat, NEWER_FORMAT_MSG, type Song } from '../model';
+import { checkSong } from '../songCheck';
+import { withNeutralMix } from './mix';
+import { ApiUnavailable, isTimeout, noAnswerMessage, online, unavailableMessage, wakeServer } from './serverWake';
 
 import { isNative, nativeAppleSignIn } from '../native';
 
@@ -184,9 +187,6 @@ export async function deleteAccount() {
   await need().auth.signOut();
 }
 
-/** El servidor no puede atender ahora (sin configurar, dormido o sin conexión). */
-class ApiUnavailable extends Error {}
-
 /** Llamada al servidor de Render con la sesión actual. Los errores traen un mensaje en español listo para enseñar. */
 async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = 150_000): Promise<T> {
   if (!API) throw new Error('El servidor de Vocify no está configurado en esta versión.');
@@ -201,13 +201,14 @@ async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: un
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch {
-    // Render en el plan gratuito se duerme: la primera petición puede tardar ~1 minuto.
-    throw new ApiUnavailable('No se ha podido conectar con el servidor. Comprueba la conexión y prueba otra vez.');
+  } catch (e) {
+    // Render en el plan gratuito se duerme: la primera petición puede tardar ~1 minuto. Con Internet, lo más
+    // probable es eso (y no «comprueba la conexión», que despistaba). Si se agota la espera, otro mensaje.
+    throw new ApiUnavailable(noAnswerMessage(online(), isTimeout(e)));
   }
   const json = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (res.status === 503) throw new ApiUnavailable(unavailableMessage(json?.error?.message));
   const message = json?.error?.message ?? `Error del servidor (${res.status}).`;
-  if (res.status === 503) throw new ApiUnavailable(message);
   if (!res.ok) throw new Error(message);
   return json as T;
 }
@@ -358,33 +359,58 @@ export async function groupSongs(groupId: string): Promise<RemoteSongMeta[]> {
 export async function fetchSong(id: string): Promise<Song> {
   const { data, error } = await need().from('songs').select('data, group_id, updated_at').eq('id', id).single();
   if (error) fail(error);
-  const song: Song = { ...(data.data as Song), id, groupId: data.group_id, remoteUpdatedAt: data.updated_at };
+  // Lo que llega del grupo se revisa (lo puede haber guardado cualquier versión de la app, o una mal hecha).
+  const song = checkSong({ ...(data.data && typeof data.data === 'object' ? data.data : {}), id, groupId: data.group_id, remoteUpdatedAt: data.updated_at })!;
   delete song.ownerId;
   return song;
 }
+/** Cuándo se cambió por última vez la canción en el grupo (y si está en su papelera). `null` si no está o no la ves. */
+export async function songStamp(id: string): Promise<{ updated_at: string; deleted_at: string | null } | null> {
+  const { data, error } = await need().from('songs').select('updated_at, deleted_at').eq('id', id).maybeSingle();
+  if (error) fail(error);
+  return data as { updated_at: string; deleted_at: string | null } | null;
+}
+
 /** La canción ya no está en el grupo (la quitó alguien). */
 export class RemovedFromGroup extends Error {
+  // Con nombre: las pruebas (nube de mentira) lo reconocen sin importar esta clase.
+  override name = 'RemovedFromGroup';
   constructor() {
     super('Esta canción ya no está en el grupo.');
+  }
+}
+/** Otra persona ha cambiado la canción desde la versión que tenía este dispositivo: no se ha subido nada. */
+export class GroupConflict extends Error {
+  override name = 'GroupConflict';
+  constructor() {
+    super('Otra persona del grupo ha cambiado esta canción mientras tanto.');
   }
 }
 
 /** Sube (o actualiza) una canción en su grupo. Devuelve la marca de tiempo del servidor. */
 export async function pushSong(song: Song): Promise<string> {
+  // Una canción de una versión más nueva de la app no se cambia desde esta: nunca se sube encima de la del grupo.
+  if (isNewerFormat(song)) throw new Error(NEWER_FORMAT_MSG);
   if (!song.groupId || !currentUser) throw new Error('La canción no está en ningún grupo.');
   // La grabación está guardada en este dispositivo y no viaja al grupo, así que su ficha tampoco.
   // Tampoco viaja de quién es en este dispositivo (canciones de la cuenta) ni si está en su papelera.
-  const data: Song = { ...song, remoteUpdatedAt: undefined, audioTrack: undefined, ownerId: undefined, deletedAt: undefined };
-  // Ya estaba en el grupo: solo se actualiza. Si alguien la quitó mientras tanto, no se vuelve a crear.
+  // La mezcla de ensayo (solo, silencio…) es de cada uno: sube con su valor normal (la 1.0 necesita los campos).
+  const data: Song = { ...withNeutralMix(song), remoteUpdatedAt: undefined, audioTrack: undefined, ownerId: undefined, deletedAt: undefined };
+  // Ya estaba en el grupo: solo se actualiza, y solo si sigue siendo la versión que se tenía aquí (si otra persona la
+  // ha cambiado mientras tanto, no se pisa su trabajo). Si alguien la quitó, no se vuelve a crear.
   if (song.remoteUpdatedAt) {
     const { data: rows, error } = await need()
       .from('songs')
       .update({ title: song.title, data, updated_by: currentUser.id })
       .eq('id', song.id)
+      .eq('updated_at', song.remoteUpdatedAt)
       .is('deleted_at', null)
       .select('updated_at');
     if (error) fail(error);
     if (rows && rows.length) return rows[0].updated_at as string;
+    // No ha cambiado nada: o ya no está en el grupo, o es otra versión.
+    const now = await songStamp(song.id);
+    if (now && !now.deleted_at) throw new GroupConflict();
     throw new RemovedFromGroup();
   }
   const { data: row, error } = await need()
@@ -449,7 +475,7 @@ export async function songVersions(songId: string): Promise<SongVersion[]> {
 export async function fetchVersion(id: number): Promise<{ title: string; data: Song }> {
   const { data, error } = await need().from('song_versions').select('title, data').eq('id', id).single();
   if (error) fail(error);
-  return { title: data.title as string, data: data.data as Song };
+  return { title: String(data.title ?? ''), data: checkSong(data.data) ?? checkSong({})! };
 }
 /** Vuelve la canción del grupo a esa versión (la de ahora se guarda antes como versión). */
 export async function restoreVersion(id: number): Promise<string> {
@@ -550,7 +576,11 @@ export async function personalFetch(owner: string, ids: string[]): Promise<{ id:
     ownerOk(owner);
     const { data, error } = await need().from('personal_songs').select('id, data').eq('owner_id', owner).in('id', part).not('data', 'is', null);
     if (error) fail(error);
-    out.push(...((data ?? []) as { id: string; data: Song }[]));
+    // Revisadas, como todo lo que llega de fuera (las que no son una canción se dejan fuera).
+    for (const r of (data ?? []) as { id: string; data: unknown }[]) {
+      const song = checkSong(r.data);
+      if (song) out.push({ id: r.id, data: song });
+    }
   }
   return out;
 }
@@ -625,6 +655,9 @@ export interface AiAnswer {
   voices: AiVoice[];
 }
 
-export async function askAI(prompt: string, songText: string): Promise<AiAnswer> {
+/** `onWaking`: se llama si el servidor estaba dormido y hay que esperar a que despierte (para avisar en pantalla). */
+export async function askAI(prompt: string, songText: string, onWaking?: () => void): Promise<AiAnswer> {
+  // Primero se despierta el servidor: si no, la petición puede llegar, contarse para el cupo y quedarse sin respuesta.
+  if (API) await wakeServer(API, onWaking);
   return api<AiAnswer>('POST', '/v1/ai', { prompt, song: songText });
 }

@@ -222,8 +222,11 @@ export function cleanSung(song: Song, pair: FusionPair): { quitadas: number; uni
   return { quitadas, unidas, octavas };
 }
 
-/** La petición para la IA: solo las diferencias, con su compás, no la canción entera. */
-export function fusionPrompt(song: Song, pair: FusionPair): string {
+/**
+ * Las diferencias entre lo que se oye y la partitura, con su compás, para ir detrás de la canción en lo que se manda a
+ * la IA. Van con la canción y no en la petición: la petición admite poco texto y con unas 20 diferencias ya no cabía.
+ */
+export function fusionDiffs(song: Song, pair: FusionPair): string {
   const diffs = diffSungVsScore(song, pair).filter((d) => d.score && d.semis);
   const spb = 60 / song.bpm;
   const lista = diffs
@@ -234,12 +237,15 @@ export function fusionPrompt(song: Song, pair: FusionPair): string {
       return `c.${d.bar} pulso ${pulso}: partitura ${prettyAccidentals(midiToName(d.score!.midi, song.keyFifths))}, se oye ${prettyAccidentals(midiToName(d.sung.midi, song.keyFifths))} (${sube}${d.semis})`;
     })
     .join('\n');
+  return ['DIFERENCIAS (compás, pulso, partitura → lo que se oye):', lista || '(ninguna)'].join('\n');
+}
+
+/** La petición para la IA: qué hacer con las diferencias (que van con la canción, en `fusionDiffs`). */
+export function fusionPrompt(pair: FusionPair): string {
   return [
     `Esta canción ha salido de mezclar una partitura con una grabación del grupo. La voz «${pair.score.name}» son las notas de la partitura colocadas donde se cantan, y la voz «${pair.sung.name}» es lo que un detector de alturas oyó en la grabación (se equivoca a menudo: confunde voces cercanas, octavas y notas de paso).`,
     `Limpia «${pair.sung.name}» con criterio musical: donde la nota que se oye no encaje en la armonía ni tenga sentido como variante cantada, pon la de la partitura; donde la misma diferencia se repita y encaje (una variante que el grupo canta de verdad, un retardo, una nota de paso), déjala como está.`,
     `Devuelve la voz entera en "voices" con targetId "${pair.sung.id}" y EXACTAMENTE los mismos beat y dur de cada nota: cambia solo el nombre de la nota, o quita la nota si sobra. En "reply", cuenta en pocas frases qué has corregido y en qué compases creéis que de verdad cantáis algo distinto de la partitura.`,
-    '',
-    'DIFERENCIAS (compás, pulso, partitura → lo que se oye):',
-    lista || '(ninguna)',
+    'Las diferencias están en la lista DIFERENCIAS, al final de la canción.',
   ].join('\n');
 }

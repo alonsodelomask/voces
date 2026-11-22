@@ -5,6 +5,7 @@
 import { isSung } from '../ai/fusion';
 import { decodeMono, getHeard, getTrack, putHeard } from '../audio/track';
 import type { Note, Song } from '../model';
+import { heavyTask } from '../native';
 import type { MensajeLetra, PeticionLetra } from './lyricsWorker';
 
 /** Una palabra oída: segundos del audio que se ha escuchado. */
@@ -287,7 +288,10 @@ async function escucha(
       hasta = Math.max(hasta, Math.min(1, f));
       onProgress?.(fase, hasta);
     };
+    // Cargar Whisper gasta mucha memoria: si el iPhone cierra la web a medias, al volver se explica por qué.
+    const unmark = heavyTask('escuchaba la letra');
     const suelta = () => {
+      unmark();
       signal?.removeEventListener('abort', alCancelar);
       w.onmessage = null;
       w.onerror = null;

@@ -186,7 +186,8 @@ export class AudioEngine {
     for (const v of this.song.voices) {
       const g = this.gainFor(v);
       const audible = !v.muted && (!anySolo || v.solo);
-      g.gain.setTargetAtTime(audible ? v.volume : 0, this.ctx.currentTime, 0.02);
+      // Sin volumen guardado (una canción que no lo lleve), el normal: si no, la voz quedaría muda.
+      g.gain.setTargetAtTime(audible ? (v.volume ?? 0.8) : 0, this.ctx.currentTime, 0.02);
     }
     const on = t && !t.muted && (!anySolo || t.solo) && this.trackPlayable;
     this.trackGain.gain.setTargetAtTime(on ? t!.volume : 0, this.ctx.currentTime, 0.02);
@@ -344,7 +345,7 @@ export class AudioEngine {
     const ctx = this.ensure();
     if (ctx.state !== 'running') ctx.resume();
     const out = voice ? this.gainFor(voice) : this.dry;
-    if (voice) this.voiceGains.get(voice.id)!.gain.value = Math.max(0.4, voice.volume);
+    if (voice) this.voiceGains.get(voice.id)!.gain.value = Math.max(0.4, voice.volume ?? 0.8);
     this.synth(out, midi, ctx.currentTime + 0.01, dur);
   }
 

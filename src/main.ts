@@ -8,7 +8,8 @@ import { importAudio } from './import/audioDialog';
 import { openMix } from './import/mixDialog';
 import { isSung, migrateSungVoices, sungSource } from './ai/fusion';
 import { delHeard, delTrack, getTrack, heardIds, putTrack, trackIds } from './audio/track';
-import { makeSong, makeVoice, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
+import { isNewerFormat, makeSong, makeVoice, NEWER_FORMAT_MSG, uid, VOICE_COLORS, type AudioTrack, type Song, type Voice } from './model';
+import { projectToOpen } from './songCheck';
 import { adaptNotesToChord, computeChords, isValidChord, midiToName, plainAccidentals, prettyAccidentals, transposeSong, typeInName, voiceType } from './music';
 import { confirmDialog, form } from './ui/dialog';
 import { showAuthScreen } from './ui/authScreen';
@@ -16,16 +17,19 @@ import { openHumPanel } from './hum/humPanel';
 import { openAssistant } from './ai/assistantPanel';
 import { openGroupPanel } from './cloud/groupPanel';
 import * as cloud from './cloud/cloud';
-import { initNative, isNative, onNativeFile } from './native';
+import * as groupSync from './cloud/groupSync';
+import { keepLocalMix } from './cloud/mix';
+import { heavyTask, initNative, isNative, onNativeFile, restartNotice } from './native';
+import { versionText } from './version';
 import { linkSitePages } from './site';
-import { allSongIds, getLast, getSong, initStorage, loadSongs, onStorageError, purgeOldTrash, saveSong, setLast } from './storage';
+import { changeTempo } from './tempo';
+import { allSongIds, getLast, getSong, initStorage, loadSongs, onStorageError, purgeOldTrash, putSynced, saveSong, setLast } from './storage';
 import * as storage from './storage';
 import { openLibrary, refreshLibrary } from './library/libraryView';
 import { initPersonalSync, personalAuthChanged } from './cloud/personalSync';
 import * as personalSync from './cloud/personalSync';
 import { initAccountMenu } from './account/accountMenu';
 import { openSettings } from './account/settingsView';
-import { loadPrefs } from './account/prefs';
 import { forgetSong } from './library/repertorios';
 import { Visualizer } from './viz/visualizer';
 import type { Instrument } from './viz/chordShapes';
@@ -39,14 +43,20 @@ let song: Song;
 let view: 'viz' | 'edit' = 'viz';
 let dirty = false;
 let saveTimer: number | undefined;
+/** La abierta la guardó una versión más nueva de la app (`isNewerFormat`): se ve y se escucha, pero no se cambia. */
+let readOnly = false;
 
 // ---------------- Canción ----------------
 
 function setSong(s: Song, save = false) {
+  // Lo que aún esperaba su guardado (0,8 s) es de la canción que se deja: se guarda ya, antes de cambiar.
+  if (song && dirty) persist();
+  else flushMix();
   engine.pause();
   // Canciones mezcladas con una versión anterior: «Como se canta (Tenor)» pasa a «🎙 Tenor».
   if (migrateSungVoices(s)) save = true;
   song = s;
+  readOnly = isNewerFormat(s);
   if (engine.range) setRange(null);
   undoStack.length = 0;
   redoStack.length = 0;
@@ -58,10 +68,13 @@ function setSong(s: Song, save = false) {
   if (!queueOpening) stopQueue();
   renderPanel();
   renderEditorControls();
+  applyReadOnly();
   updateDuration();
   updateEmptyStates();
   if (save) persist();
   watchCurrent();
+  // Antes de editarla, se mira si el grupo tiene una versión más nueva que la de este dispositivo.
+  void groupSync.checkGroupSong();
   trackReady = loadAudioTrack(s);
 }
 
@@ -90,94 +103,80 @@ async function loadAudioTrack(s: Song) {
 }
 
 function persist() {
+  if (readOnly) {
+    // Solo se ve: no se guarda ningún cambio ni se sube (la mezcla de ensayo sí, que es de este dispositivo). Si aún no
+    // estaba guardada (un archivo que se acaba de abrir), se guarda tal como llegó, para poder volver a abrirla.
+    clearTimeout(saveTimer);
+    dirty = false;
+    if (!getSong(song.id)) saveSong(song);
+    else flushMix();
+    return;
+  }
+  clearTimeout(saveTimer);
+  clearTimeout(mixTimer);
+  mixPending = false; // la mezcla va dentro
   if (!saveSong(song)) toast('No se pudo guardar (almacenamiento lleno).', true);
   dirty = false;
-  if (song.groupId) scheduleSync();
+  if (song.groupId) groupSync.markChanged(song);
+}
+/** Guarda en un momento (se juntan los cambios seguidos, como al arrastrar notas). */
+function scheduleSave() {
+  if (readOnly) return;
+  dirty = true;
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(persist, 800);
 }
 
-// ---------------- Sincronización con el grupo ----------------
-
-let pushTimer: number | undefined;
-let unwatch: (() => void) | null = null;
-let watchedGroup: string | null = null;
-
-async function syncNow() {
-  if (!song.groupId || !cloud.user()) return;
-  try {
-    song.remoteUpdatedAt = await cloud.pushSong(song);
-    saveSong(song);
-    setSyncBadge('ok');
-  } catch (e) {
-    if (e instanceof cloud.RemovedFromGroup) {
-      song.groupId = undefined;
-      song.remoteUpdatedAt = undefined;
-      saveSong(song);
-      renderPanel();
-      watchCurrent();
-      return toast('Esta canción se había quitado del grupo. Sigue guardada en tu dispositivo, con tus cambios.');
-    }
-    setSyncBadge('error');
-    toast('No se pudo sincronizar con el grupo: ' + (e as Error).message, true);
-  }
+/**
+ * La mezcla de ensayo (solo, silencio, ocultar, volumen) es de este dispositivo: se guarda aquí sin contar como cambio
+ * de la canción. Así no se sube al grupo, no impide traer los cambios de los demás y no cambia el orden de la biblioteca.
+ * En las canciones de la cuenta va con la canción cuando se sube por otro cambio (es la misma persona).
+ */
+let mixTimer: number | undefined;
+let mixPending = false;
+function saveMix(delay = 0) {
+  mixPending = true;
+  clearTimeout(mixTimer);
+  if (delay) mixTimer = window.setTimeout(flushMix, delay);
+  else flushMix();
 }
-function scheduleSync() {
-  setSyncBadge('pending');
-  clearTimeout(pushTimer);
-  pushTimer = window.setTimeout(syncNow, 1500);
+function flushMix() {
+  clearTimeout(mixTimer);
+  if (!mixPending || !song) return;
+  mixPending = false;
+  // Solo la mezcla, sobre lo guardado: un cambio de notas aún sin guardar sigue su camino (persist).
+  const st = getSong(song.id);
+  if (st) putSynced(keepLocalMix(st, song));
 }
-function setSyncBadge(state: 'ok' | 'pending' | 'error' | 'none') {
+
+// ---------------- Sincronización con el grupo (cloud/groupSync.ts) ----------------
+
+function setSyncBadge(state: 'ok' | 'pending' | 'error' | 'none', title?: string) {
   const b = $('#sync');
   b.hidden = state === 'none';
   b.dataset.state = state;
-  b.title = state === 'ok' ? 'Sincronizada con el grupo' : state === 'pending' ? 'Guardando en el grupo…' : 'Sin sincronizar (inicia sesión)';
+  b.title = title ?? (state === 'ok' ? 'Sincronizada con el grupo' : state === 'pending' ? 'Guardando en el grupo…' : 'Sin sincronizar (inicia sesión)');
 }
 function watchCurrent() {
-  const g = song.groupId && cloud.user() ? song.groupId : null;
-  setSyncBadge(song.groupId ? (cloud.user() ? 'ok' : 'error') : 'none');
-  if (g === watchedGroup) return;
-  unwatch?.();
-  watchedGroup = g;
-  unwatch = g ? cloud.watchGroup(g, onRemoteChange) : null;
+  groupSync.watchCurrent();
 }
-async function onRemoteChange(ev: { type: string; id: string; updated_by?: string | null; updated_at?: string; deleted_at?: string | null }) {
-  if (ev.type === 'DELETE' || ev.deleted_at) {
-    // Se ha quitado del grupo (a la papelera del grupo, o borrada): aquí se queda como canción propia (y no se vuelve a subir).
-    const local = ev.id === song.id ? song : loadSongs().find((x) => x.id === ev.id);
-    if (!local?.groupId) return;
-    local.groupId = undefined;
-    local.remoteUpdatedAt = undefined;
-    saveSong(local);
-    if (local === song) {
-      renderPanel();
-      watchCurrent();
-      if (loadPrefs().groupNotices) toast('Esta canción se ha quitado del grupo. Sigue guardada en tu dispositivo.');
-    }
-    return;
-  }
-  if (ev.id !== song.id || ev.updated_by === cloud.user()?.id) return;
-  if (ev.updated_at && ev.updated_at === song.remoteUpdatedAt) return;
-  const prefs = loadPrefs();
-  if (dirty) return void (prefs.groupNotices && toast('Otra persona ha cambiado esta canción. Al guardar se quedará tu versión.'));
-  // Ajustes de cuenta › Avisos: sin «ponerla al día sola», se avisa con un botón para hacerlo.
-  if (!prefs.autoUpdate) return void toast('Otra persona del grupo ha cambiado esta canción.', false, { label: 'Ver su versión', run: () => void pullRemote() });
-  await pullRemote(prefs.groupNotices);
-}
-
-/** Trae la versión del grupo de la canción abierta (conserva la grabación, que es de este dispositivo). */
-async function pullRemote(notice = true) {
-  try {
+groupSync.initGroupSync({
+  current: () => song,
+  isDirty: () => dirty,
+  flush: () => persist(),
+  replaceCurrent: (s) => {
     const t = engine.time;
-    const remote = await cloud.fetchSong(song.id);
-    // La grabación es de este dispositivo y no viaja al grupo: se conserva.
-    if (song.audioTrack) remote.audioTrack = song.audioTrack;
-    setSong(remote);
-    saveSong(remote);
+    setSong(s);
     engine.seek(t);
-    if (notice) toast('Canción actualizada por tu grupo.');
-  } catch {
-    /* sin conexión: se ignora */
-  }
-}
+  },
+  detached: () => {
+    renderPanel();
+    watchCurrent();
+  },
+  open: (s) => setSong(s),
+  toast,
+  badge: setSyncBadge,
+});
 
 // ---------------- Canciones de la cuenta (en todos los dispositivos) ----------------
 
@@ -207,9 +206,7 @@ function changed() {
   if (song.chordsAuto) song.chords = computeChords(song);
   viz.updateRange();
   updateDuration();
-  dirty = true;
-  clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(persist, 800);
+  scheduleSave();
 }
 
 // ---------------- Deshacer / rehacer ----------------
@@ -222,6 +219,7 @@ function snapshot(): string {
 }
 /** Guarda el estado actual antes de un cambio. */
 function checkpoint() {
+  if (readOnly) return;
   const snap = snapshot();
   if (undoStack[undoStack.length - 1] === snap) return;
   undoStack.push(snap);
@@ -261,15 +259,22 @@ function refreshAfterEdit(recomputeChords = true) {
   updateDuration();
   renderPanel();
   renderEditorControls();
-  dirty = true;
-  clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(persist, 800);
+  scheduleSave();
 }
-/** Aplica un cambio con posibilidad de deshacerlo. */
-function edit(fn: () => void, recomputeChords = true) {
+/**
+ * Aplica un cambio con posibilidad de deshacerlo. Devuelve false si no se ha hecho (canción de solo ver): quien la
+ * llama no debe enseñar entonces su mensaje de «hecho», que taparía el aviso.
+ */
+function edit(fn: () => void, recomputeChords = true): boolean {
+  // Todo lo que cambia la canción (asistente, tarareo, letra, transponer…) pasa por aquí.
+  if (readOnly) {
+    toast(NEWER_FORMAT_MSG, true);
+    return false;
+  }
   checkpoint();
   fn();
   refreshAfterEdit(recomputeChords);
+  return true;
 }
 
 /** Ayudas cuando la canción está vacía (visualizador y editor). */
@@ -291,6 +296,26 @@ function fmt(t: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// ---------------- Canciones de una versión más nueva: solo ver ----------------
+
+/** Lo que cambia la canción. Con una canción de una versión más nueva se desactiva (ver `readOnly`). */
+const EDIT_CONTROLS = ['#ed-hum', '#ed-assist', '#ed-transpose', '#ed-lyrics', '#ed-bpm', '#ed-bar', '#add-voice', '#opt-chords-auto', '#ed-tools [data-tool=draw]', '#ed-tools [data-tool=erase]'];
+/** Pone o quita el modo «solo ver», con su aviso arriba («Actualiza la app para editarla»). */
+function applyReadOnly() {
+  roll.readOnly = readOnly;
+  for (const sel of EDIT_CONTROLS) document.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>(sel).forEach((el) => (el.disabled = readOnly));
+  let aviso = document.querySelector<HTMLElement>('#solo-ver');
+  if (!aviso && readOnly) {
+    aviso = document.createElement('div');
+    aviso.id = 'solo-ver';
+    aviso.className = 'solo-ver';
+    aviso.setAttribute('role', 'status');
+    aviso.textContent = NEWER_FORMAT_MSG;
+    $('main').prepend(aviso);
+  }
+  if (aviso) aviso.hidden = !readOnly;
+}
+
 // ---------------- Panel de voces ----------------
 
 /** Para refrescar el nombre y la descripción de una fila del panel sin rehacerla (por id de voz). */
@@ -300,6 +325,7 @@ function renderPanel() {
   rowRefresh.clear();
   const title = $<HTMLInputElement>('#song-title');
   title.value = song.title;
+  title.readOnly = readOnly;
   const list = $('#voice-list');
   list.innerHTML = '';
   song.voices.forEach((v) => list.appendChild(voiceRow(v)));
@@ -321,6 +347,7 @@ function trackRow(t: AudioTrack): HTMLElement {
     </div>
     <div class="vrange"><span>Vol</span><input type="range" min="0" max="1" step="0.01" /><span class="n"></span></div>`;
   const name = row.querySelector<HTMLInputElement>('.vname')!;
+  row.querySelector<HTMLButtonElement>('[data-k=x]')!.disabled = readOnly;
   name.value = t.name;
   name.title = t.name;
   const vol = row.querySelector<HTMLInputElement>('input[type=range]')!;
@@ -338,7 +365,7 @@ function trackRow(t: AudioTrack): HTMLElement {
   vol.oninput = () => {
     t.volume = parseFloat(vol.value);
     engine.updateMix();
-    dirty = true;
+    saveMix(300);
   };
   row.querySelector('.vbtns')!.addEventListener('click', async (e) => {
     const k = (e.target as HTMLElement).closest('button')?.dataset.k;
@@ -356,7 +383,7 @@ function trackRow(t: AudioTrack): HTMLElement {
     if (k === 's') t.solo = !t.solo;
     engine.updateMix();
     refresh();
-    dirty = true;
+    saveMix();
   });
   return row;
 }
@@ -364,8 +391,9 @@ function trackRow(t: AudioTrack): HTMLElement {
 function voiceRow(v: Voice): HTMLElement {
   const row = document.createElement('div');
   row.className = 'voice' + (view === 'edit' && roll.activeVoice === v ? ' active' : '');
+  // El color y el nombre vienen de la canción (puede llegar de fuera): se ponen como valor, nunca dentro del HTML.
   row.innerHTML = `
-    <input type="color" value="${v.color}" title="Color" />
+    <input type="color" title="Color" />
     <input class="vname" value="" />
     <div class="vbtns">
       <button data-k="m" title="Silenciar">M</button>
@@ -377,8 +405,12 @@ function voiceRow(v: Voice): HTMLElement {
   const color = row.querySelector<HTMLInputElement>('input[type=color]')!;
   const name = row.querySelector<HTMLInputElement>('.vname')!;
   const vol = row.querySelector<HTMLInputElement>('input[type=range]')!;
+  color.value = v.color;
   name.value = v.name;
-  vol.value = String(v.volume);
+  // Solo ver: se puede ensayar (solo, silencio, volumen), pero no cambiar el color, el nombre ni quitar la voz.
+  color.disabled = name.readOnly = readOnly;
+  row.querySelector<HTMLButtonElement>('[data-k=x]')!.disabled = readOnly;
+  vol.value = String(v.volume ?? 0.8);
   // La cuerda sale de la tesitura: aunque la voz se llame como quien la canta, se sabe si es tenor o bajo.
   // Si el nombre ya lo dice («Tenor 2»), no se repite.
   const meta = row.querySelector<HTMLElement>('.n')!;
@@ -415,7 +447,8 @@ function voiceRow(v: Voice): HTMLElement {
   refresh();
   color.oninput = () => {
     v.color = color.value;
-    dirty = true;
+    // El color sí es de la canción (lo ven todos): se guarda como cualquier cambio.
+    scheduleSave();
   };
   name.onchange = () => {
     const antes = v.name;
@@ -434,6 +467,7 @@ function voiceRow(v: Voice): HTMLElement {
   vol.oninput = () => {
     v.volume = parseFloat(vol.value);
     engine.updateMix();
+    saveMix(300);
   };
   row.querySelector('.vbtns')!.addEventListener('click', (e) => {
     const k = (e.target as HTMLElement).closest('button')?.dataset.k;
@@ -455,7 +489,8 @@ function voiceRow(v: Voice): HTMLElement {
     }
     engine.updateMix();
     refresh();
-    dirty = true;
+    // Solo, silencio y ocultar son de este dispositivo: no cuentan como cambio de la canción (ver saveMix).
+    saveMix();
   });
   row.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).closest('input,button')) return;
@@ -595,14 +630,9 @@ $<HTMLSelectElement>('#ed-len').onchange = (e) => (roll.noteLen = parseFloat((e.
 $<HTMLSelectElement>('#ed-snap').onchange = (e) => (roll.snap = parseFloat((e.target as HTMLSelectElement).value));
 $<HTMLInputElement>('#ed-bpm').onchange = (e) => {
   const nb = Math.max(30, Math.min(300, parseFloat((e.target as HTMLInputElement).value) || song.bpm));
-  // Mantiene las notas en su sitio de la rejilla: reescala los tiempos.
-  const k = song.bpm / nb;
-  for (const v of song.voices) for (const n of v.notes) {
-    n.start *= k;
-    n.dur *= k;
-  }
-  for (const c of song.chords) c.time *= k;
-  song.bpm = nb;
+  // Mantiene las notas en su sitio de la rejilla: reescala los tiempos (también los compases y el tramo de ensayo).
+  const k = changeTempo(song, nb);
+  if (engine.range) setRange({ start: engine.range.start * k, end: engine.range.end * k });
   engine.seek(engine.time * k);
   changed();
 };
@@ -658,7 +688,12 @@ const assistDeps = {
   },
   openAccount: () => openGroups(),
 };
-$('#ed-assist').onclick = () => openAssistant(assistDeps);
+/** El asistente cambia la canción (y la pregunta a la IA gasta cupo): con una canción de solo ver no se abre. */
+function openAssist(tab?: Parameters<typeof openAssistant>[1]) {
+  if (readOnly) return toast(NEWER_FORMAT_MSG, true);
+  openAssistant(assistDeps, tab);
+}
+$('#ed-assist').onclick = () => openAssist();
 /** Ajustes de cuenta (perfil, contraseña, avisos, IA y tus datos). */
 function openAccountSettings(section?: string) {
   openSettings(
@@ -683,12 +718,17 @@ function openGroups() {
     openSettings: () => openAccountSettings(),
     song: () => song,
     openSong: (s) => {
-      setSong(s);
-      saveSong(s);
+      // Con la mezcla de aquí; y si aquí hay cambios sin subir, no se pisan (ver groupSync.fromGroup).
+      const g = groupSync.fromGroup(s);
+      setSong(g);
+      saveSong(g);
     },
     saveAndSync: async () => {
+      // Una de solo ver no se sube: sin esto se quedaría marcada como del grupo sin estar en él.
+      if (readOnly) throw new Error(NEWER_FORMAT_MSG);
       saveSong(song);
-      await syncNow();
+      groupSync.markChanged(song);
+      await groupSync.syncGroupNow();
       watchCurrent();
     },
     toast,
@@ -786,7 +826,7 @@ async function openTranspose() {
   });
   if (!r) return;
   const semis = parseInt(r.values.semis);
-  edit(() => transposeSong(song, semis, r.values.scope === 'voice' && active ? [active.id] : undefined));
+  if (!edit(() => transposeSong(song, semis, r.values.scope === 'voice' && active ? [active.id] : undefined))) return;
   toast(`Transpuesto ${semis > 0 ? '+' : ''}${semis} semitonos.`);
 }
 roll.onPreview = (midi, v) => engine.preview(midi, v);
@@ -1051,19 +1091,46 @@ async function openFile(f: File, prefer: 'new' | 'mix' = 'new') {
         // Pista grabada por separado: sus voces se suman a la canción abierta.
         const base = f.name.replace(/\.[^.]+$/, '');
         const nuevas = res.song.voices;
-        edit(() => {
+        const hecho = edit(() => {
           nuevas.forEach((v, i) => {
             v.name = nuevas.length === 1 ? base : `${base} ${i + 1}`;
             v.color = VOICE_COLORS[song.voices.length % VOICE_COLORS.length];
             song.voices.push(v);
           });
         });
+        // Canción de solo ver: no se ha añadido nada y se queda el aviso de `edit`.
+        if (!hecho) return;
         engine.updateMix();
         const n = nuevas.reduce((a, v) => a + v.notes.length, 0);
         return toast(`Añadida «${base}»: ${nuevas.length === 1 ? '1 voz' : nuevas.length + ' voces'}, ${n} notas.`);
       }
       s = res.song;
-    } else s = await importFile(f);
+    } else {
+      s = await importFile(f);
+      // Un proyecto (.voces.json) nunca sustituye a una canción que ya está aquí, ni a la del grupo o la cuenta: si es
+      // igual se abre la de aquí; si no, entra como copia nueva (un archivo viejo no deshace el trabajo de nadie).
+      if (/\.(json|voces)$/i.test(f.name)) {
+        const here = song?.id === s.id ? song : getSong(s.id);
+        const p = projectToOpen(s, here);
+        if (p.same) {
+          if (p.song !== song) setSong(p.song);
+          return toast(`«${p.song.title}» ya estaba en tu biblioteca, igual: se abre la tuya.`);
+        }
+        s = p.song;
+        if (p.copy && here) {
+          setSong(s, true);
+          return toast(`Ya tenías «${here.title}»: el archivo se ha abierto como copia, «${s.title}». La tuya no ha cambiado.`);
+        }
+        if (!p.copy) {
+          // Se guarda con la fecha del archivo, no con la de ahora (saveSong la pondría): si la cuenta tiene esta canción
+          // más nueva y aún no ha bajado aquí, al sincronizar gana la de la cuenta y el archivo viejo no la sustituye.
+          setSong(s);
+          putSynced(s);
+          const n = s.voices.reduce((a, v) => a + v.notes.length, 0);
+          return toast(`"${s.title}": ${s.voices.length} voces, ${n} notas.`);
+        }
+      }
+    }
     setSong(s, true);
     const n = s.voices.reduce((a, v) => a + v.notes.length, 0);
     toast(`"${s.title}": ${s.voices.length} voces, ${n} notas.`);
@@ -1116,8 +1183,13 @@ menu.addEventListener('click', (e) => {
       openLib();
       break;
     case 'save':
+      if (readOnly) {
+        toast(NEWER_FORMAT_MSG, true);
+        break;
+      }
       persist();
-      toast(song.groupId ? 'Guardado y sincronizado con el grupo.' : 'Guardado en este dispositivo.');
+      if (song.groupId) void groupSync.syncGroupNow();
+      toast(song.groupId ? 'Guardado en este dispositivo. Subiendo al grupo…' : 'Guardado en este dispositivo.');
       break;
     case 'group':
       openGroups();
@@ -1126,7 +1198,7 @@ menu.addEventListener('click', (e) => {
       openAccountSettings();
       break;
     case 'assistant':
-      openAssistant(assistDeps);
+      openAssist();
       break;
     case 'export-midi':
       exportMidi(song);
@@ -1170,12 +1242,15 @@ function closeLib() {
   if (d?.open) d.close();
 }
 function openLib() {
+  // Lo que esperaba su guardado se guarda ya: desde la biblioteca se puede abrir otra canción o cerrar la app.
+  if (dirty) persist();
   openLibrary({
     current: () => song,
     open: (s) => setSong(s),
     openDownloaded: (s) => {
-      setSong(s);
-      saveSong(s);
+      const g = groupSync.fromGroup(s);
+      setSong(g);
+      saveSong(g);
     },
     persistCurrent: () => persist(),
     refreshCurrent: () => {
@@ -1187,16 +1262,18 @@ function openLib() {
       setSong(rest[0] ?? demoSong());
     },
     shareCurrent: async (groupId) => {
+      // Una de solo ver no se sube: sin esto se quedaría marcada como del grupo sin estar en él.
+      if (readOnly) throw new Error(NEWER_FORMAT_MSG);
       song.groupId = groupId;
       saveSong(song);
-      await syncNow();
+      groupSync.markChanged(song);
+      await groupSync.syncGroupNow();
       watchCurrent();
       renderPanel();
     },
-    adopt: (s) => {
-      // La grabación es de este dispositivo y no viaja al grupo: se conserva.
-      const local = s.id === song.id ? song : getSong(s.id);
-      if (local?.audioTrack) s.audioTrack = local.audioTrack;
+    adopt: (remote) => {
+      // La grabación y la mezcla son de este dispositivo y no viajan al grupo: se conservan.
+      const s = groupSync.adoptFromGroup(remote);
       if (s.id === song.id) setSong(s);
       saveSong(s);
     },
@@ -1276,12 +1353,15 @@ async function recordVideo() {
   const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: 8_000_000 });
   const chunks: Blob[] = [];
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  // Grabar gasta mucha memoria: si el iPhone cierra la web a medias, al volver se explica por qué.
+  const unmark = heavyTask('grababa el vídeo');
   let raf = 0;
   const dlg = $<HTMLDialogElement>('#dlg-record');
   const finish = () => {
     if (rec.state !== 'inactive') rec.stop();
   };
   rec.onstop = () => {
+    unmark();
     cancelAnimationFrame(raf);
     engine.pause();
     engine.onEnded = null;
@@ -1347,21 +1427,44 @@ function loop() {
     requestAnimationFrame(loop);
     return;
   }
-  const t = engine.time;
-  document.body.classList.toggle('playing', engine.playing);
-  if (view === 'viz') viz.render(t, engine.playing);
-  else {
-    roll.playTime = t;
-    if (engine.playing) roll.ensureVisible(t);
-    roll.render();
-  }
-  if (!seeking) seek.value = String(engine.duration ? Math.round((t / engine.duration) * 1000) : 0);
-  $('#time').textContent = fmt(t);
+  // El siguiente fotograma se pide antes de dibujar este: si este falla (una canción mal hecha), el dibujo no se para
+  // para siempre. El fallo se apunta una sola vez, no en cada fotograma.
   requestAnimationFrame(loop);
+  try {
+    const t = engine.time;
+    document.body.classList.toggle('playing', engine.playing);
+    if (view === 'viz') viz.render(t, engine.playing);
+    else {
+      roll.playTime = t;
+      if (engine.playing) roll.ensureVisible(t);
+      roll.render();
+    }
+    if (!seeking) seek.value = String(engine.duration ? Math.round((t / engine.duration) * 1000) : 0);
+    $('#time').textContent = fmt(t);
+  } catch (e) {
+    if (!drawFailed) console.warn('[voces] no se ha podido dibujar un fotograma', e);
+    drawFailed = true;
+    // Un dibujo cortado a medias puede dejar el lienzo con estados guardados de más: se deja como nuevo.
+    const c = view === 'viz' ? viz.canvas : roll.canvas;
+    c.width = c.width;
+  }
 }
+let drawFailed = false;
 
-window.addEventListener('beforeunload', () => {
+// Guardar lo pendiente al salir. En el iPhone casi nunca llega `beforeunload`: la app pasa a segundo plano
+// (`visibilitychange`) y iOS puede cerrarla después sin avisar. Por eso se guarda también al ocultarse y en `pagehide`.
+function saveNow() {
   if (dirty) persist();
+  else flushMix();
+}
+window.addEventListener('beforeunload', saveNow);
+window.addEventListener('pagehide', saveNow);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    saveNow();
+    // Lo pendiente del grupo se intenta subir antes de que la app se duerma (si no da tiempo, se reintenta al volver).
+    void groupSync.syncGroupNow();
+  } else void groupSync.retryNow();
 });
 
 // ---------------- Pantalla vacía y bienvenida ----------------
@@ -1451,6 +1554,8 @@ void (async () => {
   cloud.onPasswordRecovery(() => showAuthScreen({ allowSkip: false, mode: 'newpass' }));
   cloud.initAuth().then(() => {
     watchCurrent();
+    // Lo que no llegó a subirse al grupo (sin conexión, app cerrada) y si hay versión nueva de la abierta.
+    void groupSync.retryNow();
     personalAuthChanged();
     // Pantalla de entrada al abrir: con la nube activa, sin sesión y si no se eligió antes «Continuar sin cuenta».
     let skipped = false;
@@ -1470,6 +1575,7 @@ void (async () => {
       if (u && !signedIn) toast(`Sesión iniciada${u.email ? ` como ${u.email}` : ''}. Menú › Tu grupo para tu grupo.`);
       signedIn = !!u;
       watchCurrent();
+      if (u) void groupSync.retryNow();
       personalAuthChanged();
     });
   });
@@ -1486,6 +1592,10 @@ void (async () => {
 })();
 
 initNative();
+// Si el sistema cerró la web y la app la ha vuelto a abrir, se dice (en rojo solo si fue en plena tarea pesada).
+const reinicio = restartNotice();
+if (reinicio) toast(reinicio.text, reinicio.error);
+$('#help-version').textContent = versionText();
 onNativeFile((f) => {
   // Un archivo que llega de fuera (compartido o abierto con Vocify) se abre, y no se tapa con la biblioteca.
   abiertoDesdeFuera = true;
@@ -1508,7 +1618,7 @@ if (import.meta.env.DEV) {
         roll,
         setSong: (s) => setSong(s),
         switchView,
-        openAssistant: () => openAssistant(assistDeps, 'chords'),
+        openAssistant: () => openAssist('chords'),
         freeze: (f) => (frozen = f),
       }),
     );

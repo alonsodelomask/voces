@@ -1,4 +1,4 @@
-import OpenAI, { APIError, RateLimitError } from 'openai';
+import OpenAI, { APIConnectionError, APIError, RateLimitError } from 'openai';
 import { z } from 'zod';
 
 import { ApiError, errorClassName } from './errors.ts';
@@ -10,7 +10,9 @@ import { ApiError, errorClassName } from './errors.ts';
 
 export const aiRequest = z
   .object({
-    prompt: z.string().trim().min(1).max(2000),
+    // 2.000 se quedaba corto: «Afinar con IA» de la app 1.0 manda en la petición la lista de diferencias (hasta 120
+    // líneas). Las versiones nuevas la mandan con la canción, que ya admite mucho más; esto es para las de antes.
+    prompt: z.string().trim().min(1).max(16_000),
     song: z.string().max(120_000),
   })
   .strict();
@@ -104,8 +106,12 @@ ${prompt}`,
       } catch (error) {
         // Nunca el mensaje del error: puede llevar la petición. Solo la clase y el estado.
         console.error(`[voces] fallo al llamar a OpenAI: ${errorClassName(error)}${error instanceof APIError ? ` (${error.status ?? '?'})` : ''}`);
-        if (error instanceof RateLimitError) throw new ApiError('ai-unavailable', 'La IA está saturada; prueba en un minuto.');
-        throw new ApiError('ai-failed', 'La IA no ha podido responder. Prueba otra vez.');
+        // Solo es gratis (no cuenta para el cupo) si OpenAI contestó con un error (429, 5xx…): no ha generado nada.
+        // Si se cortó la conexión o se agotó la espera (`APIConnectionError`, sin estado), puede haber seguido generando
+        // y cobrando la respuesta, así que cuenta.
+        const free = error instanceof APIError && !(error instanceof APIConnectionError) && typeof error.status === 'number';
+        if (error instanceof RateLimitError) throw new ApiError('ai-unavailable', 'La IA está saturada; prueba en un minuto.', { free });
+        throw new ApiError('ai-failed', 'La IA no ha podido responder. Prueba otra vez.', { free });
       }
       // La negativa del modelo llega como contenido «refusal», no como texto.
       const refused = (response.output ?? []).some((item) => item.type === 'message' && item.content.some((part) => part.type === 'refusal'));

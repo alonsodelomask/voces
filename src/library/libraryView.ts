@@ -1,7 +1,9 @@
 import type { Song } from '../model';
-import { uid } from '../model';
+import { isNewerFormat, NEWER_FORMAT_MSG, uid } from '../model';
 import { confirmDialog, esc, form } from '../ui/dialog';
 import * as cloud from '../cloud/cloud';
+import { keepLocalMix } from '../cloud/mix';
+import { markChanged } from '../cloud/groupSync';
 import { delHeard, delTrack, getTrack, putTrack } from '../audio/track';
 import { deleteSong, getSong, peekSongs, peekTrash, restoreSong, saveSong, TRASH_DAYS, trashSong } from '../storage';
 import { applyQuery, daysLeft, itemFromSong, miniLines, relativeDate, type LibItem, type Query, type SortKey } from './query';
@@ -604,7 +606,11 @@ async function songAction(a: string, id: string) {
       if (isCur) {
         deps.persistCurrent();
         deps.refreshCurrent();
-      } else saveSong(s);
+      } else {
+        saveSong(s);
+        // Del grupo y sin abrir: el nombre nuevo también se sube (si no, se perdería al traer una versión más nueva).
+        if (s.groupId) markChanged(s);
+      }
       break;
     }
     case 'copy': {
@@ -870,7 +876,8 @@ async function playRep(r: Repertorio) {
     deps.toast(`Descargando ${missing.length} ${missing.length === 1 ? 'canción' : 'canciones'} del grupo…`);
     for (const id of missing) {
       try {
-        saveSong(await nube().fetchSong(id));
+        // Sin copia aquí: la mezcla normal (no la de quien la subió con una app anterior).
+        saveSong(keepLocalMix(await nube().fetchSong(id)));
         live.add(id);
       } catch {
         /* sin conexión: se salta */
@@ -899,6 +906,8 @@ async function pickGroup(): Promise<cloud.Group | null> {
 }
 
 async function share(s: Song, isCur: boolean) {
+  // Una canción de una versión más nueva no se sube (cloud.pushSong la rechaza): se avisa sin marcarla como del grupo.
+  if (isNewerFormat(s)) return deps.toast(NEWER_FORMAT_MSG, true);
   try {
     const g = await pickGroup();
     if (!g) return;
@@ -1011,7 +1020,7 @@ async function history(s: Song, isCur: boolean) {
           'Volver a esta',
         );
         if (!ok) return;
-        if (isCur) deps.persistCurrent();
+        // Lo que no haya llegado al grupo no se pierde: al ponerla (`adopt`) se guarda como «(mis cambios)».
         await nube().restoreVersion(Number(restoreId));
         deps.adopt(await nube().fetchSong(s.id));
         d.close();

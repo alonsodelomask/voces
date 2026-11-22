@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { RateLimitError } from 'openai';
+import { APIConnectionError, APIConnectionTimeoutError, RateLimitError } from 'openai';
 
 import { createOpenAIProvider, DEFAULT_MODEL, type OpenAIClientLike } from '../src/ai.ts';
 import { ApiError } from '../src/errors.ts';
@@ -66,8 +66,28 @@ describe('IA con OpenAI', () => {
     await assert.rejects(createOpenAIProvider('k'.repeat(12), undefined, saturada.client).arrange(REQUEST), (e: ApiError) => {
       assert.match(e.message, /saturada/);
       assert.ok(!e.message.includes('secreto'));
+      assert.equal(e.free, true, 'no ha contestado: no cuenta para el cupo');
       return true;
     });
+  });
+
+  it('se agota la espera: cuenta para el cupo (OpenAI puede haber seguido generando)', async () => {
+    const lenta = fake(() => {
+      throw new APIConnectionTimeoutError();
+    });
+    await assert.rejects(createOpenAIProvider('k'.repeat(12), undefined, lenta.client).arrange(REQUEST), (e: ApiError) => e.code === 'ai-failed' && !e.free);
+  });
+
+  it('se corta la conexión: cuenta para el cupo (la petición pudo llegar a OpenAI)', async () => {
+    const cortada = fake(() => {
+      throw new APIConnectionError({ message: 'conexión cortada' });
+    });
+    await assert.rejects(createOpenAIProvider('k'.repeat(12), undefined, cortada.client).arrange(REQUEST), (e: ApiError) => e.code === 'ai-failed' && !e.free);
+  });
+
+  it('una respuesta cortada cuenta para el cupo', async () => {
+    const cortada = fake({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output_text: '', output: [] });
+    await assert.rejects(createOpenAIProvider('k'.repeat(12), undefined, cortada.client).arrange(REQUEST), (e: ApiError) => !e.free);
   });
 
   it('configuración: clave y modelo de OPENAI_*', () => {

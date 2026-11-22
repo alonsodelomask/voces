@@ -3,16 +3,21 @@ import { makeVoice, VOICE_COLORS, sortNotes, type ChordMark, type Note, type Son
 import { insertMonophonic, isValidChord, nameToMidi, prettyAccidentals } from '../music';
 import { esc } from '../ui/dialog';
 import { analyzeSong, harmonize, songToPrompt, suggestChords } from './harmony';
-import { cleanSung, diffSungVsScore, entriesFromTrack, findFusion, fusionPrompt, retimeSong, summarize, sungFromTrack } from './fusion';
+import { keepLyrics } from './keepLyrics';
+import { cleanSung, diffSungVsScore, entriesFromTrack, findFusion, fusionDiffs, fusionPrompt, retimeSong, summarize, sungFromTrack } from './fusion';
 
 export interface AssistDeps {
   song: () => Song;
   activeVoiceId: () => string | null;
-  edit: (fn: () => void, recomputeChords?: boolean) => void;
+  /** Devuelve false si no se ha hecho el cambio (canción de solo ver): entonces no se dice «hecho». */
+  edit: (fn: () => void, recomputeChords?: boolean) => boolean;
   toast: (msg: string, error?: boolean) => void;
   goTo: (t: number) => void;
   openAccount: () => void;
 }
+
+/** Mientras el servidor dormido arranca (hasta un minuto): que se vea que se está esperando y por qué. */
+const WAKING = 'Despertando el servidor (tras un rato sin uso tarda hasta un minuto) y después, a pensar la respuesta…';
 
 const IDEAS = [
   'Crea una segunda voz por terceras por debajo de la melodía',
@@ -26,7 +31,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
   const song = deps.song();
   const fusion = findFusion(song);
   const melodyDefault = deps.activeVoiceId() ?? song.voices[0]?.id ?? '';
-  const voiceOpts = song.voices.map((v) => `<option value="${v.id}" ${v.id === melodyDefault ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
+  const voiceOpts = song.voices.map((v) => `<option value="${esc(v.id)}" ${v.id === melodyDefault ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
   const dlg = document.createElement('dialog');
   dlg.className = 'dlg assist-dlg';
   dlg.innerHTML = `
@@ -120,10 +125,13 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
       .map((c) => `<span class="chip"><small>c.${Math.floor(c.time / spb / song.beatsPerBar) + 1}</small> ${esc(c.name)}</span>`)
       .join('')}</div><div class="row end"><button class="btn primary" id="as-ch-apply">Usar estos acordes</button></div>`;
     q<HTMLButtonElement>('#as-ch-apply').onclick = () => {
-      deps.edit(() => {
-        song.chords = proposed;
-        song.chordsAuto = false;
-      }, false);
+      if (
+        !deps.edit(() => {
+          song.chords = proposed;
+          song.chordsAuto = false;
+        }, false)
+      )
+        return;
       deps.toast(`${proposed.length} acordes aplicados. Puedes retocarlos en la fila «Acorde» del editor.`);
       dlg.close();
     };
@@ -143,7 +151,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
     const tmp: Song = { ...song, chords };
     const created = harmonize(tmp, { melodyId: mel, voices: n, style });
     if (!created.length) return deps.toast('No he podido crear voces (¿la melodía tiene notas y hay acordes?).', true);
-    deps.edit(() => {
+    const hecho = deps.edit(() => {
       if (generated) {
         song.chords = chords;
         song.chordsAuto = false;
@@ -151,6 +159,7 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
       const idx = song.voices.findIndex((v) => v.id === mel);
       song.voices.splice(idx + 1, 0, ...created);
     }, !generated);
+    if (!hecho) return;
     deps.toast(`${created.length} voces nuevas${generated ? ' y acordes propuestos' : ''}. Escúchalas y retócalas a tu gusto.`);
     dlg.close();
   };
@@ -185,7 +194,10 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
           out.innerHTML = '<p class="ok">Las entradas ya caen donde se canta: no hay nada que mover.</p>';
           return;
         }
-        deps.edit(() => retimeSong(song, r.map));
+        if (!deps.edit(() => retimeSong(song, r.map))) {
+          out.innerHTML = '';
+          return;
+        }
         pinta();
         out.innerHTML = `<p class="ok">Ajustadas ${r.movidas} entradas de «${esc(fusion.score.name)}» a donde se cantan, con las de las otras voces que atacan a la vez.</p>`;
         deps.toast('Entradas ajustadas a la grabación (puedes deshacerlo con ↶).');
@@ -206,9 +218,13 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
           return;
         }
         const antes = fusion.sung.notes.length;
-        deps.edit(() => {
+        const hecho = deps.edit(() => {
           fusion.sung.notes = notas;
         }, false);
+        if (!hecho) {
+          out.innerHTML = '';
+          return;
+        }
         pinta();
         out.innerHTML = `<p class="ok">«${esc(fusion.sung.name)}» sacada otra vez de la grabación: ${notas.length} notas (antes ${antes}).</p>`;
         deps.toast('Voz de la grabación rehecha (puedes deshacerlo con ↶).');
@@ -221,9 +237,12 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
     q<HTMLButtonElement>('#as-fu-clean').onclick = () => {
       // Dentro de la edición: así ↶ vuelve a lo de antes de limpiar.
       let r = { quitadas: 0, unidas: 0, octavas: 0 };
-      deps.edit(() => {
-        r = cleanSung(song, fusion);
-      }, false);
+      if (
+        !deps.edit(() => {
+          r = cleanSung(song, fusion);
+        }, false)
+      )
+        return;
       pinta();
       out.innerHTML = `<p class="ok">Quitadas ${r.quitadas} notas sueltas, unidas ${r.unidas} y devueltas a su octava ${r.octavas}.</p>`;
       deps.toast('Fusión limpiada (puedes deshacerlo con ↶).');
@@ -236,8 +255,9 @@ export function openAssistant(deps: AssistDeps, tab: 'review' | 'chords' | 'voic
       }
       goAI.disabled = true;
       out.innerHTML = '<p class="thinking">Comparando con la partitura… (puede tardar un poco)</p>';
+      const wakeMsg = () => (out.innerHTML = `<p class="thinking">${WAKING}</p>`);
       try {
-        const ans = await askAI(fusionPrompt(song, fusion), songToPrompt(song));
+        const ans = await askAI(fusionPrompt(fusion), `${songToPrompt(song)}\n\n${fusionDiffs(song, fusion)}`, wakeMsg);
         showAnswer(out, ans, deps, dlg);
       } catch (err) {
         out.innerHTML = `<p class="err">${esc((err as Error).message)}</p>`;
@@ -281,7 +301,7 @@ function renderAI(box: HTMLElement, deps: AssistDeps, dlg: HTMLDialogElement) {
     out.innerHTML = '<p class="thinking">Pensando el arreglo… (puede tardar un poco)</p>';
     try {
       const song = deps.song();
-      const ans = await askAI(prompt, songToPrompt(song));
+      const ans = await askAI(prompt, songToPrompt(song), () => (out.innerHTML = `<p class="thinking">${WAKING}</p>`));
       showAnswer(out, ans, deps, dlg);
     } catch (err) {
       out.innerHTML = `<p class="err">${esc((err as Error).message)}</p>`;
@@ -305,29 +325,41 @@ function showAnswer(out: HTMLElement, ans: AiAnswer, deps: AssistDeps, dlg: HTML
           /* nota no válida: se ignora */
         }
       }
-      return { ...v, parsed: notes, target: song.voices.find((x) => x.id === v.targetId) };
+      // Una voz monofónica: se ordena y cada nota recorta a la que pisa.
+      sortNotes(notes);
+      let mono: Note[] = [];
+      for (const n of notes) mono = insertMonophonic(mono, n);
+      return { ...v, parsed: notes, mono, target: song.voices.find((x) => x.id === v.targetId) };
     })
     .filter((v) => v.parsed.length);
+  // La IA no ve la letra: se lleva a las notas nuevas, y lo que no quepa se avisa antes de aplicar (y al aplicar).
+  const tol = spb / 8;
+  const perdidas = (v: (typeof voices)[number]) => (v.target ? keepLyrics(v.target.notes, v.mono.map((n) => ({ ...n })), tol).lost : 0);
   const changes: string[] = [];
   if (chords.length) changes.push(`Acordes nuevos: ${chords.map((c) => esc(prettyAccidentals(c.name))).join(' · ')}`);
-  for (const v of voices) changes.push(v.target ? `Reescribe «${esc(v.target.name)}» (${v.parsed.length} notas)` : `Crea la voz «${esc(v.name)}» (${v.parsed.length} notas)`);
+  for (const v of voices) {
+    const sinSitio = perdidas(v);
+    const aviso = sinSitio ? `; ${sinSitio === 1 ? 'una sílaba' : `${sinSitio} sílabas`} de la letra se quedan sin nota` : '';
+    changes.push(v.target ? `Reescribe «${esc(v.target.name)}» (${v.parsed.length} notas${aviso})` : `Crea la voz «${esc(v.name)}» (${v.parsed.length} notas)`);
+  }
   out.innerHTML = `<div class="ai-reply"></div>${changes.length ? `<ul class="ai-changes">${changes.map((c) => `<li>${c}</li>`).join('')}</ul><div class="row end"><button class="btn primary" id="as-ai-apply">Aplicar cambios</button></div>` : ''}`;
   out.querySelector('.ai-reply')!.textContent = ans.reply;
   const apply = out.querySelector<HTMLButtonElement>('#as-ai-apply');
   if (!apply) return;
   apply.onclick = () => {
-    deps.edit(() => {
+    let sinNota = 0;
+    const hecho = deps.edit(() => {
       if (chords.length) {
         song.chords = chords.map((c) => ({ time: c.beat * spb, name: prettyAccidentals(c.name) })).sort((a, b) => a.time - b.time);
         song.chordsAuto = false;
       }
       const used = new Set(song.voices.map((v) => v.color));
       for (const v of voices) {
-        sortNotes(v.parsed);
-        let mono: Note[] = [];
-        for (const n of v.parsed) mono = insertMonophonic(mono, n);
-        if (v.target) v.target.notes = mono;
-        else {
+        const mono = v.mono.map((n) => ({ ...n }));
+        if (v.target) {
+          sinNota += keepLyrics(v.target.notes, mono, tol).lost;
+          v.target.notes = mono;
+        } else {
           const nv = makeVoice(v.name || 'Voz IA', song.voices.length, mono);
           nv.color = VOICE_COLORS.find((c) => !used.has(c)) ?? nv.color;
           used.add(nv.color);
@@ -335,7 +367,12 @@ function showAnswer(out: HTMLElement, ans: AiAnswer, deps: AssistDeps, dlg: HTML
         }
       }
     }, !chords.length);
-    deps.toast('Cambios de la IA aplicados (puedes deshacerlos con ↶).');
+    if (!hecho) return;
+    deps.toast(
+      sinNota
+        ? `Cambios de la IA aplicados. ${sinNota === 1 ? 'Una sílaba' : `${sinNota} sílabas`} de la letra no tenían nota donde ir: revisa la letra o deshaz con ↶.`
+        : 'Cambios de la IA aplicados (puedes deshacerlos con ↶).',
+    );
     dlg.close();
   };
 }
