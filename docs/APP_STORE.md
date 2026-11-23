@@ -18,7 +18,7 @@ Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.
 - Ficha en español y en inglés (EE. UU.): texto promocional, descripción, palabras clave, URL de soporte y de marketing (secciones 2 y 2.1).
 - Copyright: `2026 Pablo M. Fdez. Alonso de Lomas`.
 - Capturas (sección 2.2): las 4, en orden, en el tamaño obligatorio y en el de 6,9″. Sirven para los dos idiomas.
-- **Compilación 5 (1.0.0)** elegida en la versión 1.0 (21/11/2026; antes estaba la 2, que no tenía «Ajustes de cuenta» y no cuadraba con las notas). La 5 se subió el 17/11 desde `35f071d` (canciones de la cuenta en todos los dispositivos); no lleva las líneas de pentagrama de `6283eba`. En TestFlight las compilaciones 2 a 5 están «Lista para enviar», validadas y con «Encriptación no exenta: No».
+- **Compilación 6 (1.0.0)** elegida en la versión 1.0 (23/11/2026; antes, la 5). La 6 se subió el 22/11 desde `da0313e`: lleva las líneas de pentagrama y los arreglos urgentes de la auditoría (mezcla de ensayo de cada uno, ediciones a la vez en el grupo, canciones de fuera revisadas, número de formato, recuperación de la pantalla en blanco y versión real visible). En TestFlight las compilaciones 2 a 6 están «Lista para enviar».
 - *Información de la app*: categoría Música, secundaria Educación; derechos sobre el contenido «No contiene, muestra ni accede a contenido de terceros» (la canción de ejemplo es nuestra; lo que importa cada usuario es suyo); contrato de licencia estándar de Apple.
 - Clasificación por edades: todas las respuestas «No» o «Ninguna» → **4+**. Las dos preguntas nuevas de Apple (ubicación compartida; citas y relaciones) respondidas «No» el 21/11/2026.
 - Precio y disponibilidad: país base España (EUR), **gratis**, **174 países o regiones**. China continental se quitó el 21/11/2026 (decisión del titular): para China, Apple pide un informe de evaluación de seguridad, una declaración de servicios de IA generativa (AIGC) con su registro y una licencia ICP, y su ayuda los ata a que la app esté disponible allí. Hong Kong, Macao y Taiwán siguen. Se puede volver a añadir en *Gestionar disponibilidad* cuando se tengan esos papeles.
@@ -32,7 +32,7 @@ Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.
 
 1. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
 2. **Cuenta de demostración** (sección 3): no existe todavía en Supabase (el 21/11 hay 2 usuarios). Créala y escribe su contraseña en *Información de inicio de sesión* (página de la versión 1.0) › **Guardar**.
-3. **Probar la compilación 5 en TestFlight** (sección 5): el único probador interno sigue «Invitado» desde el 16/11 y ninguna compilación tiene instalaciones. Acepta la invitación en el iPhone, instálala y prueba sobre todo entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta.
+3. **Probar la compilación 6 en TestFlight** (sección 5): el único probador interno sigue «Invitado» desde el 16/11 y ninguna compilación tiene instalaciones. Acepta la invitación en el iPhone, instálala y prueba sobre todo entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta.
 4. Opcional: *Accesibilidad de la app* (sección 1).
 5. **Añadir a revisión** y enviar. Si Apple sigue pidiendo lo de China, espera: avisa de que los cambios de disponibilidad tardan hasta 24 horas. *Cumplimiento normativo de la app* sigue mostrando las dos filas de China con «Falta información»; no hace falta rellenarlas mientras la app no esté en China.
 
