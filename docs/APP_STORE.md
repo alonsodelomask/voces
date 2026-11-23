@@ -9,9 +9,11 @@ Respuestas preparadas el 13/11/2026 a partir del código (la app se llamaba «Vo
 
 **Si cambia el código, revisa este documento** y la política (`scripts/sitio/es.mjs` y `en.mjs`). La compilación y la subida se explican en [BACKEND.md](BACKEND.md), paso 6.
 
-## 0. Estado en App Store Connect (21/11/2026)
+## 0. Estado en App Store Connect (23/11/2026)
 
-Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.** Revisado el 21/11/2026 en App Store Connect, TestFlight, Render, Supabase y Expo (solo lectura, con una segunda pasada que lo contrastó).
+**Versión 1.0 enviada a revisión el 23/11/2026** con la compilación 6: estado «Pendiente de revisión». Apple avisa de que tarda hasta 48 horas y manda un correo al terminar. La publicación es **manual**: cuando la aprueben, la publicas tú. Mientras esté pendiente solo se puede editar parte de la ficha; para cambiar de compilación hay que sacarla del proceso de revisión.
+
+Revisado el 21/11/2026 en App Store Connect, TestFlight, Render, Supabase y Expo (solo lectura, con una segunda pasada que lo contrastó).
 
 **Ya está puesto:**
 
@@ -23,18 +25,19 @@ Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.
 - Clasificación por edades: todas las respuestas «No» o «Ninguna» → **4+**. Las dos preguntas nuevas de Apple (ubicación compartida; citas y relaciones) respondidas «No» el 21/11/2026.
 - Precio y disponibilidad: país base España (EUR), **gratis**, **174 países o regiones**. China continental se quitó el 21/11/2026 (decisión del titular): para China, Apple pide un informe de evaluación de seguridad, una declaración de servicios de IA generativa (AIGC) con su registro y una licencia ICP, y su ayuda los ata a que la app esté disponible allí. Hong Kong, Macao y Taiwán siguen. Se puede volver a añadir en *Gestionar disponibilidad* cuando se tengan esos papeles.
 - Publicación de la versión: **manual** (la publicas tú cuando Apple la apruebe).
-- Revisión de la app: «Es necesario iniciar sesión» marcado, usuario `revision.apple@vocify.es`, datos de contacto y las notas de la sección 3 (con la ruta nueva para borrar la cuenta).
-- Privacidad de la app: URL de la política en los dos idiomas y los 4 tipos de datos de la sección 1, **guardados pero sin publicar**.
+- Revisión de la app: «Es necesario iniciar sesión» marcado, usuario `revision.apple@vocify.es` con su contraseña (la cuenta se creó en Supabase el 23/11/2026 con *Auto Confirm*), datos de contacto y las notas de la sección 3 (con la ruta nueva para borrar la cuenta).
+- Privacidad de la app: URL de la política en los dos idiomas y los 4 tipos de datos de la sección 1, **publicada** el 23/11/2026.
 - Acuerdos de Apple (apps gratuitas y de pago), banca, impuestos y comerciante del Reglamento de Servicios Digitales: todo «Activo».
 - Revocación de «Iniciar sesión con Apple»: clave `9BLRBZK3TV` creada y Render arranca con `Apple: revocación activa` (último arranque visto: 21/11/2026).
 
-**Lo que falta** (al 21/11/2026). El 21/11, al pulsar «Añadir a revisión», Apple contestó «No se ha podido añadir a revisión» por China continental (ya quitada), la privacidad sin publicar y la contraseña vacía:
+**Pasos del envío** (hechos el 23/11/2026): privacidad publicada, cuenta de demostración creada y su contraseña guardada, «Añadir a revisión» y «Enviar para revisión». Los dos avisos de China siguen en la página de la versión, pero no impidieron el envío.
 
-1. **Privacidad de la app › Publicar**: al publicar declaras que las respuestas son ciertas; revísalas (sección 1) y publícalas tú.
-2. **Cuenta de demostración** (sección 3): no existe todavía en Supabase (el 21/11 hay 2 usuarios). Créala y escribe su contraseña en *Información de inicio de sesión* (página de la versión 1.0) › **Guardar**.
-3. **Probar la compilación 6 en TestFlight** (sección 5): el único probador interno sigue «Invitado» desde el 16/11 y ninguna compilación tiene instalaciones. Acepta la invitación en el iPhone, instálala y prueba sobre todo entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta.
+**Pendiente:**
+
+1. **Probar la compilación 6 en TestFlight** (sección 5): al enviarla, nadie la había instalado. Conviene probar ya entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta; si algo falla, se puede sacar de revisión antes de que Apple la mire.
+2. **Esperar la respuesta de Apple.** Si la rechazan, el motivo llega al *Centro de resoluciones* de App Store Connect.
+3. Cuando la aprueben: **publicarla** a mano.
 4. Opcional: *Accesibilidad de la app* (sección 1).
-5. **Añadir a revisión** y enviar. Si Apple sigue pidiendo lo de China, espera: avisa de que los cambios de disponibilidad tardan hasta 24 horas. *Cumplimiento normativo de la app* sigue mostrando las dos filas de China con «Falta información»; no hace falta rellenarlas mientras la app no esté en China.
 
 **Riesgos conocidos que piden una compilación nueva** (no bloquean el envío; detalles en la sección 6):
 
@@ -60,7 +63,7 @@ Versión 1.0 «En preparación para el envío». **No se ha enviado a revisión.
 | Audio | **No** | — | — | Se analiza en el dispositivo (`src/hum/`, `src/import/audio.ts`) |
 | Uso, diagnóstico, ubicación, contactos, fotos | **No** | — | — | — |
 
-Ninguno se usa para seguimiento. Así está guardado (sin publicar) en App Store Connect desde el 16/11/2026; falta que pulses **Publicar** en *Privacidad de la app*.
+Ninguno se usa para seguimiento. Así está publicado en App Store Connect desde el 23/11/2026 (guardado desde el 16/11).
 
 ### Accesibilidad («Accessibility Nutrition Labels», opcional)
 
