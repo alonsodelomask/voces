@@ -34,8 +34,8 @@ Revisado el 21/11/2026 en App Store Connect, TestFlight, Render, Supabase y Expo
 
 **Pendiente:**
 
-1. **Probar la compilación 6 en TestFlight** (sección 5): al enviarla, nadie la había instalado. Conviene probar ya entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta; si algo falla, se puede sacar de revisión antes de que Apple la mire.
-2. **Esperar la respuesta de Apple.** Si la rechazan, el motivo llega al *Centro de resoluciones* de App Store Connect.
+1. **Probar la compilación 6 en TestFlight** (sección 5): no consta ninguna instalación (último dato de TestFlight, del 21/11 y anterior a la 6; no se volvió a mirar al enviarla). Conviene probar ya entrar con la cuenta de demostración, entrar con Apple y borrar la cuenta; si algo falla, se puede sacar de revisión antes de que Apple la mire.
+2. **Esperar la respuesta de Apple.** Si la rechazan, el motivo se lee en App Store Connect › *Revisión de apps*.
 3. Cuando la aprueben: **publicarla** a mano.
 4. Opcional: *Accesibilidad de la app* (sección 1).
 
